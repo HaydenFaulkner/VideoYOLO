@@ -1,0 +1,11 @@
+mxnet-cu100
+gluoncv
+tensorflow-gpu==2.0.0a0
+opencv-python==4.0.0.21
+tqdm
+requests
+eventlet
+lxml
+Pillow==5.4.1
+contextlib2
+nltk
