@@ -317,7 +317,7 @@ if __name__ == '__main__':
 
     # network
     net_name = '_'.join(('yolo3', args.network, args.dataset))
-    os.makedirs(os.path.join('models', args.save_prefix), exist_ok=True)
+    os.makedirs(os.path.join('models', args.save_prefix))
     args.save_prefix = os.path.join('models', args.save_prefix, net_name)
 
     # use sync bn if specified
