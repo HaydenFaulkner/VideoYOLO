@@ -317,7 +317,9 @@ if __name__ == '__main__':
 
     # network
     net_name = '_'.join(('yolo3', args.network, args.dataset))
-    args.save_prefix += net_name
+    os.makedirs(os.path.join('models', args.save_prefix), exist_ok=True)
+    args.save_prefix = os.path.join('models', args.save_prefix, net_name)
+
     # use sync bn if specified
     if args.syncbn and len(ctx) > 1:
         net = get_model(net_name, root='models', pretrained_base=True, norm_layer=gluon.contrib.nn.SyncBatchNorm,
