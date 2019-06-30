@@ -21,6 +21,8 @@ from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
 from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
 from gluoncv.utils import LRScheduler, LRSequential
 
+from datasets.imgnetdet import ImageNetDetection
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train YOLO networks with random input shape.')
@@ -110,6 +112,14 @@ def get_dataset(dataset, args):
         val_metric = COCODetectionMetric(
             val_dataset, args.save_prefix + '_eval', cleanup=True,
             data_shape=(args.data_shape, args.data_shape))
+    elif dataset.lower() == 'det':
+        train_dataset = ImageNetDetection(
+            root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
+            splits=['train'])
+        val_dataset = ImageNetDetection(
+            root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
+            splits=['val'])
+        val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))
     if args.num_samples < 0:
