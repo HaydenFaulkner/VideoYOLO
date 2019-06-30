@@ -68,7 +68,7 @@ def parse_args():
                         help='Weight decay, default is 5e-4')
     parser.add_argument('--log-interval', type=int, default=100,
                         help='Logging mini-batch interval. Default is 100.')
-    parser.add_argument('--save-prefix', type=str, default='',
+    parser.add_argument('--save-prefix', type=str, default='XXXX',
                         help='Saving parameter prefix')
     parser.add_argument('--save-interval', type=int, default=10,
                         help='Saving parameters epoch interval, best model will always be saved.')
@@ -325,18 +325,24 @@ if __name__ == '__main__':
     ctx = [mx.gpu(int(i)) for i in args.gpus.split(',') if i.strip()]
     ctx = ctx if ctx else [mx.cpu()]
 
+    # training data
+    train_dataset, val_dataset, eval_metric = get_dataset(args.dataset, args)
+
     # network
-    net_name = '_'.join(('yolo3', args.network, args.dataset))
     os.makedirs(os.path.join('models', args.save_prefix), exist_ok=bool(args.resume.strip()))
+    net_name = '_'.join(('yolo3', args.network, args.dataset))
     args.save_prefix = os.path.join('models', args.save_prefix, net_name)
+    if args.dataset != 'voc' and args.dataset != 'coco':
+        net_name = '_'.join(('yolo3', args.network, 'custom'))
 
     # use sync bn if specified
     if args.syncbn and len(ctx) > 1:
-        net = get_model(net_name, root='models', pretrained_base=True, norm_layer=gluon.contrib.nn.SyncBatchNorm,
+        net = get_model(net_name, root='models', pretrained_base=True, classes=train_dataset.classes,
+                        norm_layer=gluon.contrib.nn.SyncBatchNorm,
                         norm_kwargs={'num_devices': len(ctx)})
-        async_net = get_model(net_name, root='models', pretrained_base=False)  # used by cpu worker
+        async_net = get_model(net_name, root='models', pretrained_base=False, classes=train_dataset.classes)  # used by cpu worker
     else:
-        net = get_model(net_name, root='models', pretrained_base=True)
+        net = get_model(net_name, root='models', pretrained_base=True, classes=train_dataset.classes)
         async_net = net
     if args.resume.strip():
         net.load_parameters(args.resume.strip())
@@ -347,8 +353,6 @@ if __name__ == '__main__':
             net.initialize()
             async_net.initialize()
 
-    # training data
-    train_dataset, val_dataset, eval_metric = get_dataset(args.dataset, args)
     train_data, val_data = get_dataloader(
         async_net, train_dataset, val_dataset, args.data_shape, args.batch_size, args.num_workers, args)
 
