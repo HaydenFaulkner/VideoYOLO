@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 from __future__ import division
 import os
+from tqdm import tqdm
 import warnings
 import numpy as np
 try:
@@ -42,10 +43,10 @@ class ImageNetDetection(VisionDataset):
         self._root = os.path.expanduser(root)
         self._transform = transform
         self._splits = splits
-        self._items = self._load_items(splits)
         self._anno_path = os.path.join('{}', 'Annotations', 'DET', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'DET', '{}', '{}.JPEG')
         self.index_map = index_map or dict(zip(self.classes, range(self.num_class)))
+        self._items = self._load_items(splits)
 
     def __str__(self):
         detail = ','.join([str(s[0]) + s[1] for s in self._splits])
@@ -57,9 +58,9 @@ class ImageNetDetection(VisionDataset):
         names = os.path.join('./datasets/names/imagenetdet_wn.names')
         with open(names, 'r') as f:
             classes = [line.strip() for line in f.readlines()]
-        self.CLASSES = classes
+        type(self).CLASSES = classes
         try:
-            self._validate_class_names(self.CLASSES)
+            self._validate_class_names(type(self).CLASSES)
         except AssertionError as e:
             raise RuntimeError("Class names must not contain {}".format(e))
         return type(self).CLASSES
@@ -81,15 +82,37 @@ class ImageNetDetection(VisionDataset):
         ids = []
         for split in splits:
             root = self._root  # os.path.join(self._root, 'ILSVRC')
+            ne_lf = os.path.join(root, 'ImageSets', 'DET', split + '_nonempty.txt')
             lf = os.path.join(root, 'ImageSets', 'DET', split + '.txt')
+            if os.path.exists(ne_lf):
+                lf = ne_lf
+
+            print("Loading splits from: {}".format(lf))
             with open(lf, 'r') as f:
-                ids += [(root, line.strip()) for line in f.readlines()]
+                ids_ = [(root, split, line.split()[0]) for line in f.readlines()]
+
+            if not os.path.exists(ne_lf):
+                ids_, str_ = self._verify_nonempty_annotations(ids_)  # ensure non-empty for this split
+                print("Writing out new splits file: {}\n\n{}".format(ne_lf, str_))
+                with open(ne_lf, 'w') as f:
+                    for l in ids_:
+                        f.write(l[2]+"\n")
+                with open(os.path.join(root, 'ImageSets', 'DET', split + '_nonempty_stats.txt'), 'a') as f:
+                    f.write(str_)
+
+            ids += ids_
+
         return ids
 
-    def _load_label(self, idx):
+    def _load_label(self, idx, items=None):
         """Parse xml file and return labels."""
-        img_id = self._items[idx]
+        if items:  # used to process items before they are actually assigned to self
+            img_id = items[idx]
+        else:
+            img_id = self._items[idx]
         anno_path = self._anno_path.format(*img_id)
+        if not os.path.exists(anno_path):
+            return np.array([])
         root = ET.parse(anno_path).getroot()
         size = root.find('size')
         width = float(size.find('width').text)
@@ -104,15 +127,16 @@ class ImageNetDetection(VisionDataset):
                 continue
             cls_id = self.index_map[cls_name]
             xml_box = obj.find('bndbox')
-            xmin = (float(xml_box.find('xmin').text) - 1)
-            ymin = (float(xml_box.find('ymin').text) - 1)
-            xmax = (float(xml_box.find('xmax').text) - 1)
-            ymax = (float(xml_box.find('ymax').text) - 1)
+            xmin = float(xml_box.find('xmin').text)  # we dont need to minus 1 here as the already 0 > h/w
+            ymin = float(xml_box.find('ymin').text)
+            xmax = float(xml_box.find('xmax').text)
+            ymax = float(xml_box.find('ymax').text)
             try:
                 self._validate_label(xmin, ymin, xmax, ymax, width, height)
             except AssertionError as e:
                 raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
             label.append([xmin, ymin, xmax, ymax, cls_id])
+
         return np.array(label)
 
     @staticmethod
@@ -130,3 +154,21 @@ class ImageNetDetection(VisionDataset):
         stripped = [c for c in class_list if c.strip() != c]
         if stripped:
             warnings.warn('white space removed for {}'.format(stripped))
+
+    def _verify_nonempty_annotations(self, ids):
+        """Checks annotations and returns only those that contain at least one box, as well as a lil stats str"""
+        good_ids = []
+        removed = 0
+        nboxes = 0
+        for idx in tqdm(range(len(ids)), desc="Removing images that have 0 boxes"):
+            nb = len(self._load_label(idx, items=ids))
+            if nb < 1:
+                removed += 1
+            else:
+                nboxes += nb
+                good_ids.append(ids[idx])
+
+        str_ = "Removed {} out of {} images, leaving {} with {} boxes over {} classes.\n".format(
+            removed, len(ids), len(good_ids), nboxes, len(self.classes))
+
+        return good_ids, str_
