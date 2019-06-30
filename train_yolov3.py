@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument('--data-shape', type=int, default=416,
                         help="Input data shape for evaluation, use 320, 416, 608... " +
                              "Training is with random shapes from (320 to 608).")
-    parser.add_argument('--batch-size', type=int, default=4,#64,
+    parser.add_argument('--batch-size', type=int, default=64,
                         help='Training mini-batch size')
     parser.add_argument('--dataset', type=str, default='voc',
                         help='Training dataset. Now support voc.')
@@ -103,8 +103,10 @@ def get_dataset(dataset, args):
             splits=[(2007, 'test')])
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     elif dataset.lower() == 'coco':
-        train_dataset = gdata.COCODetection(splits='instances_train2017', use_crowd=False)
-        val_dataset = gdata.COCODetection(splits='instances_val2017', skip_empty=False)
+        train_dataset = gdata.COCODetection(
+            root=os.path.join('datasets', 'MSCoco'), splits='instances_train2017', use_crowd=False)
+        val_dataset = gdata.COCODetection(
+            root=os.path.join('datasets', 'MSCoco'), splits='instances_val2017', skip_empty=False)
         val_metric = COCODetectionMetric(
             val_dataset, args.save_prefix + '_eval', cleanup=True,
             data_shape=(args.data_shape, args.data_shape))
@@ -155,7 +157,7 @@ def validate(net, val_data, ctx, eval_metric):
     # set nms threshold and topk constraint
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     mx.nd.waitall()
-    # net.hybridize()
+    net.hybridize()
     for batch in val_data:
         data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
         label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
@@ -252,7 +254,7 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
         tic = time.time()
         btic = time.time()
         mx.nd.waitall()
-        # net.hybridize()
+        net.hybridize()
         for i, batch in enumerate(train_data):
             batch_size = batch[0].shape[0]
             data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
@@ -315,7 +317,9 @@ if __name__ == '__main__':
 
     # network
     net_name = '_'.join(('yolo3', args.network, args.dataset))
-    args.save_prefix += net_name
+    os.makedirs(os.path.join('models', args.save_prefix), exist_ok=bool(args.resume.strip()))
+    args.save_prefix = os.path.join('models', args.save_prefix, net_name)
+
     # use sync bn if specified
     if args.syncbn and len(ctx) > 1:
         net = get_model(net_name, root='models', pretrained_base=True, norm_layer=gluon.contrib.nn.SyncBatchNorm,
