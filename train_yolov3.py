@@ -383,8 +383,8 @@ if __name__ == '__main__':
     os.makedirs(os.path.join('models', args.save_prefix), exist_ok=bool(args.resume.strip()))
     net_name = '_'.join(('yolo3', args.network, args.dataset))
     args.save_prefix = os.path.join('models', args.save_prefix, net_name)
-    if args.dataset != 'voc' and args.dataset != 'coco':  # todo could make them all custom
-        net_name = '_'.join(('yolo3', args.network, 'custom'))
+    # if args.dataset != 'voc' and args.dataset != 'coco':  # todo could make them all custom
+    #     net_name = '_'.join(('yolo3', args.network, 'custom'))
 
     # use sync bn if specified
     # if args.syncbn and len(ctx) > 1:
@@ -407,11 +407,10 @@ if __name__ == '__main__':
 
     # use sync bn if specified
     if args.syncbn and len(ctx) > 1:
-        if args.dataset != 'voc' and args.dataset != 'coco':
-            net = yolo3_darknet53(net_name, root='models', pretrained_base=True,
-                                  norm_layer=gluon.contrib.nn.SyncBatchNorm,
-                                  norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_darknet53(train_dataset.classes, args.dataset, root='models', pretrained_base=False)  # used by cpu worker
+        net = yolo3_darknet53(train_dataset.classes, args.dataset, root='models', pretrained_base=True,
+                              norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                              norm_kwargs={'num_devices': len(ctx)})
+        async_net = yolo3_darknet53(train_dataset.classes, args.dataset, root='models', pretrained_base=False)  # used by cpu worker
     else:
         net = yolo3_darknet53(train_dataset.classes, args.dataset, root='models', pretrained_base=True)
         async_net = net
