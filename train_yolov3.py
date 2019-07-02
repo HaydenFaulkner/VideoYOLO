@@ -298,7 +298,12 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
     logger.addHandler(fh)
     logger.info(args)
     logger.info('Start training from [Epoch {}]'.format(args.start_epoch))
-    best_map = [0]
+    if args.resume.strip():
+        with open(args.save_prefix+'_best_map.log', 'r') as f:
+            lines = [line.split()[1] for line in f.readlines()]
+            best_map = [float(lines[-1])]
+    else:
+        best_map = [0]
     for epoch in range(args.start_epoch, args.epochs):
         if args.mixup:
             # TODO(zhreshold): more elegant way to control mixup during runtime
