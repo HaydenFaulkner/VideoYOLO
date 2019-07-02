@@ -25,6 +25,7 @@ from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
 from gluoncv.utils import LRScheduler, LRSequential
 
 from datasets.imgnetdet import ImageNetDetection
+from datasets.imgnetvid import ImageNetVidDetection
 
 
 def parse_args():
@@ -169,6 +170,14 @@ def get_dataset(dataset, args):
             splits=['train'])
         val_dataset = ImageNetDetection(
             root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
+            splits=['val'])
+        val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+    elif dataset.lower() == 'vid':
+        train_dataset = ImageNetVidDetection(
+            root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
+            splits=['train'])
+        val_dataset = ImageNetVidDetection(
+            root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
             splits=['val'])
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     else:
