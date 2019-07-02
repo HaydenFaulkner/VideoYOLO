@@ -133,7 +133,7 @@ class ImageNetVidDetection(VisionDataset):
         label = []
         for obj in root.iter('object'):
             cls_name = obj.find('name').text.strip().lower()
-            if cls_name not in self.classes:
+            if cls_name not in self.wn_classes:
                 continue
             cls_id = self.index_map[cls_name]
             xml_box = obj.find('bndbox')

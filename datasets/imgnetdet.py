@@ -126,7 +126,7 @@ class ImageNetDetection(VisionDataset):
         label = []
         for obj in root.iter('object'):
             cls_name = obj.find('name').text.strip().lower()
-            if cls_name not in self.classes:
+            if cls_name not in self.wn_classes:
                 continue
             cls_id = self.index_map[cls_name]
             xml_box = obj.find('bndbox')
@@ -183,16 +183,16 @@ class ImageNetDetection(VisionDataset):
         n_boxes = [0]*len(self.classes)
         for idx in range(len(self._items)):
             for box in self._load_label(idx):
-                n_boxes[box[4]] += 1
+                n_boxes[int(box[4])] += 1
 
         out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n'.format('Split:', ', '.join(self._splits),
                                                                                     'Images:', n_samples,
                                                                                     'Boxes:', sum(n_boxes),
                                                                                     'Classes:', len(self.classes))
-        out_str += '-'*35 + '\n'
+        out_str += '-'*45 + '\n'
         for i in range(len(n_boxes)):
-            out_str += '{0: <3} {1: <10} {2: <15} {3}\n'.format(i, self.wn_classes[i], self.classes[i], n_boxes[i])
-        out_str += '-'*35 + '\n'
+            out_str += '{0: <3} {1: <10} {2: <25} {3}\n'.format(i, self.wn_classes[i], self.classes[i], n_boxes[i])
+        out_str += '-'*45 + '\n'
 
         return out_str
 
