@@ -24,6 +24,8 @@ from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
 from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
 from gluoncv.utils import LRScheduler, LRSequential
 
+from datasets.pascalvoc import VOCDetection
+from datasets.mscoco import COCODetection
 from datasets.imgnetdet import ImageNetDetection
 from datasets.imgnetvid import ImageNetVidDetection
 
@@ -150,17 +152,17 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
 
 def get_dataset(dataset, args):
     if dataset.lower() == 'voc':
-        train_dataset = gdata.VOCDetection(
+        train_dataset = VOCDetection(
             root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'),
             splits=[(2007, 'trainval'), (2012, 'trainval')])
-        val_dataset = gdata.VOCDetection(
+        val_dataset = VOCDetection(
             root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'),
             splits=[(2007, 'test')])
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     elif dataset.lower() == 'coco':
-        train_dataset = gdata.COCODetection(
+        train_dataset = COCODetection(
             root=os.path.join('datasets', 'MSCoco'), splits='instances_train2017', use_crowd=False)
-        val_dataset = gdata.COCODetection(
+        val_dataset = COCODetection(
             root=os.path.join('datasets', 'MSCoco'), splits='instances_val2017', skip_empty=False)
         val_metric = COCODetectionMetric(
             val_dataset, args.save_prefix + '_eval', cleanup=True,

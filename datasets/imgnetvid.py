@@ -35,7 +35,7 @@ class ImageNetVidDetection(VisionDataset):
         of class labels.
     """
 
-    def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'det'),
+    def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'vid'),
                  splits=('train',), allow_empty=False, frames=True,
                  transform=None, index_map=None):
         super(ImageNetVidDetection, self).__init__(root)
@@ -47,25 +47,27 @@ class ImageNetVidDetection(VisionDataset):
         self._allow_empty = allow_empty
         self._anno_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'VID', '{}', '{}.JPEG')
-        self.index_map = index_map or dict(zip(self.classes, range(self.num_class)))
+        self.index_map = index_map or dict(zip(self.wn_classes, range(self.num_class)))
         self._items = self._load_items(splits)
 
     def __str__(self):
-        detail = ','.join([str(s[0]) + s[1] for s in self._splits])
-        return self.__class__.__name__ + '(' + detail + ')'
+        return '\n\n' + self.__class__.__name__ + '\n' + self.stats() + '\n'
 
     @property
     def classes(self):
         """Category names."""
-        names = os.path.join('./datasets/names/imagenetvid_wn.names')
+        names = os.path.join('./datasets/names/imagenetdet.names')
         with open(names, 'r') as f:
             classes = [line.strip() for line in f.readlines()]
-        type(self).CLASSES = classes
-        try:
-            self._validate_class_names(type(self).CLASSES)
-        except AssertionError as e:
-            raise RuntimeError("Class names must not contain {}".format(e))
-        return type(self).CLASSES
+        return classes
+
+    @property
+    def wn_classes(self):
+        """Category names."""
+        names = os.path.join('./datasets/names/imagenetdet_wn.names')
+        with open(names, 'r') as f:
+            wn_classes = [line.strip() for line in f.readlines()]
+        return wn_classes
 
     def __len__(self):
         return len(self._items)
@@ -182,3 +184,31 @@ class ImageNetVidDetection(VisionDataset):
             removed, len(ids), len(good_ids), nboxes, len(self.classes))
 
         return good_ids, str_
+
+    def stats(self):
+        n_samples = len(self._items)
+        n_boxes = [0]*len(self.classes)
+        for idx in range(len(self._items)):
+            for box in self._load_label(idx):
+                n_boxes[box[4]] += 1
+
+        out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n'.format('Split:', ', '.join(self._splits),
+                                                                                    'Images:', n_samples,
+                                                                                    'Boxes:', sum(n_boxes),
+                                                                                    'Classes:', len(self.classes))
+        out_str += '-'*35 + '\n'
+        for i in range(len(n_boxes)):
+            out_str += '{0: <3} {1: <10} {2: <15} {3}\n'.format(i, self.wn_classes[i], self.classes[i], n_boxes[i])
+        out_str += '-'*35 + '\n'
+
+        return out_str
+
+
+if __name__ == '__main__':
+    train_dataset = ImageNetVidDetection(
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=['train'], allow_empty=False, frames=True)
+    val_dataset = ImageNetVidDetection(
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=['val'], allow_empty=False, frames=True)
+
+    print(train_dataset)
+    print(val_dataset)
