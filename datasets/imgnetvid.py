@@ -36,7 +36,7 @@ class ImageNetVidDetection(VisionDataset):
     """
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'det'),
-                 splits=('train',), frames=True,
+                 splits=('train',), allow_empty=False, frames=True,
                  transform=None, index_map=None):
         super(ImageNetVidDetection, self).__init__(root)
         self._im_shapes = {}
@@ -44,6 +44,7 @@ class ImageNetVidDetection(VisionDataset):
         self._transform = transform
         self._splits = splits
         self._frames = frames
+        self._allow_empty = allow_empty
         self._anno_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'VID', '{}', '{}.JPEG')
         self.index_map = index_map or dict(zip(self.classes, range(self.num_class)))
@@ -86,11 +87,23 @@ class ImageNetVidDetection(VisionDataset):
         ids = []
         for split in splits:
             root = self._root  # os.path.join(self._root, 'ILSVRC')
+            ne_lf = os.path.join(root, 'ImageSets', 'VID', split + '_nonempty.txt')
             lf = os.path.join(root, 'ImageSets', 'VID', split + '.txt')
+            if os.path.exists(ne_lf) and not self._allow_empty:
+                lf = ne_lf
 
             print("Loading splits from: {}".format(lf))
             with open(lf, 'r') as f:
                 ids_ = [(root, split, line.split()[0]) for line in f.readlines()]
+
+            if not os.path.exists(ne_lf):
+                ids_, str_ = self._verify_nonempty_annotations(ids_)  # ensure non-empty for this split
+                print("Writing out new splits file: {}\n\n{}".format(ne_lf, str_))
+                with open(ne_lf, 'w') as f:
+                    for l in ids_:
+                        f.write(l[2]+"\n")
+                with open(os.path.join(root, 'ImageSets', 'VID', split + '_nonempty_stats.txt'), 'a') as f:
+                    f.write(str_)
 
             ids += ids_
 
@@ -132,8 +145,8 @@ class ImageNetVidDetection(VisionDataset):
                 raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
             label.append([xmin, ymin, xmax, ymax, cls_id])
 
-        if len(label) < 1:
-            label.append([-1,-1,-1,-1,-1])
+        if self._allow_empty and len(label) < 1:
+            label.append([-1, -1, -1, -1, -1])
         return np.array(label)
 
     @staticmethod

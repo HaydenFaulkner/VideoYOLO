@@ -36,13 +36,14 @@ class ImageNetDetection(VisionDataset):
     """
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'det'),
-                 splits=('train',),
+                 splits=('train',), allow_empty=False,
                  transform=None, index_map=None):
         super(ImageNetDetection, self).__init__(root)
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
         self._transform = transform
         self._splits = splits
+        self._allow_empty = allow_empty
         self._anno_path = os.path.join('{}', 'Annotations', 'DET', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'DET', '{}', '{}.JPEG')
         self.index_map = index_map or dict(zip(self.classes, range(self.num_class)))
@@ -84,7 +85,7 @@ class ImageNetDetection(VisionDataset):
             root = self._root  # os.path.join(self._root, 'ILSVRC')
             ne_lf = os.path.join(root, 'ImageSets', 'DET', split + '_nonempty.txt')
             lf = os.path.join(root, 'ImageSets', 'DET', split + '.txt')
-            if os.path.exists(ne_lf):
+            if os.path.exists(ne_lf) and not self._allow_empty:
                 lf = ne_lf
 
             print("Loading splits from: {}".format(lf))
@@ -137,6 +138,8 @@ class ImageNetDetection(VisionDataset):
                 raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
             label.append([xmin, ymin, xmax, ymax, cls_id])
 
+        if self._allow_empty and len(label) < 1:
+            label.append([-1, -1, -1, -1, -1])
         return np.array(label)
 
     @staticmethod

@@ -95,6 +95,7 @@ def parse_args():
     parser.add_argument('--no-mixup-epochs', type=int, default=20,
                         help='Disable mixup training if enabled in the last N epochs.')
     parser.add_argument('--label-smooth', action='store_true', help='Use label smoothing.')
+    parser.add_argument('--allow_empty', action='store_true', help='Allow samples that contain 0 boxes as [-1s * 5].')
     args = parser.parse_args()
     return args
 
@@ -167,18 +168,18 @@ def get_dataset(dataset, args):
     elif dataset.lower() == 'det':
         train_dataset = ImageNetDetection(
             root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
-            splits=['train'])
+            splits=['train'], allow_empty=args.allow_empty)
         val_dataset = ImageNetDetection(
             root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
-            splits=['val'])
+            splits=['val'], allow_empty=args.allow_empty)
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     elif dataset.lower() == 'vid':
         train_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=['train'])
+            splits=['train'], allow_empty=args.allow_empty, frames=True)
         val_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=['val'])
+            splits=['val'], allow_empty=args.allow_empty, frames=True)
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))
