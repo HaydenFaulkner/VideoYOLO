@@ -126,7 +126,7 @@ if __name__ == '__main__':
 
     # network
     net_name = '_'.join((args.algorithm, args.network, args.dataset))
-    os.makedirs(os.path.join('models', args.save_prefix))
+    os.makedirs(os.path.join('models', args.save_prefix), exist_ok=True)
     args.save_prefix = os.path.join('models', args.save_prefix, net_name)
     if args.pretrained.lower() in ['true', '1', 'yes', 't']:
         net = gcv.model_zoo.get_model(net_name, root='models', pretrained=True)
