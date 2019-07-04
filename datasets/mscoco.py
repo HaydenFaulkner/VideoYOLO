@@ -108,6 +108,10 @@ class COCODetection(VisionDataset):
         """
         return 'annotations'
 
+    @property
+    def image_ids(self):
+        return self.coco.getImgIds()
+
     def _parse_image_path(self, entry):
         """How to parse image dir and path from entry.
 
@@ -203,6 +207,10 @@ class COCODetection(VisionDataset):
                 # dummy invalid labels if no valid objects are found
                 valid_objs.append([-1, -1, -1, -1, -1])
         return valid_objs
+
+    def image_size(self, id):
+        entry = self.coco.loadImgs(id)[0]
+        return entry['width'], entry['height']
 
     def stats(self):
         cls_boxes = []
