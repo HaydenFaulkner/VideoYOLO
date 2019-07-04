@@ -50,7 +50,7 @@ class ImageNetDetection(VisionDataset):
         self._items = self._load_items(splits)
 
     def __str__(self):
-        return '\n\n' + self.__class__.__name__ + '\n' + self.stats() + '\n'
+        return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
 
     @property
     def classes(self):
@@ -179,6 +179,7 @@ class ImageNetDetection(VisionDataset):
         return good_ids, str_
 
     def stats(self):
+        cls_boxes = []
         n_samples = len(self._items)
         n_boxes = [0]*len(self.classes)
         for idx in tqdm(range(len(self._items))):
@@ -192,9 +193,10 @@ class ImageNetDetection(VisionDataset):
         out_str += '-'*45 + '\n'
         for i in range(len(n_boxes)):
             out_str += '{0: <3} {1: <10} {2: <25} {3}\n'.format(i, self.wn_classes[i], self.classes[i], n_boxes[i])
+            cls_boxes.append([i, self.wn_classes[i], self.classes[i], n_boxes[i]])
         out_str += '-'*45 + '\n'
 
-        return out_str
+        return out_str, cls_boxes
 
 
 if __name__ == '__main__':

@@ -57,7 +57,7 @@ class VOCDetection(VisionDataset):
         self._label_cache = self._preload_labels() if preload_label else None
 
     def __str__(self):
-        return '\n\n' + self.__class__.__name__ + '\n' + self.stats() + '\n'
+        return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
 
     @property
     def classes(self):
@@ -147,6 +147,7 @@ class VOCDetection(VisionDataset):
         return [self._load_label(idx) for idx in range(len(self))]
 
     def stats(self):
+        cls_boxes = []
         n_samples = len(self._label_cache)
         n_boxes = [0] * len(self.classes)
         for label in self._label_cache:
@@ -160,9 +161,10 @@ class VOCDetection(VisionDataset):
         out_str += '-'*35 + '\n'
         for i in range(len(n_boxes)):
             out_str += '{0: <3} {1: <10} {2: <15} {3}\n'.format(i, self.wn_classes[i], self.classes[i], n_boxes[i])
+            cls_boxes.append([i, self.wn_classes[i], self.classes[i], n_boxes[i]])
         out_str += '-'*35 + '\n'
 
-        return out_str
+        return out_str, cls_boxes
 
 
 if __name__ == '__main__':
