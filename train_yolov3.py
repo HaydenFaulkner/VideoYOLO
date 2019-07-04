@@ -246,7 +246,7 @@ def resume(net, async_net, args):
         files = [file for file in files if '_0' in file]
         files.sort()
         resume_file = files[-1]
-        resume_epoch = int(resume_file[resume_file.find('_0') + 1:resume_file.find('_0') + 5])
+        args.start_epoch = int(resume_file[:-7].split('_')[-1]) + 1
 
         net.load_parameters(os.path.join(args.resume.strip(), resume_file))
         async_net.load_parameters(os.path.join(args.resume.strip(), resume_file))
