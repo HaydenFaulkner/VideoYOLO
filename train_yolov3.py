@@ -53,7 +53,8 @@ def parse_args():
                         'For example, you can resume from ./yolo3_xxx_0123.params')
     parser.add_argument('--start-epoch', type=int, default=0,
                         help='Starting epoch for resuming, default is 0 for new training.'
-                        'You can specify it to 100 for example to start from 100 epoch.')
+                        'You can specify it to 100 for example to start from 100 epoch.'
+                             'Set to -1 if using resume as a directory and resume from auto found latest epoch')
     parser.add_argument('--lr', type=float, default=0.001,
                         help='Learning rate, default is 0.001')
     parser.add_argument('--lr-mode', type=str, default='step',
@@ -64,9 +65,9 @@ def parse_args():
                         help='interval for periodic learning rate decays. default is 0 to disable.')
     parser.add_argument('--lr-decay-epoch', type=str, default='160,180',
                         help='epochs at which learning rate decays. default is 160,180.')
-    parser.add_argument('--warmup-lr', type=float, default=0.0001,
+    parser.add_argument('--warmup-lr', type=float, default=0.0,
                         help='starting warmup learning rate. default is 0.0.')
-    parser.add_argument('--warmup-epochs', type=int, default=3,
+    parser.add_argument('--warmup-epochs', type=int, default=0,
                         help='number of warmup epochs.')
     parser.add_argument('--momentum', type=float, default=0.9,
                         help='SGD momentum, default is 0.9')
@@ -76,8 +77,9 @@ def parse_args():
                         help='Logging mini-batch interval. Default is 100.')
     parser.add_argument('--save-prefix', type=str, default='XXXX',
                         help='Saving parameter prefix')
-    parser.add_argument('--save-interval', type=int, default=10,
-                        help='Saving parameters epoch interval, best model will always be saved.')
+    parser.add_argument('--save-interval', type=int, default=-10,
+                        help='Saving parameters epoch interval, best model will always be saved. '
+                             'Can enter a negative int to save every 1 epochs, but delete after reach -save_interval')
     parser.add_argument('--val-interval', type=int, default=1,
                         help='Epoch interval for validation, increase the number will reduce the '
                              'training time if validation is slow.')
@@ -220,8 +222,37 @@ def save_params(net, best_map, current_map, epoch, save_interval, prefix):
         net.save_parameters('{:s}_best.params'.format(prefix, epoch, current_map))
         with open(prefix+'_best_map.log', 'a') as f:
             f.write('{:04d}:\t{:.4f}\n'.format(epoch, current_map))
-    if save_interval and epoch % save_interval == 0:
-        net.save_parameters('{:s}_{:04d}_{:.4f}.params'.format(prefix, epoch, current_map))
+
+    if save_interval > 0 and epoch % save_interval == 0:  # save only these epochs
+        # net.save_parameters('{:s}_{:04d}_{:.4f}.params'.format(prefix, epoch, current_map))
+        net.save_parameters('{:s}_{:04d}.params'.format(prefix, epoch))
+
+    if save_interval < 0:  # save every epoch, but delete nonwanted when reach a desired interval...
+        # good for if training stopped within intervals and dont want to waste space with save_interval = 1
+        net.save_parameters('{:s}_{:04d}.params'.format(prefix, epoch))
+
+        if epoch % -save_interval == 0:  # delete the ones we don't want
+            st = epoch + save_interval + 1
+            for d in range(max(0, st), epoch):
+                if os.path.exists('{:s}_{:04d}.params'.format(prefix, d)):
+                    os.remove('{:s}_{:04d}.params'.format(prefix, d))
+
+
+def resume(net, async_net, args):
+    """Resume model, can find the latest automatically"""
+    # Requires the first digit of epoch in save string is a 0, otherwise may need to reimplement with .split()
+    if args.start_epoch == -1:
+        files = os.listdir(args.resume.strip())
+        files = [file for file in files if '_0' in file]
+        files.sort()
+        resume_file = files[-1]
+        resume_epoch = int(resume_file[resume_file.find('_0') + 1:resume_file.find('_0') + 5])
+
+        net.load_parameters(os.path.join(args.resume.strip(), resume_file))
+        async_net.load_parameters(os.path.join(args.resume.strip(), resume_file))
+    else:
+        net.load_parameters(args.resume.strip())
+        async_net.load_parameters(args.resume.strip())
 
 
 def validate(net, val_data, ctx, eval_metric):
@@ -433,8 +464,7 @@ if __name__ == '__main__':
         async_net = net
 
     if args.resume.strip():
-        net.load_parameters(args.resume.strip())
-        async_net.load_parameters(args.resume.strip())
+        resume(net, async_net, args)
     else:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
