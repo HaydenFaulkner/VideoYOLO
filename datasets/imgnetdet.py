@@ -181,7 +181,7 @@ class ImageNetDetection(VisionDataset):
     def stats(self):
         n_samples = len(self._items)
         n_boxes = [0]*len(self.classes)
-        for idx in range(len(self._items)):
+        for idx in tqdm(range(len(self._items))):
             for box in self._load_label(idx):
                 n_boxes[int(box[4])] += 1
 
@@ -199,9 +199,9 @@ class ImageNetDetection(VisionDataset):
 
 if __name__ == '__main__':
     train_dataset = ImageNetDetection(
-        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['train'], allow_empty=True)
+        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['train'], allow_empty=False)
     val_dataset = ImageNetDetection(
-        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['val'], allow_empty=True)
+        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['val'], allow_empty=False)
 
     print(train_dataset)
     print(val_dataset)
