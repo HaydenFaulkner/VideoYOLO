@@ -199,9 +199,9 @@ class ImageNetDetection(VisionDataset):
 
 if __name__ == '__main__':
     train_dataset = ImageNetDetection(
-        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['train'], allow_empty=False)
+        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['train'], allow_empty=True)
     val_dataset = ImageNetDetection(
-        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['val'], allow_empty=False)
+        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['val'], allow_empty=True)
 
     print(train_dataset)
     print(val_dataset)

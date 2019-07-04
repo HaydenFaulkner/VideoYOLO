@@ -56,7 +56,7 @@ class ImageNetVidDetection(VisionDataset):
     @property
     def classes(self):
         """Category names."""
-        names = os.path.join('./datasets/names/imagenetdet.names')
+        names = os.path.join('./datasets/names/imagenetvid.names')
         with open(names, 'r') as f:
             classes = [line.strip() for line in f.readlines()]
         return classes
@@ -64,7 +64,7 @@ class ImageNetVidDetection(VisionDataset):
     @property
     def wn_classes(self):
         """Category names."""
-        names = os.path.join('./datasets/names/imagenetdet_wn.names')
+        names = os.path.join('./datasets/names/imagenetvid_wn.names')
         with open(names, 'r') as f:
             wn_classes = [line.strip() for line in f.readlines()]
         return wn_classes
@@ -142,7 +142,7 @@ class ImageNetVidDetection(VisionDataset):
             xmax = float(xml_box.find('xmax').text)
             ymax = float(xml_box.find('ymax').text)
             try:
-                self._validate_label(xmin, ymin, xmax, ymax, width, height)
+                xmin, ymin, xmax, ymax = self._validate_label(xmin, ymin, xmax, ymax, width, height, anno_path)
             except AssertionError as e:
                 raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
             label.append([xmin, ymin, xmax, ymax, cls_id])
@@ -152,12 +152,28 @@ class ImageNetVidDetection(VisionDataset):
         return np.array(label)
 
     @staticmethod
-    def _validate_label(xmin, ymin, xmax, ymax, width, height):
+    def _validate_label(xmin, ymin, xmax, ymax, width, height, anno_path):
         """Validate labels."""
+        if not 0 <= xmin < width or not 0 <= ymin < height or not xmin < xmax <= width or not ymin < ymax <= height:
+            print("box: {} {} {} {} incompatable with img size {}x{} in {}.".format(xmin,
+                                                                                    ymin,
+                                                                                    xmax,
+                                                                                    ymax,
+                                                                                    width,
+                                                                                    height,
+                                                                                    anno_path))
+
+            xmin = min(max(0, xmin), width - 1)
+            ymin = min(max(0, ymin), height - 1)
+            xmax = min(max(xmin + 1, xmax), width)
+            ymax = min(max(ymin + 1, ymax), height)
+
+            print("new box: {} {} {} {}.".format(xmin, ymin, xmax, ymax))
         assert 0 <= xmin < width, "xmin must in [0, {}), given {}".format(width, xmin)
         assert 0 <= ymin < height, "ymin must in [0, {}), given {}".format(height, ymin)
         assert xmin < xmax <= width, "xmax must in (xmin, {}], given {}".format(width, xmax)
         assert ymin < ymax <= height, "ymax must in (ymin, {}], given {}".format(height, ymax)
+        return xmin, ymin, xmax, ymax
 
     @staticmethod
     def _validate_class_names(class_list):
@@ -188,9 +204,9 @@ class ImageNetVidDetection(VisionDataset):
     def stats(self):
         n_samples = len(self._items)
         n_boxes = [0]*len(self.classes)
-        for idx in range(len(self._items)):
+        for idx in tqdm(range(len(self._items))):
             for box in self._load_label(idx):
-                n_boxes[box[4]] += 1
+                n_boxes[int(box[4])] += 1
 
         out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n'.format('Split:', ', '.join(self._splits),
                                                                                     'Images:', n_samples,
