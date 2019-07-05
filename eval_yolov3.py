@@ -11,9 +11,13 @@ import mxnet as mx
 from tqdm import tqdm
 from mxnet import nd
 from mxnet import gluon
+from mxnet.gluon.nn import BatchNorm
 import gluoncv as gcv
 from gluoncv.data.batchify import Tuple, Stack, Pad
 from gluoncv.data.transforms.presets.yolo import YOLO3DefaultValTransform
+from gluoncv.model_zoo.yolo.yolo3 import get_yolov3
+from gluoncv.model_zoo.yolo.darknet import darknet53
+from gluoncv.model_zoo import get_model
 from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
 # from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
 from metrics.mscoco import COCODetectionMetric
@@ -50,6 +54,51 @@ def parse_args():
     return args
 
 
+def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
+                    norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+    """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
+    https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
+
+    Parameters
+    ----------
+    classes : iterable of str
+        Names of custom foreground classes. `len(classes)` is the number of foreground classes.
+    dataset_name : str
+        The name of the dataset, used for model save name
+    transfer : str or None
+        If not `None`, will try to reuse pre-trained weights from yolo networks trained on other
+        datasets.
+    pretrained_base : boolean
+        Whether fetch and load pretrained weights for base network.
+    norm_layer : object
+        Normalization layer used (default: :class:`mxnet.gluon.nn.BatchNorm`)
+        Can be :class:`mxnet.gluon.nn.BatchNorm` or :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    norm_kwargs : dict
+        Additional `norm_layer` arguments, for example `num_devices=4`
+        for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    Returns
+    -------
+    mxnet.gluon.HybridBlock
+        Fully hybrid yolo3 network.
+    """
+    if transfer is None:
+        base_net = darknet53(
+            pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+        stages = [base_net.features[:15], base_net.features[15:24], base_net.features[24:]]
+        anchors = [
+            [10, 13, 16, 30, 33, 23],
+            [30, 61, 62, 45, 59, 119],
+            [116, 90, 156, 198, 373, 326]]
+        strides = [8, 16, 32]
+        net = get_yolov3(
+            'darknet53', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
+            norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+    else:
+        net = get_model('yolo3_darknet53_' + str(transfer), pretrained=True, **kwargs)
+        reuse_classes = [x for x in classes if x in net.classes]
+        net.reset_class(classes, reuse_weights=reuse_classes)
+    return net
+
 def get_dataset(dataset, metric, data_shape):
     if dataset.lower() == 'voc':
         val_dataset = VOCDetection(root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'), splits=[(2007, 'test')])
@@ -58,17 +107,17 @@ def get_dataset(dataset, metric, data_shape):
                                     splits='instances_val2017', skip_empty=False)
     elif dataset.lower() == 'det':
         val_dataset = ImageNetDetection(root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
-                                        splits=['val'], allow_empty=args.allow_empty)
+                                        splits=['val'], allow_empty=False)
     elif dataset.lower() == 'vid':
         val_dataset = ImageNetVidDetection(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-                                           splits=['val'], allow_empty=args.allow_empty, frames=True)
+                                           splits=['val'], allow_empty=False, frames=True)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))
 
     if metric == 'voc':
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     elif metric == 'coco':
-        val_metric = COCODetectionMetric(val_dataset, args.save_prefix + '_eval', cleanup=True,
+        val_metric = COCODetectionMetric(val_dataset, os.path.join(args.save_prefix, 'eval'), cleanup=True,
                                          data_shape=(data_shape, data_shape))
     else:
         raise NotImplementedError('Mertic: {} not implemented.'.format(metric))
@@ -120,27 +169,29 @@ def validate(net, val_data, ctx, classes, size, metric):
 if __name__ == '__main__':
     args = parse_args()
 
-    # training contexts
+    # testing contexts
     ctx = [mx.gpu(int(i)) for i in args.gpus.split(',') if i.strip()]
     ctx = ctx if ctx else [mx.cpu()]
+
+    # testing dataset
+    val_dataset, val_metric = get_dataset(args.dataset, args.metric, args.data_shape)
 
     # network
     net_name = '_'.join((args.algorithm, args.network, args.dataset))
     os.makedirs(os.path.join('models', args.save_prefix), exist_ok=True)
     args.save_prefix = os.path.join('models', args.save_prefix, net_name)
     if args.pretrained.lower() in ['true', '1', 'yes', 't']:
-        net = gcv.model_zoo.get_model(net_name, root='models', pretrained=True)
+        net = gcv.model_zoo.get_model(net_name, root='models', pretrained=True, classes=val_dataset.classes)
     else:
-        net = gcv.model_zoo.get_model(net_name, root='models', pretrained=False)
+        # net = gcv.model_zoo.get_model(net_name, root='models', pretrained=False, classes=val_dataset.classes)
+        net = yolo3_darknet53(val_dataset.classes, args.dataset, root='models', pretrained_base=True)
         net.load_parameters(args.pretrained.strip())
 
-    # training data
-    val_dataset, val_metric = get_dataset(args.dataset, args.metric, args.data_shape)
+    # testing dataloader
     val_data = get_dataloader(
         val_dataset, args.data_shape, args.batch_size, args.num_workers)
-    classes = val_dataset.classes  # class names
 
     # training
-    names, values = validate(net, val_data, ctx, classes, len(val_dataset), val_metric)
+    names, values = validate(net, val_data, ctx, val_dataset.classes, len(val_dataset), val_metric)
     for k, v in zip(names, values):
         print(k, v)

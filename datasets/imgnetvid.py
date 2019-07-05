@@ -1,6 +1,7 @@
 """ImageNet VID object detection dataset."""
 from __future__ import absolute_import
 from __future__ import division
+import json
 import os
 from tqdm import tqdm
 import warnings
@@ -45,6 +46,7 @@ class ImageNetVidDetection(VisionDataset):
         self._splits = splits
         self._frames = frames
         self._allow_empty = allow_empty
+        self._coco_path = os.path.join(self._root, 'jsons', '_'.join([s for s in self._splits])+'.json')
         self._anno_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'VID', '{}', '{}.JPEG')
         self.index_map = index_map or dict(zip(self.wn_classes, range(self.num_class)))
@@ -68,6 +70,10 @@ class ImageNetVidDetection(VisionDataset):
         with open(names, 'r') as f:
             wn_classes = [line.strip() for line in f.readlines()]
         return wn_classes
+
+    @property
+    def image_ids(self):
+        return [int(img_id[2][-15:-7])+int(img_id[2][-6:]) for img_id in self._items]
 
     def __len__(self):
         return len(self._items)
@@ -201,6 +207,12 @@ class ImageNetVidDetection(VisionDataset):
 
         return good_ids, str_
 
+    def image_size(self, id):
+        if len(self._im_shapes) == 0:
+            for idx in tqdm(range(len(self._items)), desc="populating im_shapes"):
+                self._load_label(idx, items=self._items)
+        return self._im_shapes[self.image_ids.index(id)]
+
     def stats(self):
         cls_boxes = []
         n_samples = len(self._items)
@@ -220,6 +232,44 @@ class ImageNetVidDetection(VisionDataset):
         out_str += '-'*35 + '\n'
 
         return out_str, cls_boxes
+
+    def build_coco_json(self):
+
+        os.makedirs(os.path.dirname(self._coco_path), exist_ok=True)
+
+        # handle categories
+        categories = list()
+        for ci, (cls, wn_cls) in enumerate(zip(self.classes, self.wn_classes)):
+            categories.append({'id': ci, 'name': cls, 'wnid': wn_cls})
+
+        # handle images and boxes
+        images = list()
+        done_imgs = set()
+        annotations = list()
+        for idx in range(len(self)):
+            img_id = self._items[idx]
+            filename = self._anno_path.format(*img_id)
+            width, height = self._im_shapes[idx]
+
+            img_id = self.image_ids[idx]
+            if img_id not in done_imgs:
+                done_imgs.add(img_id)
+                images.append({'file_name': filename,
+                               'width': int(width),
+                               'height': int(height),
+                               'id': img_id})
+
+            for box in self._load_label(idx):
+                xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
+                annotations.append({'image_id': img_id,
+                                    'id': len(annotations),
+                                    'bbox': xywh,
+                                    'area': int(xywh[2] * xywh[3]),
+                                    'category_id': int(box[4]),
+                                    'iscrowd': 0})
+
+        with open(self._coco_path, 'w') as f:
+            json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
 
 
 if __name__ == '__main__':
