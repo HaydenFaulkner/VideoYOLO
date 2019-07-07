@@ -100,6 +100,8 @@ def parse_args():
                         help='Disable mixup training if enabled in the last N epochs.')
     parser.add_argument('--label-smooth', action='store_true', help='Use label smoothing.')
     parser.add_argument('--allow_empty', action='store_true', help='Allow samples that contain 0 boxes as [-1s * 5].')
+    parser.add_argument('--percent', type=float, default=1,
+                        help='Percent of the full dataset to take, is NOT randomly sampled: range(0, len(set), 1/perc)')
     args = parser.parse_args()
     return args
 
@@ -180,10 +182,10 @@ def get_dataset(dataset, args):
     elif dataset.lower() == 'vid':
         train_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=['train'], allow_empty=args.allow_empty, frames=True)
+            splits=['train'], allow_empty=args.allow_empty, frames=True, percent=args.percent)
         val_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=['val'], allow_empty=args.allow_empty, frames=True)
+            splits=['val'], allow_empty=args.allow_empty, frames=True, percent=args.percent)
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))

@@ -38,13 +38,14 @@ class ImageNetVidDetection(VisionDataset):
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'vid'),
                  splits=('train',), allow_empty=False, frames=True,
-                 transform=None, index_map=None):
+                 transform=None, index_map=None, percent=1):
         super(ImageNetVidDetection, self).__init__(root)
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
         self._transform = transform
         self._splits = splits
         self._frames = frames
+        self._percent = percent
         self._allow_empty = allow_empty
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([s for s in self._splits])+'.json')
         self._anno_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
@@ -114,6 +115,9 @@ class ImageNetVidDetection(VisionDataset):
                     f.write(str_)
 
             ids += ids_
+
+        if self._percent < 1:
+            ids = [ids[i] for i in range(0, len(ids), int(1/self._percent))]
 
         if not self._frames:
             raise NotImplementedError
