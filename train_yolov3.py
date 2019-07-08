@@ -246,6 +246,7 @@ def resume(net, async_net, args):
     if args.start_epoch == -1:
         files = os.listdir(args.resume.strip())
         files = [file for file in files if '_0' in file]
+        files = [file for file in files if '.params' in file]
         files.sort()
         resume_file = files[-1]
         args.start_epoch = int(resume_file[:-7].split('_')[-1]) + 1
