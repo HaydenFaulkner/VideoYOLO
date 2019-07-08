@@ -59,7 +59,7 @@ class COCODetectionMetric(mx.metric.EvalMetric):
             t = datetime.datetime.now().strftime('_%Y_%m_%d_%H_%M_%S')
         else:
             t = ''
-        self._filename = os.path.abspath(os.path.expanduser(save_prefix) + t + '.json')
+        self._filename = os.path.abspath(os.path.expanduser(os.path.join('models', save_prefix)) + t + '.json')
         try:
             f = open(self._filename, 'w')
         except IOError as e:
@@ -108,6 +108,7 @@ class COCODetectionMetric(mx.metric.EvalMetric):
         gt = self.dataset.coco
         from pycocotools.cocoeval import COCOeval
         coco_eval = COCOeval(gt, pred, 'bbox')
+        # coco_eval.params.recThrs = np.linspace(.0, 1.00, np.round((1.00 - .0) / .1) + 1, endpoint=True) ## tried to get the same as voc but still not same
         coco_eval.evaluate()
         coco_eval.accumulate()
         self._coco_eval = coco_eval
