@@ -182,10 +182,10 @@ def get_dataset(dataset, args):
     elif dataset.lower() == 'vid':
         train_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=['train'], allow_empty=args.allow_empty, frames=True, percent=args.percent)
+            splits=[(2017, 'train')], allow_empty=args.allow_empty, frames=True, percent=args.percent)
         val_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=['val'], allow_empty=args.allow_empty, frames=True, percent=args.percent)
+            splits=[(2017, 'val')], allow_empty=args.allow_empty, frames=True, percent=args.percent)
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))

@@ -37,7 +37,7 @@ class ImageNetVidDetection(VisionDataset):
     """
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'vid'),
-                 splits=('train',), allow_empty=False, frames=True,
+                 splits=((2017, 'train'),), allow_empty=False, frames=True,
                  transform=None, index_map=None, percent=1):
         super(ImageNetVidDetection, self).__init__(root)
         self._im_shapes = {}
@@ -47,7 +47,7 @@ class ImageNetVidDetection(VisionDataset):
         self._frames = frames
         self._percent = percent
         self._allow_empty = allow_empty
-        self._coco_path = os.path.join(self._root, 'jsons', '_'.join([s for s in self._splits])+'.json')
+        self._coco_path = os.path.join(self._root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
         self._anno_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'VID', '{}', '{}.JPEG')
         self.index_map = index_map or dict(zip(self.wn_classes, range(self.num_class)))
@@ -94,7 +94,7 @@ class ImageNetVidDetection(VisionDataset):
     def _load_items(self, splits):
         """Load individual image indices from splits."""
         ids = []
-        for split in splits:
+        for year, split in splits:
             root = self._root  # os.path.join(self._root, 'ILSVRC')
             ne_lf = os.path.join(root, 'ImageSets', 'VID', split + '_nonempty.txt')
             lf = os.path.join(root, 'ImageSets', 'VID', split + '.txt')
@@ -113,6 +113,9 @@ class ImageNetVidDetection(VisionDataset):
                         f.write(l[2]+"\n")
                 with open(os.path.join(root, 'ImageSets', 'VID', split + '_nonempty_stats.txt'), 'a') as f:
                     f.write(str_)
+
+            if year == 2015:
+                ids_ = [id for id in ids_ if 'ILSVRC2015' in id[-1]]
 
             ids += ids_
 
@@ -225,7 +228,7 @@ class ImageNetVidDetection(VisionDataset):
             for box in self._load_label(idx):
                 n_boxes[int(box[4])] += 1
 
-        out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n'.format('Split:', ', '.join(self._splits),
+        out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n'.format('Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
                                                                                     'Images:', n_samples,
                                                                                     'Boxes:', sum(n_boxes),
                                                                                     'Classes:', len(self.classes))
@@ -277,10 +280,10 @@ class ImageNetVidDetection(VisionDataset):
 
 
 if __name__ == '__main__':
-    train_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=['train'], allow_empty=False, frames=True)
+    # train_dataset = ImageNetVidDetection(
+    #     root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'train')], allow_empty=False, frames=True)
     val_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=['val'], allow_empty=False, frames=True)
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'val')], allow_empty=True, frames=True)
 
-    print(train_dataset)
+    # print(train_dataset)
     print(val_dataset)
