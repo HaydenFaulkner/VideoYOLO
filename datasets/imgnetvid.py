@@ -425,9 +425,9 @@ def generate_motion_ious(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
 
 if __name__ == '__main__':
     train_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'train')], allow_empty=False, frames=True)
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'train')], allow_empty=False, frames=True)
     val_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'val')], allow_empty=True, frames=True)
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'val')], allow_empty=False, frames=True)
 
     # val_dataset._load_motion_ious()
     print(train_dataset)
