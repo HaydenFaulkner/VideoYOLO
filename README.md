@@ -26,17 +26,19 @@ We support training and testing with the following datasets:
 | ImageNetDET | `train_nonempty` |          333474 |         478806 |        200 |
 | ImageNetDET |  `val_nonempty`  |           18680 |          55502 |        200 |
 |             |                  |                 |                |            |
-| ImageNetVID |    `train15`     |   1122397(3862) | 1731913 (7911) |         30 |
+| ImageNetVID |    `train15`     |  1122397 (3862) | 1731913 (7911) |         30 |
 | ImageNetVID |      `val15`     |    176126 (555) |  273505 (1309) |         30 |
 | ImageNetVID |     `test15`     |    315176 (937) |             NA |         30 |
-| ImageNetVID |`train15_nonempty`|         1086132 | 1731913 (7911) |         30 |
-| ImageNetVID | `val15_nonempty` |          172080 |  273505 (1309) |         30 |
+| ImageNetVID |`train15_nonempty`   1086132 (3862) | 1731913 (7911) |         30 |
+| ImageNetVID | `val15_nonempty` |    172080 (555) |  273505 (1309) |         30 |
 |             |                  |                 |                |            |
 | ImageNetVID |    `train17`     |  1181113 (4000) | 1859625 (8394) |         30 |
 | ImageNetVID |      `val17`     |   512360 (1314) |  795433 (3181) |         30 |
 | ImageNetVID |     `test17`     |   765631 (2000) |             NA |         30 |
-| ImageNetVID |`train17_nonempty`|         1142945 | 1859625 (8394) |         30 |
-| ImageNetVID | `val17_nonempty` |          492183 |  795433 (3181) |         30 |
+| ImageNetVID |`train17_nonempty`|  1142945 (4000) | 1859625 (8394) |         30 |
+| ImageNetVID | `val17_nonempty` |   492183 (1314) |  795433 (3181) |         30 |
+| ImageNetVID | `train17_ne_0.04`|    47481 (4000) |   77018 (8187) |         30 |
+| ImageNetVID |  `val17_ne_0.04` |    20353 (1314) |   32718 (3092) |         30 |
 
 
 See [datasets](/datasets/) for downloading and organisation information...

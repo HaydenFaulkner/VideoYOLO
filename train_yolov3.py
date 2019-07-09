@@ -99,9 +99,12 @@ def parse_args():
     parser.add_argument('--no-mixup-epochs', type=int, default=20,
                         help='Disable mixup training if enabled in the last N epochs.')
     parser.add_argument('--label-smooth', action='store_true', help='Use label smoothing.')
-    parser.add_argument('--allow_empty', action='store_true', help='Allow samples that contain 0 boxes as [-1s * 5].')
-    parser.add_argument('--percent', type=float, default=1,
-                        help='Percent of the full dataset to take, is NOT randomly sampled: range(0, len(set), 1/perc)')
+    parser.add_argument('--allow_empty', action='store_true', help='Allow samples that contain 0 boxes as [-1s * 6].')
+    parser.add_argument('--frames', type=float, default=1,
+                        help='Based per video - and is NOT randomly sampled:'
+                             'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
+                             'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
+                             'If =1: Every sample used - full dataset')
     args = parser.parse_args()
     return args
 
@@ -182,10 +185,10 @@ def get_dataset(dataset, args):
     elif dataset.lower() == 'vid':
         train_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=[(2017, 'train')], allow_empty=args.allow_empty, frames=True, percent=args.percent)
+            splits=[(2017, 'train')], allow_empty=args.allow_empty, videos=False, frames=args.frames)
         val_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=[(2017, 'val')], allow_empty=args.allow_empty, frames=True, percent=args.percent)
+            splits=[(2017, 'val')], allow_empty=args.allow_empty, videos=False, frames=args.frames)
         val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))

@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 from __future__ import division
 import json
+import math
 import os
 from tqdm import tqdm
 import warnings
@@ -37,16 +38,16 @@ class ImageNetVidDetection(VisionDataset):
     """
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'vid'),
-                 splits=((2017, 'train'),), allow_empty=False, frames=True,
-                 transform=None, index_map=None, percent=1):
+                 splits=((2017, 'train'),), allow_empty=False, videos=False,
+                 transform=None, index_map=None, frames=1):
         super(ImageNetVidDetection, self).__init__(root)
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
         self._transform = transform
         assert len(splits) == 1, print('Can only take one split currently as otherwise conflicting image ids')
         self._splits = splits
+        self._videos = videos
         self._frames = frames
-        self._percent = percent
         self._allow_empty = allow_empty
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
         self._anno_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
@@ -75,10 +76,11 @@ class ImageNetVidDetection(VisionDataset):
 
     @property
     def image_ids(self):
-        if self._frames:
-            return [sample[0] for sample in self._items]
+        if self._videos:
+            return [sample[3].split('/')[0] for sample in self._items] # todo check which we want?
+            # return [id for id in [sample[4] for sample in self._items]] # todo check which we want?
         else:
-            return [sample[3].split('/')[0] for sample in self._items]
+            return [sample[0] for sample in self._items]
 
     @property
     def motion_ious(self):
@@ -90,7 +92,7 @@ class ImageNetVidDetection(VisionDataset):
         return len(self._items)
 
     def __getitem__(self, idx):
-        if self._frames:
+        if not self._videos:
             img_id = self._items[idx]
             img_path = self._image_path.format(*img_id[1:])
             label = self._load_label(idx)[:, :-1] # remove track id
@@ -147,35 +149,51 @@ class ImageNetVidDetection(VisionDataset):
 
             ids += ids_
 
-        if self._frames and self._percent < 1:  # keep only a percent of the dataset
-            ids = [ids[i] for i in range(0, len(ids), int(1/self._percent))]
+        if self._frames == 1:
+            return ids
 
-        if not self._frames:
-            vid_ids = []
-            past_vid_id = ''
-            for id in ids:
-                vid_id, frame = id[3].split('/')
-                if vid_id != past_vid_id:
-                    if past_vid_id:
-                        if self._percent < 1:  # cut down per video
-                            frames = [frames[i] for i in range(0, len(frames), int(1 / self._percent))]
-                            sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(1 / self._percent))]
-                        vid_ids.append((past_id[1], past_id[2], past_vid_id, frames, sample_ids))
-                    past_id = id
-                    frames = [frame]
-                    sample_ids = [id[0]]
-                    past_vid_id = vid_id
-                else:
-                    frames.append(frame)
-                    sample_ids.append(id[0])
+        # We only want a subset of each video, so need to find the videos
+        vid_ids = []
+        past_vid_id = ''
+        for id in ids:
+            vid_id = id[3][:-7]
+            frame = id[3][-6:]
+            if vid_id != past_vid_id:
+                if past_vid_id:
+                    if self._frames < 1:  # cut down per video
+                        frames = [frames[i] for i in range(0, len(frames), int(1/self._frames))]
+                        sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(1/self._frames))]
+                    elif self._frames > 1:  # cut down per video
+                        frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
+                        sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(math.ceil(len(frames)/self._frames)))]
 
-            if self._percent < 1:
-                frames = [frames[i] for i in range(0, len(frames), int(1 / self._percent))]
-                sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(1 / self._percent))]
-            vid_ids.append((id[1], id[2], vid_id, frames, sample_ids))
-            ids = vid_ids
+                    vid_ids.append((past_id[1], past_id[2], past_vid_id, frames, sample_ids))
+                past_id = id
+                frames = [frame]
+                sample_ids = [id[0]]
+                past_vid_id = vid_id
+            else:
+                frames.append(frame)
+                sample_ids.append(id[0])
 
-        return ids
+        if self._frames < 1: # cut down per video
+            frames = [frames[i] for i in range(0, len(frames), int(1 / self._frames))]
+            sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(1 / self._frames))]
+        elif self._frames > 1:  # cut down per video
+            frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
+            sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(math.ceil(len(frames)/self._frames)))]
+
+        vid_ids.append((id[1], id[2], vid_id, frames, sample_ids))
+
+        if self._videos:
+            return vid_ids
+        else:
+            # reconstruct the ids from vid ids
+            frame_ids = []
+            for vid_id in vid_ids:
+                for frame_name, frame_id in zip(vid_id[3], vid_id[4]):
+                    frame_ids.append((frame_id, vid_id[0], vid_id[1], vid_id[2]+'/'+frame_name))
+            return frame_ids
 
     def _load_label(self, idx, items=None, frame=None):
         """Parse xml file and return labels."""
@@ -185,7 +203,7 @@ class ImageNetVidDetection(VisionDataset):
             img_id = self._items[idx]
 
         anno_path = self._anno_path.format(*img_id[1:])
-        if not self._frames:
+        if self._videos:
             assert frame is not None
             img_id = (img_id[0], img_id[1], img_id[2]+'/'+frame)
             anno_path = self._anno_path.format(*img_id)
@@ -291,17 +309,30 @@ class ImageNetVidDetection(VisionDataset):
         cls_boxes = []
         n_samples = len(self._items)
         n_boxes = [0]*len(self.classes)
+        n_instances = [0]*len(self.classes)
+        past_vid_id = ''
         for idx in tqdm(range(len(self._items))):
+            vid_id = self._items[idx][3][:-7]
+            frame = self._items[idx][3][-6:]
+            if vid_id != past_vid_id:
+                vid_instances = []
+                past_vid_id = vid_id
             for box in self._load_label(idx):
                 n_boxes[int(box[4])] += 1
+                if int(box[5]) not in vid_instances:
+                    vid_instances.append(int(box[5]))
+                    n_instances[int(box[4])] += 1
 
-        out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n'.format('Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
-                                                                                    'Images:', n_samples,
-                                                                                    'Boxes:', sum(n_boxes),
-                                                                                    'Classes:', len(self.classes))
+        out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n{8: <10} {9}\n'.format(
+            'Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
+            'Images:', n_samples,
+            'Boxes:', sum(n_boxes),
+            'Instances:', sum(n_instances),
+            'Classes:', len(self.classes))
         out_str += '-'*35 + '\n'
         for i in range(len(n_boxes)):
-            out_str += '{0: <3} {1: <10} {2: <15} {3}\n'.format(i, self.wn_classes[i], self.classes[i], n_boxes[i])
+            out_str += '{0: <3} {1: <10} {2: <15} {3} {4}\n'.format(i, self.wn_classes[i], self.classes[i],
+                                                                    n_boxes[i], n_instances[i])
             cls_boxes.append([i, self.wn_classes[i], self.classes[i], n_boxes[i]])
         out_str += '-'*35 + '\n'
 
@@ -384,7 +415,7 @@ def generate_motion_ious(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
     :param split: train or val, no year necessary
     """
 
-    dataset = ImageNetVidDetection(root=root, splits=[(2017, split)], allow_empty=True, frames=False, percent=1)
+    dataset = ImageNetVidDetection(root=root, splits=[(2017, split)], allow_empty=True, videos=True, percent=1)
 
     all_ious = []
     all_ious = {} # using dict for better removing of elements on loading based on sample_id
@@ -425,10 +456,15 @@ def generate_motion_ious(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
 
 if __name__ == '__main__':
     train_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'train')], allow_empty=False, frames=True)
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'train')],
+        allow_empty=False, videos=False, frames=0.04)
     val_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'val')], allow_empty=False, frames=True)
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'val')],
+        allow_empty=False, videos=False, frames=0.04)
+    test_dataset = ImageNetVidDetection(
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'test')],
+        allow_empty=True, videos=False)
 
-    # val_dataset._load_motion_ious()
     print(train_dataset)
     print(val_dataset)
+    print(test_dataset)

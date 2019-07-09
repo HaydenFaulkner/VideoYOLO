@@ -112,7 +112,7 @@ def get_dataset(dataset, metric, data_shape):
                                         splits=['val'], allow_empty=False)
     elif dataset.lower() == 'vid':
         val_dataset = ImageNetVidDetection(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-                                           splits=[(2017, 'val')], allow_empty=False, frames=True, percent=0.04)
+                                           splits=[(2017, 'val')], allow_empty=False, videos=False, frames=25)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))
 
