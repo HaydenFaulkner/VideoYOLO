@@ -29,7 +29,7 @@ We support training and testing with the following datasets:
 | ImageNetVID |    `train15`     |  1122397 (3862) | 1731913 (7911) |         30 |
 | ImageNetVID |      `val15`     |    176126 (555) |  273505 (1309) |         30 |
 | ImageNetVID |     `test15`     |    315176 (937) |             NA |         30 |
-| ImageNetVID |`train15_nonempty`   1086132 (3862) | 1731913 (7911) |         30 |
+| ImageNetVID |`train15_nonempty`|  1086132 (3862) | 1731913 (7911) |         30 |
 | ImageNetVID | `val15_nonempty` |    172080 (555) |  273505 (1309) |         30 |
 |             |                  |                 |                |            |
 | ImageNetVID |    `train17`     |  1181113 (4000) | 1859625 (8394) |         30 |
