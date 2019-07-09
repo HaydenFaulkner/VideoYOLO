@@ -21,6 +21,7 @@ from gluoncv.model_zoo import get_model
 from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
 # from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
 from metrics.mscoco import COCODetectionMetric
+from metrics.imgnetvid import VIDDetectionMetric
 
 from datasets.pascalvoc import VOCDetection
 from datasets.mscoco import COCODetection
@@ -99,6 +100,7 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         net.reset_class(classes, reuse_weights=reuse_classes)
     return net
 
+
 def get_dataset(dataset, metric, data_shape):
     if dataset.lower() == 'voc':
         val_dataset = VOCDetection(root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'), splits=[(2007, 'test')])
@@ -110,7 +112,7 @@ def get_dataset(dataset, metric, data_shape):
                                         splits=['val'], allow_empty=False)
     elif dataset.lower() == 'vid':
         val_dataset = ImageNetVidDetection(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-                                           splits=['val'], allow_empty=False, frames=True)
+                                           splits=[(2017, 'val')], allow_empty=False, frames=True, percent=0.04)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))
 
@@ -119,6 +121,8 @@ def get_dataset(dataset, metric, data_shape):
     elif metric == 'coco':
         val_metric = COCODetectionMetric(val_dataset, os.path.join(args.save_prefix, 'eval'), cleanup=True,
                                          data_shape=(data_shape, data_shape))
+    elif metric == 'vid':
+        val_metric = VIDDetectionMetric(val_dataset, iou_thresh=0.5, data_shape=(data_shape, data_shape))
     else:
         raise NotImplementedError('Mertic: {} not implemented.'.format(metric))
     return val_dataset, val_metric
