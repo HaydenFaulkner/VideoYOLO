@@ -43,6 +43,7 @@ class ImageNetVidDetection(VisionDataset):
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
         self._transform = transform
+        assert len(splits) == 1, print('Can only take one split currently as otherwise conflicting image ids')
         self._splits = splits
         self._frames = frames
         self._percent = percent
@@ -74,7 +75,16 @@ class ImageNetVidDetection(VisionDataset):
 
     @property
     def image_ids(self):
-        return [int(img_id[2][-15:-7])+int(img_id[2][-6:]) for img_id in self._items]
+        if self._frames:
+            return [sample[0] for sample in self._items]
+        else:
+            return [sample[3].split('/')[0] for sample in self._items]
+
+    @property
+    def motion_ious(self):
+        ious = self._load_motion_ious()
+        motion_ious = np.array([v for k, v in ious.items() if int(k) in self.image_ids])
+        return motion_ious
 
     def __len__(self):
         return len(self._items)
@@ -82,20 +92,38 @@ class ImageNetVidDetection(VisionDataset):
     def __getitem__(self, idx):
         if self._frames:
             img_id = self._items[idx]
-            img_path = self._image_path.format(*img_id)
-            label = self._load_label(idx)
+            img_path = self._image_path.format(*img_id[1:])
+            label = self._load_label(idx)[:, :-1] # remove track id
             img = mx.image.imread(img_path, 1)
             if self._transform is not None:
                 return self._transform(img, label)
             return img, label
         else:
-            raise NotImplementedError
+            sample_id = self._items[idx]
+            vid = None
+            labels = None
+            for frame in sample_id[3]:
+                img_id = (sample_id[0], sample_id[1], sample_id[2]+'/'+frame)
+                img_path = self._image_path.format(*img_id)
+                label = self._load_label(idx, frame=frame)
+                img = mx.image.imread(img_path, 1)
+                if self._transform is not None:
+                    img, label = self._transform(img, label)
+
+                label = self._pad_to_dense(label, 20)
+                if labels is None:
+                    # vid = mx.ndarray.expand_dims(img, 0)  # todo investigate why this uses so much mem, maybe long video?
+                    labels = np.expand_dims(label, 0)
+                else:
+                    # vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, 0)])
+                    labels = np.concatenate((labels, np.expand_dims(label, 0)))
+            return None, labels
 
     def _load_items(self, splits):
         """Load individual image indices from splits."""
         ids = []
         for year, split in splits:
-            root = self._root  # os.path.join(self._root, 'ILSVRC')
+            root = self._root
             ne_lf = os.path.join(root, 'ImageSets', 'VID', split + '_nonempty.txt')
             lf = os.path.join(root, 'ImageSets', 'VID', split + '.txt')
             if os.path.exists(ne_lf) and not self._allow_empty:
@@ -103,14 +131,14 @@ class ImageNetVidDetection(VisionDataset):
 
             print("Loading splits from: {}".format(lf))
             with open(lf, 'r') as f:
-                ids_ = [(root, split, line.split()[0]) for line in f.readlines()]
+                ids_ = [(int(line.split()[1]), root, split, line.split()[0]) for line in f.readlines()]
 
-            if not os.path.exists(ne_lf):
+            if not os.path.exists(ne_lf) and not self._allow_empty:
                 ids_, str_ = self._verify_nonempty_annotations(ids_)  # ensure non-empty for this split
                 print("Writing out new splits file: {}\n\n{}".format(ne_lf, str_))
                 with open(ne_lf, 'w') as f:
                     for l in ids_:
-                        f.write(l[2]+"\n")
+                        f.write('{} {}\n'.format(l[3], l[0]))
                 with open(os.path.join(root, 'ImageSets', 'VID', split + '_nonempty_stats.txt'), 'a') as f:
                     f.write(str_)
 
@@ -119,21 +147,49 @@ class ImageNetVidDetection(VisionDataset):
 
             ids += ids_
 
-        if self._percent < 1:
+        if self._frames and self._percent < 1:  # keep only a percent of the dataset
             ids = [ids[i] for i in range(0, len(ids), int(1/self._percent))]
 
         if not self._frames:
-            raise NotImplementedError
+            vid_ids = []
+            past_vid_id = ''
+            for id in ids:
+                vid_id, frame = id[3].split('/')
+                if vid_id != past_vid_id:
+                    if past_vid_id:
+                        if self._percent < 1:  # cut down per video
+                            frames = [frames[i] for i in range(0, len(frames), int(1 / self._percent))]
+                            sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(1 / self._percent))]
+                        vid_ids.append((past_id[1], past_id[2], past_vid_id, frames, sample_ids))
+                    past_id = id
+                    frames = [frame]
+                    sample_ids = [id[0]]
+                    past_vid_id = vid_id
+                else:
+                    frames.append(frame)
+                    sample_ids.append(id[0])
+
+            if self._percent < 1:
+                frames = [frames[i] for i in range(0, len(frames), int(1 / self._percent))]
+                sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(1 / self._percent))]
+            vid_ids.append((id[1], id[2], vid_id, frames, sample_ids))
+            ids = vid_ids
 
         return ids
 
-    def _load_label(self, idx, items=None):
+    def _load_label(self, idx, items=None, frame=None):
         """Parse xml file and return labels."""
         if items:  # used to process items before they are actually assigned to self
             img_id = items[idx]
         else:
             img_id = self._items[idx]
-        anno_path = self._anno_path.format(*img_id)
+
+        anno_path = self._anno_path.format(*img_id[1:])
+        if not self._frames:
+            assert frame is not None
+            img_id = (img_id[0], img_id[1], img_id[2]+'/'+frame)
+            anno_path = self._anno_path.format(*img_id)
+
         if not os.path.exists(anno_path):
             return np.array([])
         root = ET.parse(anno_path).getroot()
@@ -149,7 +205,9 @@ class ImageNetVidDetection(VisionDataset):
             if cls_name not in self.wn_classes:
                 continue
             cls_id = self.index_map[cls_name]
+            trk_id = int(obj.find('trackid').text)
             xml_box = obj.find('bndbox')
+            # assert int(obj.find('trackid').text) == len(label), print(anno_path)  # this ensures that boxes are ordered based on their track ids (useful for making the the motion iou)
             xmin = float(xml_box.find('xmin').text)  # we dont need to minus 1 here as the already 0 > h/w
             ymin = float(xml_box.find('ymin').text)
             xmax = float(xml_box.find('xmax').text)
@@ -158,10 +216,10 @@ class ImageNetVidDetection(VisionDataset):
                 xmin, ymin, xmax, ymax = self._validate_label(xmin, ymin, xmax, ymax, width, height, anno_path)
             except AssertionError as e:
                 raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
-            label.append([xmin, ymin, xmax, ymax, cls_id])
+            label.append([xmin, ymin, xmax, ymax, cls_id, trk_id])
 
         if self._allow_empty and len(label) < 1:
-            label.append([-1, -1, -1, -1, -1])
+            label.append([-1, -1, -1, -1, -1, -1])
         return np.array(label)
 
     @staticmethod
@@ -213,6 +271,15 @@ class ImageNetVidDetection(VisionDataset):
             removed, len(ids), len(good_ids), nboxes, len(self.classes))
 
         return good_ids, str_
+
+    def _pad_to_dense(self, labels, maxlen=100):
+        """Appends the minimal required amount of zeroes at the end of each
+         array in the jagged array `M`, such that `M` looses its jagedness."""
+
+        x = -np.ones((maxlen, 6))
+        for enu, row in enumerate(labels):
+            x[enu, :] += row + 1
+        return x
 
     def image_size(self, id):
         if len(self._im_shapes) == 0:
@@ -278,12 +345,90 @@ class ImageNetVidDetection(VisionDataset):
         with open(self._coco_path, 'w') as f:
             json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
 
+    def _load_motion_ious(self):
+        path = os.path.join(self._root, '{}_motion_ious.json'.format(self._splits[0][1]))
+        if not os.path.exists(path):
+            generate_motion_ious(self._root, self._splits[0][1])
+
+        with open(path, 'r') as f:
+            ious = json.load(f)
+
+        return ious
+
+
+def iou(bb, bbgt):
+    """
+    helper single box iou calculation function for generate_motion_ious
+    """
+    ov = 0
+    iw = np.min((bb[2], bbgt[2])) - np.max((bb[0], bbgt[0])) + 1
+    ih = np.min((bb[3], bbgt[3])) - np.max((bb[1], bbgt[1])) + 1
+    if iw > 0 and ih > 0:
+        # compute overlap as area of intersection / area of union
+        intersect = iw * ih
+        ua = (bb[2] - bb[0] + 1.) * (bb[3] - bb[1] + 1.) + \
+             (bbgt[2] - bbgt[0] + 1.) * \
+             (bbgt[3] - bbgt[1] + 1.) - intersect
+        ov = intersect / ua
+    return ov
+
+
+def generate_motion_ious(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), split='val'):
+    """
+    Used to generate motion_ious .json files matching that of imagenet_vid_groundtruth_motion_iou.mat from FGFA
+    Except these are keyed on the image ids listed beside each frame in the ImageSets
+
+    Note This script is relatively intensive
+
+    :param root: the root path of the imagenetvid set
+    :param split: train or val, no year necessary
+    """
+
+    dataset = ImageNetVidDetection(root=root, splits=[(2017, split)], allow_empty=True, frames=False, percent=1)
+
+    all_ious = []
+    all_ious = {} # using dict for better removing of elements on loading based on sample_id
+    sample_id = 1 # messy but works
+    for idx in tqdm(range(len(dataset)), desc="Generation motion iou groundtruth"):
+        _, video = dataset[idx]
+        for frame in range(len(video)):
+            frame_ious = []
+            for box_idx in range(len(video[frame])):
+                trk_id = video[frame][box_idx][5]
+                if trk_id > -1:
+                    ious = []
+                    for i in range(-10, 11):
+                        frame_c = frame + i
+                        if 0 <= frame_c < len(video) and i != 0:
+                            for c_box_idx in range(len(video[frame_c])):
+                                c_trk_id = video[frame_c][c_box_idx][5]
+                                if trk_id == c_trk_id:
+                                    a = video[frame][box_idx]
+                                    b = video[frame_c][c_box_idx]
+                                    ious.append(iou(a, b))
+                                    break
+
+                    frame_ious.append(np.mean(ious))
+            # if frame_ious:  # if this frame has no boxes we add a 0.0
+            #     all_ious.append(frame_ious)
+            # else:
+            #     all_ious.append([0.0])
+            if frame_ious:  # if this frame has no boxes we add a 0.0
+                all_ious[sample_id] = frame_ious
+            else:
+                all_ious[sample_id] = [0.0]
+            sample_id += 1
+
+    with open(os.path.join(root, '{}_motion_ious.json'.format(split)), 'w') as f:
+        json.dump(all_ious, f)
+
 
 if __name__ == '__main__':
-    # train_dataset = ImageNetVidDetection(
-    #     root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'train')], allow_empty=False, frames=True)
+    train_dataset = ImageNetVidDetection(
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'train')], allow_empty=False, frames=True)
     val_dataset = ImageNetVidDetection(
         root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'val')], allow_empty=True, frames=True)
 
-    # print(train_dataset)
+    # val_dataset._load_motion_ious()
+    print(train_dataset)
     print(val_dataset)
