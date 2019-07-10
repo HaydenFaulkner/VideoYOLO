@@ -197,5 +197,7 @@ if __name__ == '__main__':
 
     # training
     names, values = validate(net, val_data, ctx, val_dataset.classes, len(val_dataset), val_metric)
-    for k, v in zip(names, values):
-        print(k, v)
+    with open(args.pretrained.strip()[:-7]+'_'+args.metric+'.txt', 'w') as f:
+        for k, v in zip(names, values):
+            print(k, v)
+            f.write('{} {}\n'.format(k, v))
