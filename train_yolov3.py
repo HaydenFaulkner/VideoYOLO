@@ -216,7 +216,13 @@ def get_dataloader(net, train_dataset, val_dataset, data_shape, batch_size, num_
     val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
     val_loader = gluon.data.DataLoader(
         val_dataset.transform(YOLO3DefaultValTransform(width, height)),
-        batch_size, False, batchify_fn=val_batchify_fn, last_batch='keep', num_workers=num_workers)
+        batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=num_workers)
+    # NOTE for val batch loader last_batch='keep' changed to last_batch='discard' so exception not thrown
+    # when last batch size is smaller than the number of GPUS (which throws exception) this is fixed in gluon
+    # PR 14607: https://github.com/apache/incubator-mxnet/pull/14607 - but yet to be in official release
+    # discarding last batch will incur minor changes in val results as some val data wont be processed
+
+
     return train_loader, val_loader
 
 
