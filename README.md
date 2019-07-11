@@ -4,7 +4,7 @@ in [MXNet](https://mxnet.apache.org/) and [GluonCV](https://gluon-cv.mxnet.io/).
 
 **BE WARNED : STILL A WORK IN PROGRESS**
 
-### Datasets
+## Datasets
 
 We support training and testing with the following datasets:
 - [PascalVOC](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/index.html#devkit)
@@ -43,14 +43,13 @@ We support training and testing with the following datasets:
 
 See [datasets](/datasets/) for downloading and organisation information...
 
-### Models
+## Models
 Currently:
 - [YOLOv3](https://pjreddie.com/media/files/papers/YOLOv3.pdf)
 
+See [models](/models/) for downloading and organisation information...
 
-## Usage
-
-### Installation
+## Installation
 
 #### Pip
 
@@ -65,8 +64,26 @@ conda env create -f environment.yml
 conda activate viddet-mx
 ```
 
+## Usage
+
 ### Training
+To train a model you can use something like:
+```
+python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save-prefix 0001 --num-workers 16 --warmup-lr 0.0001 --warmup-epochs 3 --syncbn
+```
+
+If you don't have this much power available you will need to specify a lower batch size:
+```
+python train_yolov3.py --batch-size 4 --dataset voc --save-prefix 0001 --warmup-lr 0.0001 --warmup-epochs 3
+```
+
+***We found a warmup was necessary for YOLOv3***
 
 ### Testing
+To evaluate a model you can use something like:
+```
+eval_yolov3.py --batch-size 4 --pretrained models/0001/yolo3_darknet53_voc_best.params --metric voc --dataset voc --save-prefix 0001
+```
+### Detection & Visualisation
 
-### Detecting
+Coming soon
