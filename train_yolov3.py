@@ -100,7 +100,7 @@ def parse_args():
                         help='Disable mixup training if enabled in the last N epochs.')
     parser.add_argument('--label-smooth', action='store_true', help='Use label smoothing.')
     parser.add_argument('--allow_empty', action='store_true', help='Allow samples that contain 0 boxes as [-1s * 6].')
-    parser.add_argument('--frames', type=float, default=1,
+    parser.add_argument('--frames', type=float, default=0.04,
                         help='Based per video - and is NOT randomly sampled:'
                              'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
                              'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
