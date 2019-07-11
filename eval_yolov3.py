@@ -18,8 +18,9 @@ from gluoncv.data.transforms.presets.yolo import YOLO3DefaultValTransform
 from gluoncv.model_zoo.yolo.yolo3 import get_yolov3
 from gluoncv.model_zoo.yolo.darknet import darknet53
 from gluoncv.model_zoo import get_model
-from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
+# from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
 # from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
+from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
 from metrics.imgnetvid import VIDDetectionMetric
 
@@ -41,6 +42,8 @@ def parse_args():
                         help='Training mini-batch size')
     parser.add_argument('--dataset', type=str, default='voc',
                         help='Testing dataset.')
+    parser.add_argument('--trained-on', type=str, default='',
+                        help='Dataset that the model was trained on - used to get n_classes.')
     parser.add_argument('--metric', type=str, default='coco',
                         help='Metric to use, either voc or coco.')  # todo vid eval with slow, med, fast, only appl to vid
     parser.add_argument('--num-workers', '-j', dest='num_workers', type=int,
@@ -51,6 +54,11 @@ def parse_args():
                         help='Load weights from previously saved parameters.')
     parser.add_argument('--save-prefix', type=str, default='XXXX',
                         help='Saving parameter prefix')
+    parser.add_argument('--frames', type=float, default=0.04,
+                        help='Based per video - and is NOT randomly sampled:'
+                             'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
+                             'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
+                             'If =1: Every sample used - full dataset')
     args = parser.parse_args()
     return args
 
@@ -101,7 +109,7 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
     return net
 
 
-def get_dataset(dataset, metric, data_shape):
+def get_dataset(dataset):
     if dataset.lower() == 'voc':
         val_dataset = VOCDetection(root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'), splits=[(2007, 'test')])
     elif dataset.lower() == 'coco':
@@ -112,20 +120,23 @@ def get_dataset(dataset, metric, data_shape):
                                         splits=['val'], allow_empty=False)
     elif dataset.lower() == 'vid':
         val_dataset = ImageNetVidDetection(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-                                           splits=[(2017, 'val')], allow_empty=False, videos=False, frames=25)
+                                           splits=[(2017, 'val')], allow_empty=False, videos=False, frames=args.frames)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))
+    return val_dataset
 
-    if metric == 'voc':
-        val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
-    elif metric == 'coco':
+
+def get_metric(val_dataset, metric, data_shape, class_map=None):
+    if metric.lower() == 'voc':
+        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes, class_map=class_map)
+    elif metric.lower() == 'coco':
         val_metric = COCODetectionMetric(val_dataset, os.path.join(args.save_prefix, 'eval'), cleanup=True,
                                          data_shape=(data_shape, data_shape))
-    elif metric == 'vid':
+    elif metric.lower() == 'vid':
         val_metric = VIDDetectionMetric(val_dataset, iou_thresh=0.5, data_shape=(data_shape, data_shape))
     else:
         raise NotImplementedError('Mertic: {} not implemented.'.format(metric))
-    return val_dataset, val_metric
+    return val_metric
 
 
 def get_dataloader(val_dataset, data_shape, batch_size, num_workers):
@@ -170,6 +181,20 @@ def validate(net, val_data, ctx, classes, size, metric):
     return metric.get()
 
 
+def get_class_map(trained_on, eval_on):
+    toc = trained_on.wn_classes
+    eoc = eval_on.wn_classes
+
+    class_map = []
+    for c in eoc:
+        if c in toc:
+            class_map.append(toc.index(c))
+        else:
+            class_map.append(-1)
+
+    return class_map
+
+
 if __name__ == '__main__':
     args = parse_args()
 
@@ -178,17 +203,25 @@ if __name__ == '__main__':
     ctx = ctx if ctx else [mx.cpu()]
 
     # testing dataset
-    val_dataset, val_metric = get_dataset(args.dataset, args.metric, args.data_shape)
+    val_dataset = get_dataset(args.dataset)
+
+    if args.trained_on: # for use when model preds are diff to eval set classes
+        trained_on_dataset = get_dataset(args.trained_on)
+        val_metric = get_metric(val_dataset, args.metric, args.data_shape, class_map=get_class_map(trained_on_dataset,
+                                                                                                   val_dataset))
+    else:
+        trained_on_dataset = val_dataset
+        val_metric = get_metric(val_dataset, args.metric, args.data_shape)
 
     # network
     net_name = '_'.join((args.algorithm, args.network, args.dataset))
     os.makedirs(os.path.join('models', args.save_prefix), exist_ok=True)
     args.save_prefix = os.path.join('models', args.save_prefix, net_name)
     if args.pretrained.lower() in ['true', '1', 'yes', 't']:
-        net = gcv.model_zoo.get_model(net_name, root='models', pretrained=True, classes=val_dataset.classes)
+        net = gcv.model_zoo.get_model(net_name, root='models', pretrained=True, classes=trained_on_dataset.classes)
     else:
-        # net = gcv.model_zoo.get_model(net_name, root='models', pretrained=False, classes=val_dataset.classes)
-        net = yolo3_darknet53(val_dataset.classes, args.dataset, root='models', pretrained_base=True)
+        # net = gcv.model_zoo.get_model(net_name, root='models', pretrained=False, classes=trained_on_dataset.classes)
+        net = yolo3_darknet53(trained_on_dataset.classes, args.dataset, root='models', pretrained_base=True)
         net.load_parameters(args.pretrained.strip())
 
     # testing dataloader
@@ -196,8 +229,8 @@ if __name__ == '__main__':
         val_dataset, args.data_shape, args.batch_size, args.num_workers)
 
     # training
-    names, values = validate(net, val_data, ctx, val_dataset.classes, len(val_dataset), val_metric)
-    with open(args.pretrained.strip()[:-7]+'_'+args.metric+'.txt', 'w') as f:
+    names, values = validate(net, val_data, ctx, trained_on_dataset.classes, len(val_dataset), val_metric)
+    with open(args.pretrained.strip()[:-7]+'_D'+args.dataset+'_M'+args.metric+'.txt', 'w') as f:
         for k, v in zip(names, values):
             print(k, v)
             f.write('{} {}\n'.format(k, v))
