@@ -17,7 +17,7 @@ class VOCMApMetric(mx.metric.EvalMetric):
     class_names : list of str
         optional, if provided, will print out AP for each class
     """
-    def __init__(self, iou_thresh=0.5, class_names=None):
+    def __init__(self, iou_thresh=0.5, class_names=None, class_map=None):
         super(VOCMApMetric, self).__init__('VOCMeanAP')
         if class_names is None:
             self.num = None
@@ -31,6 +31,7 @@ class VOCMApMetric(mx.metric.EvalMetric):
         self.reset()
         self.iou_thresh = iou_thresh
         self.class_names = class_names
+        self.class_map = class_map  # for use when model preds are diff to eval set classes
 
     def reset(self):
         """Clear the internal statistics to initial state."""
@@ -62,9 +63,20 @@ class VOCMApMetric(mx.metric.EvalMetric):
                 return (self.name, self.sum_metric / self.num_inst)
         else:
             names = ['%s'%(self.name[i]) for i in range(self.num)]
-            values = [x / y if y != 0 else float('nan') \
-                for x, y in zip(self.sum_metric, self.num_inst)]
-            return (names, values)
+            values = [x / y if y != 0 else float('nan') for x, y in zip(self.sum_metric, self.num_inst)]
+
+            if self.class_map:
+                values = list()
+                for i in range(self.num):
+                    if i == self.num-1:  # handle the mAP
+                        values.append(self.sum_metric[i] / self.num_inst[i] if self.num_inst[i] != 0 else float('nan'))
+                    elif self.class_map[i] < 0:
+                        values.append(float('nan'))
+                    else:
+                        values.append(self.sum_metric[self.class_map[i]] / self.num_inst[self.class_map[i]]
+                                      if self.num_inst[self.class_map[i]] != 0 else float('nan'))
+
+            return names, values
 
     # pylint: disable=arguments-differ, too-many-nested-blocks
     def update(self, pred_bboxes, pred_labels, pred_scores,
@@ -118,9 +130,15 @@ class VOCMApMetric(mx.metric.EvalMetric):
             pred_bbox = pred_bbox[valid_pred, :]
             pred_label = pred_label.flat[valid_pred].astype(int)
             pred_score = pred_score.flat[valid_pred]
+
+            # change the class ids for the ground truths
+            if self.class_map is not None:
+                gt_label = np.expand_dims(np.array([self.class_map[int(l)] for l in gt_label.flat]), axis=0)
+
             valid_gt = np.where(gt_label.flat >= 0)[0]
             gt_bbox = gt_bbox[valid_gt, :]
             gt_label = gt_label.flat[valid_gt].astype(int)
+
             if gt_difficult is None:
                 gt_difficult = np.zeros(gt_bbox.shape[0])
             else:
