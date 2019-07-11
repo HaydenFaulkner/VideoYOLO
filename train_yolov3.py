@@ -20,14 +20,17 @@ from gluoncv.data.transforms.presets.yolo import YOLO3DefaultValTransform
 from gluoncv.data.dataloader import RandomTransformDataLoader
 from gluoncv.model_zoo.yolo.yolo3 import get_yolov3
 from gluoncv.model_zoo.yolo.darknet import darknet53
-from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
-from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
+# from gluoncv.utils.metrics.voc_detection import VOC07MApMetric
+# from gluoncv.utils.metrics.coco_detection import COCODetectionMetric
 from gluoncv.utils import LRScheduler, LRSequential
 
 from datasets.pascalvoc import VOCDetection
 from datasets.mscoco import COCODetection
 from datasets.imgnetdet import ImageNetDetection
 from datasets.imgnetvid import ImageNetVidDetection
+
+from metrics.pascalvoc import VOCMApMetric
+from metrics.mscoco import COCODetectionMetric
 
 
 def parse_args():
@@ -165,7 +168,7 @@ def get_dataset(dataset, args):
         val_dataset = VOCDetection(
             root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'),
             splits=[(2007, 'test')])
-        val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     elif dataset.lower() == 'coco':
         train_dataset = COCODetection(
             root=os.path.join('datasets', 'MSCoco'), splits='instances_train2017', use_crowd=False)
@@ -181,7 +184,7 @@ def get_dataset(dataset, args):
         val_dataset = ImageNetDetection(
             root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
             splits=['val'], allow_empty=args.allow_empty)
-        val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     elif dataset.lower() == 'vid':
         train_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
@@ -189,7 +192,7 @@ def get_dataset(dataset, args):
         val_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
             splits=[(2017, 'val')], allow_empty=args.allow_empty, videos=False, frames=args.frames)
-        val_metric = VOC07MApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))
     if args.num_samples < 0:
