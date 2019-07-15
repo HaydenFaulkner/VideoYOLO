@@ -169,7 +169,7 @@ if __name__ == '__main__':
         net = gcv.model_zoo.get_model(net_name, root='models', pretrained=True, classes=trained_on_dataset.classes)
     else:
         if args.network == 'darknet53':
-            if args.syncbn and len(ctx) > 1:
+            if len(ctx) > 1:
                 net = yolo3_darknet53(trained_on_dataset.classes, args.dataset, root='models', pretrained_base=True,
                                       norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                       norm_kwargs={'num_devices': len(ctx)})
@@ -179,7 +179,7 @@ if __name__ == '__main__':
                 net = yolo3_darknet53(trained_on_dataset.classes, args.dataset, root='models', pretrained_base=True)
                 async_net = net
         elif args.network == 'mobilenet1_0':
-            if args.syncbn and len(ctx) > 1:
+            if len(ctx) > 1:
                 net = yolo3_mobilenet1_0(trained_on_dataset.classes, args.dataset, root='models', pretrained_base=True,
                                          norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                          norm_kwargs={'num_devices': len(ctx)})
