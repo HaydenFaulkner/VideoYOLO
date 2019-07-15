@@ -38,13 +38,14 @@ class ImageNetDetection(VisionDataset):
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'det'),
                  splits=('train',), allow_empty=False,
-                 transform=None, index_map=None):
+                 transform=None, index_map=None, inference=False):
         super(ImageNetDetection, self).__init__(root)
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
         self._transform = transform
         self._splits = splits
         self._allow_empty = allow_empty
+        self._inference = inference
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([s for s in self._splits])+'.json')
         self._anno_path = os.path.join('{}', 'Annotations', 'DET', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'DET', '{}', '{}.JPEG')
@@ -72,7 +73,7 @@ class ImageNetDetection(VisionDataset):
 
     @property
     def image_ids(self):
-        return [int(img_id[2][-8:]) for img_id in self._items] # TODO
+        return [int(img_id[2][-8:]) for img_id in self._items]
 
     def __len__(self):
         return len(self._items)
@@ -82,9 +83,14 @@ class ImageNetDetection(VisionDataset):
         img_path = self._image_path.format(*img_id)
         label = self._load_label(idx)
         img = mx.image.imread(img_path, 1)
-        if self._transform is not None:
-            return self._transform(img, label)
-        return img, label
+        if self._inference:
+            if self._transform is not None:
+                return self._transform(img, label, idx)
+            return img, label, idx
+        else:
+            if self._transform is not None:
+                return self._transform(img, label)
+            return img, label
 
     def _load_items(self, splits):
         """Load individual image indices from splits."""
@@ -265,6 +271,7 @@ class ImageNetDetection(VisionDataset):
             json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
 
         return self._coco_path
+
 
 if __name__ == '__main__':
     train_dataset = ImageNetDetection(

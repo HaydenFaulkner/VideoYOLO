@@ -45,12 +45,13 @@ class VOCDetection(VisionDataset):
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'voc'),
                  splits=((2007, 'trainval'), (2012, 'trainval')),
-                 transform=None, index_map=None, preload_label=True):
+                 transform=None, index_map=None, preload_label=True, inference=False):
         super(VOCDetection, self).__init__(root)
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
         self._transform = transform
         self._splits = splits
+        self._inference = inference
         self._items = self._load_items(splits)
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
         self._anno_path = os.path.join('{}', 'Annotations', '{}.xml')
@@ -89,9 +90,19 @@ class VOCDetection(VisionDataset):
         img_path = self._image_path.format(*img_id)
         label = self._label_cache[idx] if self._label_cache else self._load_label(idx)
         img = mx.image.imread(img_path, 1)
-        if self._transform is not None:
-            return self._transform(img, label)
-        return img, label
+        if self._inference:
+            if self._transform is not None:
+                return self._transform(img, label, idx)
+            return img, label, idx
+        else:
+            if self._transform is not None:
+                return self._transform(img, label)
+            return img, label
+
+    def sample_path(self, idx):
+        img_id = self._items[idx]
+        img_path = self._image_path.format(*img_id)
+        return img_path
 
     def _load_items(self, splits):
         """Load individual image indices from splits."""

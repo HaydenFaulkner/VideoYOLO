@@ -40,13 +40,14 @@ class COCODetection(VisionDataset):
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'coco'),
                  splits=('instances_val2017',), transform=None, min_object_area=0,
-                 skip_empty=True, use_crowd=True):
+                 skip_empty=True, use_crowd=True, inference=False):
         super(COCODetection, self).__init__(root)
         self._root = os.path.expanduser(root)
         self._transform = transform
         self._min_object_area = min_object_area
         self._skip_empty = skip_empty
         self._use_crowd = use_crowd
+        self._inference = inference
         if isinstance(splits, mx.base.string_types):
             splits = [splits]
         self._splits = splits
@@ -135,11 +136,19 @@ class COCODetection(VisionDataset):
 
     def __getitem__(self, idx):
         img_path = self._items[idx]
-        label = self._labels[idx]
+        label = np.array(self._labels[idx])
         img = mx.image.imread(img_path, 1)
-        if self._transform is not None:
-            return self._transform(img, label)
-        return img, np.array(label)
+        if self._inference:
+            if self._transform is not None:
+                return self._transform(img, label, idx)
+            return img, label, idx
+        else:
+            if self._transform is not None:
+                return self._transform(img, label)
+            return img, label
+
+    def sample_path(self, idx):
+        return self._items[idx]
 
     def _load_jsons(self):
         """Load all image paths and labels from JSON annotation files into buffer."""
