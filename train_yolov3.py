@@ -306,7 +306,7 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
             best_map = [float(lines[-1])]
     else:
         best_map = [0]
-    for epoch in range(args.start_epoch, args.epochs):
+    for epoch in range(args.start_epoch, args.epochs+1):
         if args.mixup:
             # TODO(zhreshold): more elegant way to control mixup during runtime
             try:
