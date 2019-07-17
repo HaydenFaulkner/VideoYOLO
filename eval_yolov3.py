@@ -23,6 +23,7 @@ from metrics.imgnetvid import VIDDetectionMetric
 
 from models.definitions import yolo3_darknet53, yolo3_mobilenet1_0
 
+from utils.general import as_numpy
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Eval YOLO networks.')
@@ -38,7 +39,7 @@ def parse_args():
                         help='Testing dataset.')
     parser.add_argument('--trained-on', type=str, default='',
                         help='Dataset that the model was trained on - used to get n_classes.')
-    parser.add_argument('--metric', type=str, default='coco',
+    parser.add_argument('--metric', type=str, default='voc',
                         help='Metric to use, either voc or coco.')  # todo vid eval with slow, med, fast, only appl to vid
     parser.add_argument('--num-workers', '-j', dest='num_workers', type=int,
                         default=4, help='Number of data workers')
@@ -97,14 +98,15 @@ def get_dataloader(val_dataset, data_shape, batch_size, num_workers):
     return val_loader
 
 
-def validate(net, val_data, ctx, classes, size, metric):
+def validate(net, val_data, ctx, size, metric):
     """Test on validation dataset."""
     net.collect_params().reset_ctx(ctx)
     metric.reset()
+    # set nms threshold and topk constraint
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     net.hybridize()
     with tqdm(total=size) as pbar:
-        for ib, batch in enumerate(val_data):
+        for batch in val_data:
             data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
             label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
             det_bboxes = []
@@ -124,7 +126,9 @@ def validate(net, val_data, ctx, classes, size, metric):
                 gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
                 gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
 
-            metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+            # metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+            # lodged issue on github #872 https://github.com/dmlc/gluon-cv/issues/872
+            metric.update(as_numpy(det_bboxes), as_numpy(det_ids), as_numpy(det_scores), as_numpy(gt_bboxes), as_numpy(gt_ids), as_numpy(gt_difficults))
             pbar.update(batch[0].shape[0])
     return metric.get()
 
@@ -198,7 +202,7 @@ if __name__ == '__main__':
         val_dataset, args.data_shape, args.batch_size, args.num_workers)
 
     # training
-    names, values = validate(net, val_data, ctx, trained_on_dataset.classes, len(val_dataset), val_metric)
+    names, values = validate(net, val_data, ctx, len(val_dataset), val_metric)
     with open(args.pretrained.strip()[:-7]+'_D'+args.dataset+'_M'+args.metric+'.txt', 'w') as f:
         for k, v in zip(names, values):
             print(k, v)
