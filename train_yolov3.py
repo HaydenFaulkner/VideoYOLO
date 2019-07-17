@@ -25,6 +25,9 @@ from metrics.mscoco import COCODetectionMetric
 
 from models.definitions import yolo3_darknet53, yolo3_mobilenet1_0
 
+from utils.general import as_numpy
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Train YOLO networks with random input shape.')
     parser.add_argument('--network', type=str, default='darknet53',
@@ -242,8 +245,11 @@ def validate(net, val_data, ctx, eval_metric):
             gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
             gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
 
+        # lists with results ran on each gpu (ie len of list is = num gpus) in each list is (BatchSize, Data
         # update metric
-        eval_metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+        # eval_metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+        # lodged issue on github #872 https://github.com/dmlc/gluon-cv/issues/872
+        eval_metric.update(as_numpy(det_bboxes), as_numpy(det_ids), as_numpy(det_scores), as_numpy(gt_bboxes), as_numpy(gt_ids), as_numpy(gt_difficults))
     return eval_metric.get()
 
 
