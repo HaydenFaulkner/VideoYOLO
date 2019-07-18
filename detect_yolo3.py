@@ -21,6 +21,10 @@ from datasets.imgnetdet import ImageNetDetection
 from datasets.imgnetvid import ImageNetVidDetection
 from datasets.detectset import DetectSet
 
+from metrics.pascalvoc import VOCMApMetric
+from metrics.mscoco import COCODetectionMetric
+from metrics.imgnetvid import VIDDetectionMetric
+
 from utils.general import as_numpy, YOLO3DefaultInferenceTransform
 from utils.image import cv_plot_bbox
 from utils.video import video_to_frames
@@ -72,7 +76,20 @@ def get_dataloader(dataset, data_shape, batch_size, num_workers):
     return loader
 
 
-def detect(net, dataset, loader, ctx, detection_threshold=0, max_do=-1):
+def get_metric(dataset, metric_name, data_shape, class_map=None):
+    if metric_name.lower() == 'voc':
+        metric = VOCMApMetric(iou_thresh=0.5, class_names=dataset.classes, class_map=class_map)
+    elif metric_name.lower() == 'coco':
+        metric = COCODetectionMetric(dataset, os.path.join('XXXXXX', 'eval'), cleanup=True,
+                                     data_shape=(data_shape, data_shape))
+    elif metric_name.lower() == 'vid':
+        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=(data_shape, data_shape))
+    else:
+        raise NotImplementedError('Mertic: {} not implemented.'.format(metric_name))
+    return metric
+
+
+def detect(net, dataset, loader, ctx, metric, detection_threshold=0, max_do=-1):
     net.collect_params().reset_ctx(ctx)
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     net.hybridize()
@@ -106,8 +123,9 @@ def detect(net, dataset, loader, ctx, detection_threshold=0, max_do=-1):
                 gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
                 sidxs.append(sidx)
 
-            for id, score, box, gid, gbox, sidx in zip(*[as_numpy(x) for x in [det_ids, det_scores, det_bboxes,
-                                                                               gt_ids, gt_bboxes, sidxs]]):
+            metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+
+            for id, score, box, sidx in zip(*[as_numpy(x) for x in [det_ids, det_scores, det_bboxes, sidxs]]):
 
                 file = dataset.sample_path(int(sidx))
 
@@ -123,22 +141,172 @@ def detect(net, dataset, loader, ctx, detection_threshold=0, max_do=-1):
                         else:
                             boxes[file] = [[id_, score_]+list(box_)]
 
-                valid_gt = np.where(gid.flat >= 0)[0]
-                gbox = gbox[valid_gt, :] / batch[0].shape[2]
-                gid = gid.flat[valid_gt].astype(int)
-
-                for gid_, gbox_ in zip(gid, gbox):
-                    if file in gt_boxes:
-                        gt_boxes[file].append([gid_]+list(gbox_))
-                    else:
-                        gt_boxes[file] = [[gid_]+list(gbox_)]
+                # valid_gt = np.where(gid.flat >= 0)[0]
+                # gbox = gbox[valid_gt, :] / batch[0].shape[2]
+                # gid = gid.flat[valid_gt].astype(int)
+                #
+                # for gid_, gbox_ in zip(gid, gbox):
+                #     if file in gt_boxes:
+                #         gt_boxes[file].append([gid_]+list(gbox_))
+                #     else:
+                #         gt_boxes[file] = [[gid_]+list(gbox_)]
 
             pbar.update(batch[0].shape[0])
             c += batch[0].shape[0]
             if c > max_do:
                 break
 
-    return boxes, gt_boxes
+    print(metric.get())
+    return boxes#, gt_boxes
+
+
+def save_predictions(save_dir, dataset, boxes, gt_boxes, overwrite=True, max_do=-1):
+    if not overwrite and os.path.exists(os.path.join(save_dir, 'gt')) and os.path.exists(os.path.join(save_dir, 'pred')):
+        logging.info("Ground truth and prediction files already exist")
+
+    os.makedirs(os.path.join(save_dir, 'gt'), exist_ok=True)
+    os.makedirs(os.path.join(save_dir, 'pred'), exist_ok=True)
+
+    if max_do < 0:
+        max_do = len(dataset)
+
+    for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out prediction and gt .txts"):
+        img_path = dataset.sample_path(idx)
+
+        sample_id = img_path#.split('/')[-1][:-4]
+        file_id = sample_id.split('/')[-1][:-4]
+        if FLAGS.dataset == 'vid':
+            file_id = img_path.split('/')[-2]
+            # sample_id = '/'.join(img_path.split('/')[-2:])[:-4]
+
+        # with open(os.path.join(save_dir, 'gt', file_id + '.txt'), 'w') as f:
+        #     if img_path in gt_boxes:
+        #         for box in gt_boxes[img_path]:  # sid, class, box
+        #             f.write("{},{},{},{},{},{}\n".format(sample_id, box[0], box[1], box[2], box[3], box[4]))
+
+        with open(os.path.join(save_dir, 'pred', file_id + '.txt'), 'w') as f:
+            if img_path in boxes:
+                for box in boxes[img_path]:  # sid, class, score, box
+                    f.write("{},{},{},{},{},{},{}\n".format(sample_id, box[0], box[1], box[2], box[3], box[4], box[5]))
+
+
+def load_predictions(save_dir):
+    # if not os.path.exists(os.path.join(save_dir, 'gt')):
+    #     logging.error("Ground truth directory does not exist {}".format(os.path.join(save_dir, 'gt')))
+    #     return
+    if not os.path.exists(os.path.join(save_dir, 'pred')):
+        logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'pred')))
+        return
+    #
+    # gt_boxes = dict()
+    # for gt_file in os.listdir(os.path.join(save_dir, 'gt')):
+    #     with open(os.path.join(save_dir, 'gt', gt_file), 'r') as f:
+    #         gt = [line.rstrip().split(',') for line in f.readlines()]
+    #     for box in gt:
+    #         if box[0] in gt_boxes:
+    #             gt_boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5])])
+    #         else:
+    #             gt_boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5])]]
+
+    boxes = dict()
+    for pred_file in os.listdir(os.path.join(save_dir, 'pred')):
+        with open(os.path.join(save_dir, 'pred', pred_file), 'r') as f:
+            bb = [line.rstrip().split(',') for line in f.readlines()]
+        for box in bb:
+            if box[0] in boxes:
+                boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])])
+            else:
+                boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])]]
+
+    return boxes#, gt_boxes
+
+
+def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, gt_boxes, max_do=-1, display_gt=False):
+    colors = dict()
+    for i in range(200):
+        colors[i] = (int(256 * random.random()), int(256 * random.random()), int(256 * random.random()))
+    colors_gt = dict()
+    for i in range(200):
+        colors_gt[i] = (0, 255, 0)
+
+    if max_do < 0:
+        max_do = len(dataset)
+
+    for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out images"):
+
+        img_path = dataset.sample_path(idx)
+        img = cv2.imread(img_path)
+
+        if display_gt and img_path in gt_boxes:
+            img = cv_plot_bbox(img=img,
+                               bboxes=[gb[1:] for gb in gt_boxes[img_path]],
+                               scores=[1 for gb in gt_boxes[img_path]],
+                               labels=[gb[0] for gb in gt_boxes[img_path]],
+                               thresh=0,
+                               colors=colors_gt,
+                               class_names=dataset.classes,
+                               absolute_coordinates=False)
+
+        if img_path in boxes:
+            img = cv_plot_bbox(img=img,
+                               bboxes=[b[2:] for b in boxes[img_path]],
+                               scores=[b[1] for b in boxes[img_path]],
+                               labels=[b[0] for b in boxes[img_path]],
+                               thresh=0,
+                               colors=colors,
+                               class_names=trained_on_dataset.classes,
+                               absolute_coordinates=False)
+
+        if FLAGS.dataset == 'vid':
+            os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
+            cv2.imwrite(os.path.join(save_dir, '/'.join(img_path.split('/')[-2:])), img)
+        else:
+            cv2.imwrite(os.path.join(save_dir, img_path.split('/')[-1]), img)
+
+
+def evaluate(metrics, dataset, boxes, save_dir):
+    for idx in tqdm(range(len(dataset)), desc="Evaluating with metrics"):
+
+        img_path = dataset.sample_path(idx)
+
+        # super messy i know, but tried to make suitable for any metric input
+        gt_bboxes = [] #np.ones((1, 2, 4))*-1
+        gt_ids = [] #np.ones((1, 2, 1))*-1
+        gt_difficults = []# = None
+        det_bboxes = np.ones((1, 2, 4))*-1
+        det_ids = np.ones((1, 2, 1))*-1
+        det_scores = np.ones((1, 2, 1))*-1
+
+        # if img_path in gt_boxes:
+        #     gt_bboxes = np.append(gt_bboxes, np.expand_dims(as_numpy([[gb[1:]] for gb in gt_boxes[img_path]]), axis=0), axis=1)
+        #     gt_ids = np.append(gt_ids, np.expand_dims(as_numpy([[[gb[0]]] for gb in gt_boxes[img_path]]), axis=0), axis=1)
+        img, y, _ = dataset[idx]
+        gt_ids.append(np.expand_dims(y[:, 4],axis=0))
+        # y[:, 0] /= img.shape[1]  # box normalisation
+        # y[:, 1] /= img.shape[0]
+        # y[:, 2] /= img.shape[1]
+        # y[:, 3] /= img.shape[0]
+        gt_bboxes.append(np.expand_dims(y[:, :4], axis=0))
+        gt_difficults.append(np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None)
+
+        if img_path in boxes:
+            det_bboxes = np.append(det_bboxes, np.expand_dims(as_numpy([[[b[2]*img.shape[1],b[3]*img.shape[0],b[4]*img.shape[1],b[5]*img.shape[0]]] for b in boxes[img_path]]), axis=0), axis=1)
+            det_ids = np.append(det_ids, np.expand_dims(as_numpy([[[b[0]]] for b in boxes[img_path]]), axis=0), axis=1)
+            det_scores = np.append(det_scores, np.expand_dims(as_numpy([[[b[1]]] for b in boxes[img_path]]), axis=0), axis=1)
+
+        for metric in metrics:
+            metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+
+    # for metric in metrics:
+    #     names, values = metric.get()
+    #     with open(args.pretrained.strip()[:-7]+'_D-'+str(dataset)+'_M-'+str(metric)+'.txt', 'w') as f:
+    #
+    #         for k, v in zip(names, values):
+    #             print(k, v)
+    #             f.write('{} {}\n'.format(k, v))
+
+    print(metric.get())
+    return [metric.get() for metric in metrics]
 
 
 def get_class_map(trained_on, eval_on):
@@ -165,7 +333,7 @@ def main(_argv):
     # dataset
     dataset = get_dataset(FLAGS.dataset)
 
-    if FLAGS.trained_on: # for use when model preds are diff to eval set classes
+    if FLAGS.trained_on:  # for use when model preds are diff to eval set classes
         trained_on_dataset = get_dataset(FLAGS.trained_on)
     else:
         trained_on_dataset = dataset
@@ -196,51 +364,31 @@ def main(_argv):
         max_do = len(dataset)
 
     # detect
-    boxes, gt_boxes = detect(net, dataset, loader, ctx, detection_threshold=FLAGS.detection_threshold, max_do=max_do)
-
-    colors = dict()
-    for i in range(200):
-        colors[i] = (int(256 * random.random()), int(256 * random.random()), int(256 * random.random()))
-    colors_gt = dict()
-    for i in range(200):
-        colors_gt[i] = (0, 255, 0)
-
     if FLAGS.dataset in ['voc', 'coco', 'det', 'vid']:
-        save_path = os.path.join('models', FLAGS.save_prefix, FLAGS.save_dir, FLAGS.dataset)
+        save_dir = os.path.join('models', FLAGS.save_prefix, FLAGS.save_dir, FLAGS.dataset)
     else:
-        save_path = os.path.join('models', FLAGS.save_prefix, FLAGS.save_dir)
-    os.makedirs(save_path, exist_ok=True)
+        save_dir = os.path.join('models', FLAGS.save_prefix, FLAGS.save_dir)
+    os.makedirs(save_dir, exist_ok=True)
 
-    for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out images"):
+    # boxes, gt_boxes = detect(net, dataset, loader, ctx, detection_threshold=FLAGS.detection_threshold, max_do=max_do)
 
-        img_path = dataset.sample_path(idx)
-        img = cv2.imread(img_path)
+    # save_predictions(save_dir, dataset, boxes, gt_boxes)
+    # boxes_, gt_boxes_ = load_predictions(save_dir)
+    #
+    # visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, gt_boxes, max_do, display_gt=FLAGS.display_gt)
 
-        if FLAGS.display_gt and img_path in gt_boxes:
-            img = cv_plot_bbox(img=img,
-                               bboxes=[gb[1:] for gb in gt_boxes[img_path]],
-                               scores=[1 for gb in gt_boxes[img_path]],
-                               labels=[gb[0] for gb in gt_boxes[img_path]],
-                               thresh=0,
-                               colors=colors_gt,
-                               class_names=dataset.classes,
-                               absolute_coordinates=False)
+    metrics = list()
+    if FLAGS.metrics:
+        for metric_name in FLAGS.metrics.split(','):
+            if FLAGS.trained_on:  # for use when model preds are diff to eval set classes
+                metrics.append(get_metric(dataset, metric_name, FLAGS.data_shape,
+                                          class_map=get_class_map(trained_on_dataset, dataset)))
+            else:
+                metrics.append(get_metric(dataset, metric_name, FLAGS.data_shape))
 
-        if img_path in boxes:
-            img = cv_plot_bbox(img=img,
-                               bboxes=[b[2:] for b in boxes[img_path]],
-                               scores=[b[1] for b in boxes[img_path]],
-                               labels=[b[0] for b in boxes[img_path]],
-                               thresh=0,
-                               colors=colors,
-                               class_names=trained_on_dataset.classes,
-                               absolute_coordinates=False)
-
-        if FLAGS.dataset == 'vid':
-            os.makedirs(os.path.join(save_path, img_path.split('/')[-2]), exist_ok=True)
-            cv2.imwrite(os.path.join(save_path, '/'.join(img_path.split('/')[-2:])), img)
-        else:
-            cv2.imwrite(os.path.join(save_path, img_path.split('/')[-1]), img)
+    boxes = detect(net, dataset, loader, ctx, metrics[0], detection_threshold=FLAGS.detection_threshold, max_do=max_do)
+    metrics[0].reset()
+    evaluate(metrics, dataset, boxes, save_dir)
 
 
 if __name__ == '__main__':
@@ -255,13 +403,15 @@ if __name__ == '__main__':
                         'Dataset the model was trained on.')
     flags.DEFINE_string('save_prefix', '0001',
                         'Model save prefix.')
-    flags.DEFINE_string('save_dir', 'vis',
+    flags.DEFINE_string('save_dir', 'eval',
                         'Save directory to save images.')
-    flags.DEFINE_integer('batch_size', 2,
+    flags.DEFINE_string('metrics', 'voc',
+                        'List of metrics separated by , eg. voc,coco')
+    flags.DEFINE_integer('batch_size', 1,
                          'Batch size for detection: higher faster, but more memory intensive.')
     flags.DEFINE_integer('data_shape', 416,
                          'Input data shape.')
-    flags.DEFINE_float('detection_threshold', 0.5,
+    flags.DEFINE_float('detection_threshold', 0.0,
                        'The threshold on detections to them being displayed.')
     flags.DEFINE_integer('max_do', 5000,
                          'Maximum samples to detect on. -1 is all.')
