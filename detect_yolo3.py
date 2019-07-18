@@ -89,12 +89,11 @@ def get_metric(dataset, metric_name, data_shape, class_map=None):
     return metric
 
 
-def detect(net, dataset, loader, ctx, metric, detection_threshold=0, max_do=-1):
+def detect(net, dataset, loader, ctx, detection_threshold=0, max_do=-1):
     net.collect_params().reset_ctx(ctx)
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     net.hybridize()
     boxes = dict()
-    gt_boxes = dict()
     if max_do < 0:
         max_do = len(dataset)
     c = 0
@@ -123,8 +122,6 @@ def detect(net, dataset, loader, ctx, metric, detection_threshold=0, max_do=-1):
                 gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
                 sidxs.append(sidx)
 
-            metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
-
             for id, score, box, sidx in zip(*[as_numpy(x) for x in [det_ids, det_scores, det_bboxes, sidxs]]):
 
                 file = dataset.sample_path(int(sidx))
@@ -141,26 +138,15 @@ def detect(net, dataset, loader, ctx, metric, detection_threshold=0, max_do=-1):
                         else:
                             boxes[file] = [[id_, score_]+list(box_)]
 
-                # valid_gt = np.where(gid.flat >= 0)[0]
-                # gbox = gbox[valid_gt, :] / batch[0].shape[2]
-                # gid = gid.flat[valid_gt].astype(int)
-                #
-                # for gid_, gbox_ in zip(gid, gbox):
-                #     if file in gt_boxes:
-                #         gt_boxes[file].append([gid_]+list(gbox_))
-                #     else:
-                #         gt_boxes[file] = [[gid_]+list(gbox_)]
-
             pbar.update(batch[0].shape[0])
             c += batch[0].shape[0]
             if c > max_do:
                 break
 
-    print(metric.get())
-    return boxes#, gt_boxes
+    return boxes
 
 
-def save_predictions(save_dir, dataset, boxes, gt_boxes, overwrite=True, max_do=-1):
+def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1):
     if not overwrite and os.path.exists(os.path.join(save_dir, 'gt')) and os.path.exists(os.path.join(save_dir, 'pred')):
         logging.info("Ground truth and prediction files already exist")
 
@@ -173,16 +159,10 @@ def save_predictions(save_dir, dataset, boxes, gt_boxes, overwrite=True, max_do=
     for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out prediction and gt .txts"):
         img_path = dataset.sample_path(idx)
 
-        sample_id = img_path#.split('/')[-1][:-4]
+        sample_id = img_path
         file_id = sample_id.split('/')[-1][:-4]
         if FLAGS.dataset == 'vid':
             file_id = img_path.split('/')[-2]
-            # sample_id = '/'.join(img_path.split('/')[-2:])[:-4]
-
-        # with open(os.path.join(save_dir, 'gt', file_id + '.txt'), 'w') as f:
-        #     if img_path in gt_boxes:
-        #         for box in gt_boxes[img_path]:  # sid, class, box
-        #             f.write("{},{},{},{},{},{}\n".format(sample_id, box[0], box[1], box[2], box[3], box[4]))
 
         with open(os.path.join(save_dir, 'pred', file_id + '.txt'), 'w') as f:
             if img_path in boxes:
@@ -191,22 +171,9 @@ def save_predictions(save_dir, dataset, boxes, gt_boxes, overwrite=True, max_do=
 
 
 def load_predictions(save_dir):
-    # if not os.path.exists(os.path.join(save_dir, 'gt')):
-    #     logging.error("Ground truth directory does not exist {}".format(os.path.join(save_dir, 'gt')))
-    #     return
     if not os.path.exists(os.path.join(save_dir, 'pred')):
         logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'pred')))
-        return
-    #
-    # gt_boxes = dict()
-    # for gt_file in os.listdir(os.path.join(save_dir, 'gt')):
-    #     with open(os.path.join(save_dir, 'gt', gt_file), 'r') as f:
-    #         gt = [line.rstrip().split(',') for line in f.readlines()]
-    #     for box in gt:
-    #         if box[0] in gt_boxes:
-    #             gt_boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5])])
-    #         else:
-    #             gt_boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5])]]
+        return None
 
     boxes = dict()
     for pred_file in os.listdir(os.path.join(save_dir, 'pred')):
@@ -218,10 +185,10 @@ def load_predictions(save_dir):
             else:
                 boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])]]
 
-    return boxes#, gt_boxes
+    return boxes
 
 
-def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, gt_boxes, max_do=-1, display_gt=False):
+def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, max_do=-1, display_gt=False):
     colors = dict()
     for i in range(200):
         colors[i] = (int(256 * random.random()), int(256 * random.random()), int(256 * random.random()))
@@ -237,15 +204,17 @@ def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, gt_boxes
         img_path = dataset.sample_path(idx)
         img = cv2.imread(img_path)
 
-        if display_gt and img_path in gt_boxes:
+        imgb, y, _ = dataset[idx]
+
+        if display_gt and len(y) > 0:
             img = cv_plot_bbox(img=img,
-                               bboxes=[gb[1:] for gb in gt_boxes[img_path]],
-                               scores=[1 for gb in gt_boxes[img_path]],
-                               labels=[gb[0] for gb in gt_boxes[img_path]],
+                               bboxes=[list(g) for g in y[:, :4]],
+                               scores=[1]*len(y),
+                               labels=[g for g in y[:, 4]],
                                thresh=0,
                                colors=colors_gt,
                                class_names=dataset.classes,
-                               absolute_coordinates=False)
+                               absolute_coordinates=True)
 
         if img_path in boxes:
             img = cv_plot_bbox(img=img,
@@ -257,55 +226,37 @@ def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, gt_boxes
                                class_names=trained_on_dataset.classes,
                                absolute_coordinates=False)
 
+        os.makedirs(os.path.join(save_dir, 'vis'), exist_ok=True)
         if FLAGS.dataset == 'vid':
-            os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
-            cv2.imwrite(os.path.join(save_dir, '/'.join(img_path.split('/')[-2:])), img)
+            os.makedirs(os.path.join(save_dir, 'vis', img_path.split('/')[-2]), exist_ok=True)
+            cv2.imwrite(os.path.join(save_dir, 'vis', '/'.join(img_path.split('/')[-2:])), img)
         else:
-            cv2.imwrite(os.path.join(save_dir, img_path.split('/')[-1]), img)
+            cv2.imwrite(os.path.join(save_dir, 'vis', img_path.split('/')[-1]), img)
 
 
-def evaluate(metrics, dataset, boxes, save_dir):
+def evaluate(metrics, dataset, predictions):
     for idx in tqdm(range(len(dataset)), desc="Evaluating with metrics"):
 
         img_path = dataset.sample_path(idx)
 
-        # super messy i know, but tried to make suitable for any metric input
-        gt_bboxes = [] #np.ones((1, 2, 4))*-1
-        gt_ids = [] #np.ones((1, 2, 1))*-1
-        gt_difficults = []# = None
-        det_bboxes = np.ones((1, 2, 4))*-1
-        det_ids = np.ones((1, 2, 1))*-1
-        det_scores = np.ones((1, 2, 1))*-1
-
-        # if img_path in gt_boxes:
-        #     gt_bboxes = np.append(gt_bboxes, np.expand_dims(as_numpy([[gb[1:]] for gb in gt_boxes[img_path]]), axis=0), axis=1)
-        #     gt_ids = np.append(gt_ids, np.expand_dims(as_numpy([[[gb[0]]] for gb in gt_boxes[img_path]]), axis=0), axis=1)
+        # get the gt boxes : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
         img, y, _ = dataset[idx]
-        gt_ids.append(np.expand_dims(y[:, 4],axis=0))
-        # y[:, 0] /= img.shape[1]  # box normalisation
-        # y[:, 1] /= img.shape[0]
-        # y[:, 2] /= img.shape[1]
-        # y[:, 3] /= img.shape[0]
-        gt_bboxes.append(np.expand_dims(y[:, :4], axis=0))
-        gt_difficults.append(np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None)
+        gt_bboxes = [np.expand_dims(y[:, :4], axis=0)]
+        gt_ids = [np.expand_dims(y[:, 4],axis=0)]
+        gt_difficults = [np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None]
 
-        if img_path in boxes:
-            det_bboxes = np.append(det_bboxes, np.expand_dims(as_numpy([[[b[2]*img.shape[1],b[3]*img.shape[0],b[4]*img.shape[1],b[5]*img.shape[0]]] for b in boxes[img_path]]), axis=0), axis=1)
-            det_ids = np.append(det_ids, np.expand_dims(as_numpy([[[b[0]]] for b in boxes[img_path]]), axis=0), axis=1)
-            det_scores = np.append(det_scores, np.expand_dims(as_numpy([[[b[1]]] for b in boxes[img_path]]), axis=0), axis=1)
+        # get the predictions : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
+        if img_path in predictions:
+            det_bboxes = [[[[b[2]*img.shape[1],  # change pred box dims to match image (unnormalise them)
+                             b[3]*img.shape[0],
+                             b[4]*img.shape[1],
+                             b[5]*img.shape[0]] for b in predictions[img_path]]]]
+            det_ids = [[[[b[0]] for b in predictions[img_path]]]]
+            det_scores = [[[[b[1]] for b in predictions[img_path]]]]
 
         for metric in metrics:
             metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
 
-    # for metric in metrics:
-    #     names, values = metric.get()
-    #     with open(args.pretrained.strip()[:-7]+'_D-'+str(dataset)+'_M-'+str(metric)+'.txt', 'w') as f:
-    #
-    #         for k, v in zip(names, values):
-    #             print(k, v)
-    #             f.write('{} {}\n'.format(k, v))
-
-    print(metric.get())
     return [metric.get() for metric in metrics]
 
 
@@ -370,12 +321,14 @@ def main(_argv):
         save_dir = os.path.join('models', FLAGS.save_prefix, FLAGS.save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
-    # boxes, gt_boxes = detect(net, dataset, loader, ctx, detection_threshold=FLAGS.detection_threshold, max_do=max_do)
+    # attempt to load predictions
+    predictions = load_predictions(save_dir)
 
-    # save_predictions(save_dir, dataset, boxes, gt_boxes)
-    # boxes_, gt_boxes_ = load_predictions(save_dir)
-    #
-    # visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, gt_boxes, max_do, display_gt=FLAGS.display_gt)
+    if predictions is None:  # id not exist detect and make
+        predictions = detect(net, dataset, loader, ctx, detection_threshold=FLAGS.detection_threshold, max_do=max_do)  # todo fix det thresh
+        save_predictions(save_dir, dataset, predictions)
+
+    visualise_predictions(save_dir, dataset, trained_on_dataset, predictions, max_do, display_gt=FLAGS.display_gt)
 
     metrics = list()
     if FLAGS.metrics:
@@ -386,9 +339,14 @@ def main(_argv):
             else:
                 metrics.append(get_metric(dataset, metric_name, FLAGS.data_shape))
 
-    boxes = detect(net, dataset, loader, ctx, metrics[0], detection_threshold=FLAGS.detection_threshold, max_do=max_do)
-    metrics[0].reset()
-    evaluate(metrics, dataset, boxes, save_dir)
+        results = evaluate(metrics, dataset, predictions)
+
+        for m, metric_name in enumerate(FLAGS.metrics.split(',')):
+            names, values = results[m]
+            with open(os.path.join(save_dir, metric_name+'.txt'), 'w') as f:
+                for k, v in zip(names, values):
+                    print(k, v)
+                    f.write('{} {}\n'.format(k, v))
 
 
 if __name__ == '__main__':
@@ -411,7 +369,7 @@ if __name__ == '__main__':
                          'Batch size for detection: higher faster, but more memory intensive.')
     flags.DEFINE_integer('data_shape', 416,
                          'Input data shape.')
-    flags.DEFINE_float('detection_threshold', 0.0,
+    flags.DEFINE_float('detection_threshold', 0.0, # higher than 0 messes up metrics
                        'The threshold on detections to them being displayed.')
     flags.DEFINE_integer('max_do', 5000,
                          'Maximum samples to detect on. -1 is all.')
