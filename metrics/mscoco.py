@@ -59,7 +59,7 @@ class COCODetectionMetric(mx.metric.EvalMetric):
             t = datetime.datetime.now().strftime('_%Y_%m_%d_%H_%M_%S')
         else:
             t = ''
-        self._filename = os.path.abspath(os.path.expanduser(os.path.join('models', save_prefix)) + t + '.json')
+        self._filename = os.path.abspath(os.path.expanduser(save_prefix) + t + '.json')
         try:
             f = open(self._filename, 'w')
         except IOError as e:
