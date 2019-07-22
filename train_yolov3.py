@@ -1,5 +1,8 @@
-"""Train YOLOv3 with random shapes."""
-import argparse
+from __future__ import division
+from __future__ import print_function
+
+from absl import app, flags, logging
+from absl.flags import FLAGS
 import os
 import logging
 import time
@@ -27,88 +30,90 @@ from models.definitions import yolo3_darknet53, yolo3_mobilenet1_0
 
 from utils.general import as_numpy
 
+logging.basicConfig(level=logging.INFO)
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Train YOLO networks with random input shape.')
-    parser.add_argument('--network', type=str, default='darknet53',
-                        help="Base network name which serves as feature extraction base.")
-    parser.add_argument('--data-shape', type=int, default=416,
-                        help="Input data shape for evaluation, use 320, 416, 608... " +
-                             "Training is with random shapes from (320 to 608).")
-    parser.add_argument('--batch-size', type=int, default=64,
-                        help='Training mini-batch size')
-    parser.add_argument('--dataset', type=str, default='voc',
-                        help='Training dataset. Now support voc.')
-    parser.add_argument('--num-workers', '-j', dest='num_workers', type=int,
-                        default=4, help='Number of data workers, you can use larger '
-                        'number to accelerate data loading, if you CPU and GPUs are powerful.')
-    parser.add_argument('--gpus', type=str, default='0',
-                        help='Training with GPUs, you can specify 1,3 for example.')
-    parser.add_argument('--epochs', type=int, default=200,
-                        help='Training epochs.')
-    parser.add_argument('--resume', type=str, default='',
-                        help='Resume from previously saved parameters if not None. '
-                        'For example, you can resume from ./yolo3_xxx_0123.params')
-    parser.add_argument('--start-epoch', type=int, default=0,
-                        help='Starting epoch for resuming, default is 0 for new training.'
-                        'You can specify it to 100 for example to start from 100 epoch.'
-                             'Set to -1 if using resume as a directory and resume from auto found latest epoch')
-    parser.add_argument('--lr', type=float, default=0.001,
-                        help='Learning rate, default is 0.001')
-    parser.add_argument('--lr-mode', type=str, default='step',
-                        help='learning rate scheduler mode. options are step, poly and cosine.')
-    parser.add_argument('--lr-decay', type=float, default=0.1,
-                        help='decay rate of learning rate. default is 0.1.')
-    parser.add_argument('--lr-decay-period', type=int, default=0,
-                        help='interval for periodic learning rate decays. default is 0 to disable.')
-    parser.add_argument('--lr-decay-epoch', type=str, default='160,180',
-                        help='epochs at which learning rate decays. default is 160,180.')
-    parser.add_argument('--warmup-lr', type=float, default=0.0,
-                        help='starting warmup learning rate. default is 0.0.')
-    parser.add_argument('--warmup-epochs', type=int, default=0,
-                        help='number of warmup epochs.')
-    parser.add_argument('--momentum', type=float, default=0.9,
-                        help='SGD momentum, default is 0.9')
-    parser.add_argument('--wd', type=float, default=0.0005,
-                        help='Weight decay, default is 5e-4')
-    parser.add_argument('--log-interval', type=int, default=100,
-                        help='Logging mini-batch interval. Default is 100.')
-    parser.add_argument('--save-prefix', type=str, default='XXXX',
-                        help='Saving parameter prefix')
-    parser.add_argument('--save-interval', type=int, default=-10,
-                        help='Saving parameters epoch interval, best model will always be saved. '
-                             'Can enter a negative int to save every 1 epochs, but delete after reach -save_interval')
-    parser.add_argument('--val-interval', type=int, default=1,
-                        help='Epoch interval for validation, increase the number will reduce the '
-                             'training time if validation is slow.')
-    parser.add_argument('--seed', type=int, default=233,
-                        help='Random seed to be fixed.')
-    parser.add_argument('--num-samples', type=int, default=-1,
-                        help='Training images. Use -1 to automatically get the number.')
-    parser.add_argument('--syncbn', action='store_true',
-                        help='Use synchronize BN across devices.')
-    parser.add_argument('--no-random-shape', action='store_true',
-                        help='Use fixed size(data-shape) throughout the training, which will be faster '
-                        'and require less memory. However, final model will be slightly worse.')
-    parser.add_argument('--no-wd', action='store_true',
-                        help='whether to remove weight decay on bias, and beta/gamma for batchnorm layers.')
-    parser.add_argument('--mixup', action='store_true',
-                        help='whether to enable mixup.')
-    parser.add_argument('--no-mixup-epochs', type=int, default=20,
-                        help='Disable mixup training if enabled in the last N epochs.')
-    parser.add_argument('--label-smooth', action='store_true', help='Use label smoothing.')
-    parser.add_argument('--allow_empty', action='store_true', help='Allow samples that contain 0 boxes as [-1s * 6].')
-    parser.add_argument('--frames', type=float, default=0.04,
-                        help='Based per video - and is NOT randomly sampled:'
-                             'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
-                             'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
-                             'If =1: Every sample used - full dataset')
-    args = parser.parse_args()
-    return args
+flags.DEFINE_string('network', 'darknet53',
+                    'Base network name: darknet53 or mobilenet1.0.')
+flags.DEFINE_string('dataset', 'voc',
+                    'Dataset to train on.')
+flags.DEFINE_string('trained_on', '',
+                    'Used for finetuning, specify the dataset the original model was trained on.')
+flags.DEFINE_string('save_prefix', '0001',
+                    'Model save prefix.')
+flags.DEFINE_integer('log_interval', 100,
+                     'Logging mini-batch interval.')
+flags.DEFINE_integer('save_interval', -10,
+                     'Saving parameters epoch interval, best model will always be saved. '
+                     'Can enter a negative int to save every 1 epochs, but delete after reach -save_interval')
+flags.DEFINE_integer('val_interval', 1,
+                     'Epoch interval for validation.')
+flags.DEFINE_string('resume', '',
+                    'Resume from previously saved parameters if not None.')
+
+flags.DEFINE_integer('batch_size', 64,
+                     'Batch size for detection: higher faster, but more memory intensive.')
+flags.DEFINE_integer('epochs', 200,
+                     'How many training epochs to complete')
+flags.DEFINE_integer('start_epoch', 0,
+                     'Starting epoch for resuming, default is 0 for new training.'
+                     'You can specify it to 100 for example to start from 100 epoch.'
+                     'Set to -1 if using resume as a directory and resume from auto found latest epoch')
+flags.DEFINE_integer('data_shape', 416,
+                     'For evaluation, use 320, 416, 608... Training is with random shapes from (320 to 608).')
+flags.DEFINE_float('lr', 0.001,
+                   'Learning rate.')
+flags.DEFINE_string('lr_mode', 'step',
+                    'Learning rate scheduler mode. options are step, poly and cosine.')
+flags.DEFINE_float('lr_decay', 0.1,
+                   'Decay rate of learning rate.')
+flags.DEFINE_integer('lr_decay_period', 0,
+                     'Interval for periodic learning rate decays.')
+flags.DEFINE_string('lr_decay_epoch', '160,180',
+                    'Epochs at which learning rate decays.')
+flags.DEFINE_float('warmup_lr', 0.0,
+                   'Starting warmup learning rate.')
+flags.DEFINE_integer('warmup_epochs', 0,
+                     'Number of warmup epochs.')
+flags.DEFINE_float('momentum', 0.9,
+                   'SGD momentum.')
+flags.DEFINE_float('wd', 0.0005,
+                   'Weight decay.')
+
+flags.DEFINE_boolean('syncbn', False,
+                     'Use synchronize BN across devices.')
+flags.DEFINE_boolean('no_random_shape', False,
+                     'Use fixed size(data-shape) throughout the training, which will be faster '
+                     'and require less memory. However, final model will be slightly worse.')
+flags.DEFINE_boolean('no_wd', False,
+                     'Remove weight decay on bias, and beta/gamma for batchnorm layers.')
+flags.DEFINE_boolean('mixup', False,
+                     'Enable mixup?')
+flags.DEFINE_integer('no_mixup_epochs', 20,
+                     'Disable mixup training if enabled in the last N epochs.')
+flags.DEFINE_boolean('label_smooth', False,
+                     'Use label smoothing?')
+flags.DEFINE_boolean('allow_empty', False,
+                     'Allow samples that contain 0 boxes as [-1s * 6]?')
+
+flags.DEFINE_string('gpus', '0',
+                    'GPU IDs to use. Use comma for multiple eg. 0,1.')
+flags.DEFINE_integer('num_workers', 8,
+                     'The number of workers should be picked so that it’s equal to number of cores on your machine'
+                     ' for max parallelization.')
+
+flags.DEFINE_integer('num_samples', -1,
+                     'Training images. Use -1 to automatically get the number.')
+flags.DEFINE_float('frames', 0.04,
+                   'Based per video - and is NOT randomly sampled:'
+                   'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
+                   'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
+                   'If =1: Every sample used - full dataset')
+flags.DEFINE_integer('seed', 233,
+                     'Random seed to be fixed.')
 
 
-def get_dataset(dataset, args):
-    if dataset.lower() == 'voc':
+def get_dataset(dataset_name, save_prefix=''):
+    if dataset_name.lower() == 'voc':
         train_dataset = VOCDetection(
             root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'),
             splits=[(2007, 'trainval'), (2012, 'trainval')])
@@ -116,62 +121,65 @@ def get_dataset(dataset, args):
             root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'),
             splits=[(2007, 'test')])
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
-    elif dataset.lower() == 'coco':
+
+    elif dataset_name.lower() == 'coco':
         train_dataset = COCODetection(
             root=os.path.join('datasets', 'MSCoco'), splits='instances_train2017', use_crowd=False)
         val_dataset = COCODetection(
             root=os.path.join('datasets', 'MSCoco'), splits='instances_val2017', skip_empty=False)
         val_metric = COCODetectionMetric(
-            val_dataset, args.save_prefix + '_eval', cleanup=True,
-            data_shape=(args.data_shape, args.data_shape))
-    elif dataset.lower() == 'det':
+            val_dataset, save_prefix + '_eval', cleanup=True,
+            data_shape=(FLAGS.data_shape, FLAGS.data_shape))
+
+    elif dataset_name.lower() == 'det':
         train_dataset = ImageNetDetection(
             root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
-            splits=['train'], allow_empty=args.allow_empty)
+            splits=['train'], allow_empty=FLAGS.allow_empty)
         val_dataset = ImageNetDetection(
             root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
-            splits=['val'], allow_empty=args.allow_empty)
+            splits=['val'], allow_empty=FLAGS.allow_empty)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
-    elif dataset.lower() == 'vid':
+
+    elif dataset_name.lower() == 'vid':
         train_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=[(2017, 'train')], allow_empty=args.allow_empty, videos=False, frames=args.frames)
+            splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty, videos=False, frames=FLAGS.frames)
         val_dataset = ImageNetVidDetection(
             root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=[(2017, 'val')], allow_empty=args.allow_empty, videos=False, frames=args.frames)
+            splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty, videos=False, frames=FLAGS.frames)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+
     else:
-        raise NotImplementedError('Dataset: {} not implemented.'.format(dataset))
-    if args.num_samples < 0:
-        args.num_samples = len(train_dataset)
-    if args.mixup:
+        raise NotImplementedError('Dataset: {} not implemented.'.format(dataset_name))
+
+    if FLAGS.mixup:
         from gluoncv.data import MixupDetection
         train_dataset = MixupDetection(train_dataset)
+
     return train_dataset, val_dataset, val_metric
 
 
-def get_dataloader(net, train_dataset, val_dataset, data_shape, batch_size, num_workers, args):
+def get_dataloader(net, train_dataset, val_dataset, batch_size):
     """Get dataloader."""
-    width, height = data_shape, data_shape
+    width, height = FLAGS.data_shape, FLAGS.data_shape
     batchify_fn = Tuple(*([Stack() for _ in range(6)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))  # stack image, all targets generated
-    if args.no_random_shape:
+    if FLAGS.no_random_shape:
         train_loader = gluon.data.DataLoader(
-            train_dataset.transform(YOLO3DefaultTrainTransform(width, height, net, mixup=args.mixup)),
-            batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=num_workers)
+            train_dataset.transform(YOLO3DefaultTrainTransform(width, height, net, mixup=FLAGS.mixup)),
+            batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
     else:
-        transform_fns = [YOLO3DefaultTrainTransform(x * 32, x * 32, net, mixup=args.mixup) for x in range(10, 20)]
+        transform_fns = [YOLO3DefaultTrainTransform(x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
         train_loader = RandomTransformDataLoader(
             transform_fns, train_dataset, batch_size=batch_size, interval=10, last_batch='rollover',
-            shuffle=True, batchify_fn=batchify_fn, num_workers=num_workers)
+            shuffle=True, batchify_fn=batchify_fn, num_workers=FLAGS.num_workers)
     val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
     val_loader = gluon.data.DataLoader(
         val_dataset.transform(YOLO3DefaultValTransform(width, height)),
-        batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=num_workers)
+        batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
     # NOTE for val batch loader last_batch='keep' changed to last_batch='discard' so exception not thrown
     # when last batch size is smaller than the number of GPUS (which throws exception) this is fixed in gluon
     # PR 14607: https://github.com/apache/incubator-mxnet/pull/14607 - but yet to be in official release
     # discarding last batch will incur minor changes in val results as some val data wont be processed
-
 
     return train_loader, val_loader
 
@@ -199,23 +207,24 @@ def save_params(net, best_map, current_map, epoch, save_interval, prefix):
                     os.remove('{:s}_{:04d}.params'.format(prefix, d))
 
 
-def resume(net, async_net, args):
+def resume(net, async_net, resume, start_epoch):
     """Resume model, can find the latest automatically"""
     # Requires the first digit of epoch in save string is a 0, otherwise may need to reimplement with .split()
-    if args.start_epoch == -1:
-        files = os.listdir(args.resume.strip())
+    if start_epoch == -1:
+        files = os.listdir(resume.strip())
         files = [file for file in files if '_0' in file]
         files = [file for file in files if '.params' in file]
         files.sort()
         resume_file = files[-1]
-        args.start_epoch = int(resume_file[:-7].split('_')[-1]) + 1
+        start_epoch = int(resume_file[:-7].split('_')[-1]) + 1
 
-        net.load_parameters(os.path.join(args.resume.strip(), resume_file))
-        async_net.load_parameters(os.path.join(args.resume.strip(), resume_file))
+        net.load_parameters(os.path.join(resume.strip(), resume_file))
+        async_net.load_parameters(os.path.join(resume.strip(), resume_file))
     else:
-        net.load_parameters(args.resume.strip())
-        async_net.load_parameters(args.resume.strip())
+        net.load_parameters(resume.strip())
+        async_net.load_parameters(resume.strip())
 
+    return start_epoch
 
 def validate(net, val_data, ctx, eval_metric):
     """Test on validation dataset."""
@@ -253,35 +262,35 @@ def validate(net, val_data, ctx, eval_metric):
     return eval_metric.get()
 
 
-def train(net, train_data, val_data, eval_metric, ctx, args):
+def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch, num_samples):
     """Training pipeline"""
     net.collect_params().reset_ctx(ctx)
-    if args.no_wd:
+    if FLAGS.no_wd:
         for k, v in net.collect_params('.*beta|.*gamma|.*bias').items():
             v.wd_mult = 0.0
 
-    if args.label_smooth:
+    if FLAGS.label_smooth:
         net._target_generator._label_smooth = True
 
-    if args.lr_decay_period > 0:
-        lr_decay_epoch = list(range(args.lr_decay_period, args.epochs, args.lr_decay_period))
+    if FLAGS.lr_decay_period > 0:
+        lr_decay_epoch = list(range(FLAGS.lr_decay_period, FLAGS.epochs, FLAGS.lr_decay_period))
     else:
-        lr_decay_epoch = [int(i) for i in args.lr_decay_epoch.split(',')]
-    lr_decay_epoch = [e - args.warmup_epochs for e in lr_decay_epoch]
-    num_batches = args.num_samples // args.batch_size
+        lr_decay_epoch = [int(i) for i in FLAGS.lr_decay_epoch.split(',')]
+    lr_decay_epoch = [e - FLAGS.warmup_epochs for e in lr_decay_epoch]
+    num_batches = num_samples // FLAGS.batch_size
     lr_scheduler = LRSequential([
-        LRScheduler('linear', base_lr=0, target_lr=args.lr,
-                    nepochs=args.warmup_epochs, iters_per_epoch=num_batches),
-        LRScheduler(args.lr_mode, base_lr=args.lr,
-                    nepochs=args.epochs - args.warmup_epochs,
+        LRScheduler('linear', base_lr=0, target_lr=FLAGS.lr,
+                    nepochs=FLAGS.warmup_epochs, iters_per_epoch=num_batches),
+        LRScheduler(FLAGS.lr_mode, base_lr=FLAGS.lr,
+                    nepochs=FLAGS.epochs - FLAGS.warmup_epochs,
                     iters_per_epoch=num_batches,
                     step_epoch=lr_decay_epoch,
-                    step_factor=args.lr_decay, power=2),
+                    step_factor=FLAGS.lr_decay, power=2),
     ])
 
     trainer = gluon.Trainer(
         net.collect_params(), 'sgd',
-        {'wd': args.wd, 'momentum': args.momentum, 'lr_scheduler': lr_scheduler},
+        {'wd': FLAGS.wd, 'momentum': FLAGS.momentum, 'lr_scheduler': lr_scheduler},
         kvstore='local')
 
     # targets
@@ -298,28 +307,28 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
     logging.basicConfig()
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-    log_file_path = args.save_prefix + '_train.log'
+    log_file_path = save_prefix + '_train.log'
     log_dir = os.path.dirname(log_file_path)
     if log_dir and not os.path.exists(log_dir):
         os.makedirs(log_dir)
     fh = logging.FileHandler(log_file_path)
     logger.addHandler(fh)
-    logger.info(args)
-    logger.info('Start training from [Epoch {}]'.format(args.start_epoch))
-    if args.resume.strip():
-        with open(args.save_prefix+'_best_map.log', 'r') as f:
+    logger.info(FLAGS)
+    logger.info('Start training from [Epoch {}]'.format(start_epoch))
+    if FLAGS.resume.strip() and os.path.exists(save_prefix+'_best_map.log'):
+        with open(save_prefix+'_best_map.log', 'r') as f:
             lines = [line.split()[1] for line in f.readlines()]
             best_map = [float(lines[-1])]
     else:
         best_map = [0]
-    for epoch in range(args.start_epoch, args.epochs+1):
-        if args.mixup:
+    for epoch in range(start_epoch, FLAGS.epochs+1):
+        if FLAGS.mixup:
             # TODO(zhreshold): more elegant way to control mixup during runtime
             try:
                 train_data._dataset.set_mixup(np.random.beta, 1.5, 1.5)
             except AttributeError:
                 train_data._dataset._data.set_mixup(np.random.beta, 1.5, 1.5)
-            if epoch >= args.epochs - args.no_mixup_epochs:
+            if epoch >= FLAGS.epochs - FLAGS.no_mixup_epochs:
                 try:
                     train_data._dataset.set_mixup(None)
                 except AttributeError:
@@ -354,7 +363,7 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
             center_metrics.update(0, center_losses)
             scale_metrics.update(0, scale_losses)
             cls_metrics.update(0, cls_losses)
-            if args.log_interval and not (i + 1) % args.log_interval:
+            if FLAGS.log_interval and not (i + 1) % FLAGS.log_interval:
                 name1, loss1 = obj_metrics.get()
                 name2, loss2 = center_metrics.get()
                 name3, loss3 = scale_metrics.get()
@@ -369,7 +378,7 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
         name4, loss4 = cls_metrics.get()
         logger.info('[Epoch {}] Training cost: {:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
             epoch, (time.time()-tic), name1, loss1, name2, loss2, name3, loss3, name4, loss4))
-        if not (epoch + 1) % args.val_interval:
+        if not (epoch + 1) % FLAGS.val_interval:
             # consider reduce the frequency of validation to save time
             map_name, mean_ap = validate(net, val_data, ctx, eval_metric)
             val_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name, mean_ap)])
@@ -377,58 +386,82 @@ def train(net, train_data, val_data, eval_metric, ctx, args):
             current_map = float(mean_ap[-1])
         else:
             current_map = 0.
-        save_params(net, best_map, current_map, epoch, args.save_interval, args.save_prefix)
+        save_params(net, best_map, current_map, epoch, FLAGS.save_interval, save_prefix)
 
 
-if __name__ == '__main__':
-    args = parse_args()
+def main(_argv):
+
     # fix seed for mxnet, numpy and python builtin random generator.
-    gutils.random.seed(args.seed)
+    gutils.random.seed(FLAGS.seed)
 
     # training contexts
-    ctx = [mx.gpu(int(i)) for i in args.gpus.split(',') if i.strip()]
+    ctx = [mx.gpu(int(i)) for i in FLAGS.gpus.split(',') if i.strip()]
     ctx = ctx if ctx else [mx.cpu()]
 
     # training data
-    train_dataset, val_dataset, eval_metric = get_dataset(args.dataset, args)
+    train_dataset, val_dataset, eval_metric = get_dataset(FLAGS.dataset, os.path.join('models', FLAGS.save_prefix))
+
+    trained_on_dataset = train_dataset
+    if FLAGS.trained_on:
+        # load the model with these classes then reset
+        trained_on_dataset, _, _ = get_dataset(FLAGS.trained_on, os.path.join('models', FLAGS.save_prefix))
 
     # network
-    os.makedirs(os.path.join('models', args.save_prefix), exist_ok=bool(args.resume.strip()))
-    net_name = '_'.join(('yolo3', args.network, args.dataset))
-    args.save_prefix = os.path.join('models', args.save_prefix, net_name)
+    if os.path.exists(os.path.join('models', FLAGS.save_prefix)) and not bool(FLAGS.resume.strip()):
+        logging.error("{} exists so won't overwrite and restart training. You can resume training by using "
+                      "--resume".format(os.path.join('models', FLAGS.save_prefix)))
+        return
+    os.makedirs(os.path.join('models', FLAGS.save_prefix), exist_ok=bool(FLAGS.resume.strip()))
+    net_name = '_'.join(('yolo3', FLAGS.network, FLAGS.dataset))
+    save_prefix = os.path.join('models', FLAGS.save_prefix, net_name)
 
-    if args.network == 'darknet53':
-        if args.syncbn and len(ctx) > 1:
-            net = yolo3_darknet53(train_dataset.classes, args.dataset, root='models', pretrained_base=True,
+    if FLAGS.network == 'darknet53':
+        if FLAGS.syncbn and len(ctx) > 1:
+            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True,
                                   norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                   norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_darknet53(train_dataset.classes, args.dataset, root='models', pretrained_base=False)  # used by cpu worker
+            async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=False)  # used by cpu worker
         else:
-            net = yolo3_darknet53(train_dataset.classes, args.dataset, root='models', pretrained_base=True)
+            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True)
             async_net = net
-    elif args.network == 'mobilenet1_0':
-        if args.syncbn and len(ctx) > 1:
-            net = yolo3_mobilenet1_0(train_dataset.classes, args.dataset, root='models', pretrained_base=True,
+    elif FLAGS.network == 'mobilenet1_0':
+        if FLAGS.syncbn and len(ctx) > 1:
+            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True,
                                      norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                      norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_mobilenet1_0(train_dataset.classes, args.dataset, root='models',
-                                           pretrained_base=False)  # used by cpu worker
+            async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=False)  # used by cpu worker
         else:
-            net = yolo3_mobilenet1_0(train_dataset.classes, args.dataset, root='models', pretrained_base=True)
+            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True)
             async_net = net
     else:
-        raise NotImplementedError('Model: {} not implemented.'.format(args.network))
+        raise NotImplementedError('Model: {} not implemented.'.format(FLAGS.network))
 
-    if args.resume.strip():
-        resume(net, async_net, args)
+    if FLAGS.resume.strip():
+        start_epoch = resume(net, async_net, FLAGS.resume, FLAGS.start_epoch)
     else:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             net.initialize()
             async_net.initialize()
 
-    train_data, val_data = get_dataloader(
-        async_net, train_dataset, val_dataset, args.data_shape, args.batch_size, args.num_workers, args)
+    if FLAGS.trained_on:
+        net.reset_class(train_dataset.classes)
+
+    # load the dataloader
+    train_data, val_data = get_dataloader(async_net, train_dataset, val_dataset, FLAGS.batch_size)
+
+    num_samples = FLAGS.num_samples
+    if num_samples < 0:
+        num_samples = len(train_dataset)
 
     # training
-    train(net, train_data, val_data, eval_metric, ctx, args)
+    train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch, num_samples)
+
+
+if __name__ == '__main__':
+
+    try:
+        app.run(main)
+    except SystemExit:
+        pass
+
