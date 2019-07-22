@@ -76,12 +76,12 @@ def get_dataloader(dataset, data_shape, batch_size, num_workers):
     return loader
 
 
-def get_metric(dataset, metric_name, data_shape, class_map=None):
+def get_metric(dataset, metric_name, data_shape, save_dir, class_map=None):
     if metric_name.lower() == 'voc':
         metric = VOCMApMetric(iou_thresh=0.5, class_names=dataset.classes, class_map=class_map)
     elif metric_name.lower() == 'coco':
-        metric = COCODetectionMetric(dataset, os.path.join('XXXXXX', 'eval'), cleanup=True,
-                                     data_shape=(data_shape, data_shape))
+        metric = COCODetectionMetric(dataset, save_dir, cleanup=True,
+                                     data_shape=None)#(data_shape, data_shape))
     elif metric_name.lower() == 'vid':
         metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=(data_shape, data_shape))
     else:
@@ -89,7 +89,7 @@ def get_metric(dataset, metric_name, data_shape, class_map=None):
     return metric
 
 
-def detect(net, dataset, loader, ctx, detection_threshold=0, max_do=-1):
+def detect(net, dataset, loader, ctx, max_do=-1):
     net.collect_params().reset_ctx(ctx)
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     net.hybridize()
@@ -132,11 +132,10 @@ def detect(net, dataset, loader, ctx, detection_threshold=0, max_do=-1):
                 score = score.flat[valid_pred]
 
                 for id_, box_, score_ in zip(id, box, score):
-                    if score_ > detection_threshold:
-                        if file in boxes:
-                            boxes[file].append([id_, score_]+list(box_))
-                        else:
-                            boxes[file] = [[id_, score_]+list(box_)]
+                    if file in boxes:
+                        boxes[file].append([id_, score_]+list(box_))
+                    else:
+                        boxes[file] = [[id_, score_]+list(box_)]
 
             pbar.update(batch[0].shape[0])
             c += batch[0].shape[0]
@@ -150,13 +149,12 @@ def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1):
     if not overwrite and os.path.exists(os.path.join(save_dir, 'gt')) and os.path.exists(os.path.join(save_dir, 'pred')):
         logging.info("Ground truth and prediction files already exist")
 
-    os.makedirs(os.path.join(save_dir, 'gt'), exist_ok=True)
     os.makedirs(os.path.join(save_dir, 'pred'), exist_ok=True)
 
     if max_do < 0:
         max_do = len(dataset)
 
-    for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out prediction and gt .txts"):
+    for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out prediction .txts"):
         img_path = dataset.sample_path(idx)
 
         sample_id = img_path
@@ -188,7 +186,8 @@ def load_predictions(save_dir):
     return boxes
 
 
-def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, max_do=-1, display_gt=False):
+def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes,
+                          max_do=-1, display_gt=False, detection_thresh=0.5):
     colors = dict()
     for i in range(200):
         colors[i] = (int(256 * random.random()), int(256 * random.random()), int(256 * random.random()))
@@ -211,7 +210,7 @@ def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, max_do=-
                                bboxes=[list(g) for g in y[:, :4]],
                                scores=[1]*len(y),
                                labels=[g for g in y[:, 4]],
-                               thresh=0,
+                               thresh=detection_thresh,
                                colors=colors_gt,
                                class_names=dataset.classes,
                                absolute_coordinates=True)
@@ -221,7 +220,7 @@ def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes, max_do=-
                                bboxes=[b[2:] for b in boxes[img_path]],
                                scores=[b[1] for b in boxes[img_path]],
                                labels=[b[0] for b in boxes[img_path]],
-                               thresh=0,
+                               thresh=detection_thresh,
                                colors=colors,
                                class_names=trained_on_dataset.classes,
                                absolute_coordinates=False)
@@ -325,19 +324,21 @@ def main(_argv):
     predictions = load_predictions(save_dir)
 
     if predictions is None:  # id not exist detect and make
-        predictions = detect(net, dataset, loader, ctx, detection_threshold=FLAGS.detection_threshold, max_do=max_do)  # todo fix det thresh
+        predictions = detect(net, dataset, loader, ctx, max_do=max_do)  # todo fix det thresh
         save_predictions(save_dir, dataset, predictions)
 
-    visualise_predictions(save_dir, dataset, trained_on_dataset, predictions, max_do, display_gt=FLAGS.display_gt)
+    if FLAGS.visualise:
+        visualise_predictions(save_dir, dataset, trained_on_dataset, predictions,
+                              max_do, display_gt=FLAGS.display_gt, detection_threshold=FLAGS.detection_threshold)
 
     metrics = list()
     if FLAGS.metrics:
         for metric_name in FLAGS.metrics.split(','):
             if FLAGS.trained_on:  # for use when model preds are diff to eval set classes
-                metrics.append(get_metric(dataset, metric_name, FLAGS.data_shape,
+                metrics.append(get_metric(dataset, metric_name, FLAGS.data_shape, save_dir,
                                           class_map=get_class_map(trained_on_dataset, dataset)))
             else:
-                metrics.append(get_metric(dataset, metric_name, FLAGS.data_shape))
+                metrics.append(get_metric(dataset, metric_name, FLAGS.data_shape, save_dir))
 
         results = evaluate(metrics, dataset, predictions)
 
@@ -361,19 +362,21 @@ if __name__ == '__main__':
                         'Dataset the model was trained on.')
     flags.DEFINE_string('save_prefix', '0001',
                         'Model save prefix.')
-    flags.DEFINE_string('save_dir', 'eval',
+    flags.DEFINE_string('save_dir', 'results',
                         'Save directory to save images.')
-    flags.DEFINE_string('metrics', 'voc',
+    flags.DEFINE_string('metrics', 'voc,coco',
                         'List of metrics separated by , eg. voc,coco')
     flags.DEFINE_integer('batch_size', 1,
                          'Batch size for detection: higher faster, but more memory intensive.')
     flags.DEFINE_integer('data_shape', 416,
                          'Input data shape.')
-    flags.DEFINE_float('detection_threshold', 0.0, # higher than 0 messes up metrics
+    flags.DEFINE_float('detection_threshold', 0.5,
                        'The threshold on detections to them being displayed.')
     flags.DEFINE_integer('max_do', 5000,
                          'Maximum samples to detect on. -1 is all.')
 
+    flags.DEFINE_boolean('visualise', False,
+                         'Do you want to display the detections?')
     flags.DEFINE_boolean('display_gt', True,
                          'Do you want to display the ground truth boxes on the images?')
 
