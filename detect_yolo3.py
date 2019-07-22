@@ -4,14 +4,13 @@ from __future__ import print_function
 from absl import app, flags, logging
 from absl.flags import FLAGS
 import cv2
-import os
-import logging
+from gluoncv.model_zoo import get_model
+from gluoncv.data.batchify import Tuple, Stack, Pad
 import mxnet as mx
 from mxnet import gluon
-from gluoncv.model_zoo import get_model
-import gluoncv as gcv
-from gluoncv.data.batchify import Tuple, Stack, Pad
+import logging
 import numpy as np
+import os
 import random
 from tqdm import tqdm
 
@@ -31,19 +30,59 @@ from utils.video import video_to_frames
 
 logging.basicConfig(level=logging.INFO)
 
+flags.DEFINE_string('model_path', 'yolo3_darknet53_voc_best.params',
+                    'Path to the detection model to use')
+flags.DEFINE_string('network', 'darknet53',
+                    'Base network name: darknet53 or mobilenet1.0.')
+flags.DEFINE_string('dataset', 'voc',
+                    'Dataset or .jpg image or .mp4 video or .txt image/video list.')
+flags.DEFINE_string('trained_on', 'voc',
+                    'Dataset the model was trained on.')
+flags.DEFINE_string('save_prefix', '0001',
+                    'Model save prefix.')
+flags.DEFINE_string('save_dir', 'results',
+                    'Save directory to save images.')
+flags.DEFINE_string('metrics', 'voc,coco',
+                    'List of metrics separated by , eg. voc,coco')
+flags.DEFINE_integer('batch_size', 1,
+                     'Batch size for detection: higher faster, but more memory intensive.')
+flags.DEFINE_integer('data_shape', 416,
+                     'Input data shape.')
+flags.DEFINE_float('detection_threshold', 0.5,
+                   'The threshold on detections to them being displayed.')
+flags.DEFINE_integer('max_do', 5000,
+                     'Maximum samples to detect on. -1 is all.')
 
-def get_dataset(dataset_name):  # todo add detection flag to the datasets so the get function behaves as desired
+flags.DEFINE_boolean('visualise', False,
+                     'Do you want to display the detections?')
+flags.DEFINE_boolean('display_gt', True,
+                     'Do you want to display the ground truth boxes on the images?')
+
+flags.DEFINE_string('gpus', '0',
+                    'GPU IDs to use. Use comma for multiple eg. 0,1.')
+flags.DEFINE_integer('num_workers', 8,
+                     'The number of workers should be picked so that it’s equal to number of cores on your machine'
+                     ' for max parallelization.')
+
+
+def get_dataset(dataset_name):
     if dataset_name.lower() == 'voc':
-        dataset = VOCDetection(root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'), splits=[(2007, 'test')], inference=True)
+        dataset = VOCDetection(root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'), splits=[(2007, 'test')],
+                               inference=True)
+
     elif dataset_name.lower() == 'coco':
         dataset = COCODetection(root=os.path.join('datasets', 'MSCoco'),
                                 splits='instances_val2017', skip_empty=False, inference=True)
+
     elif dataset_name.lower() == 'det':
         dataset = ImageNetDetection(root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
                                     splits=['val'], allow_empty=False, inference=True)
+
     elif dataset_name.lower() == 'vid':
         dataset = ImageNetVidDetection(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-                                       splits=[(2017, 'val')], allow_empty=False, videos=False, frames=0.2, inference=True)
+                                       splits=[(2017, 'val')], allow_empty=False, videos=False, frames=0.2,
+                                       inference=True)
+
     elif dataset_name[-4:] == '.txt':  # list of images or list of videos
         with open(dataset_name, 'r') as f:
             files = [l.rstrip() for l in f.readlines()]
@@ -55,24 +94,28 @@ def get_dataset(dataset_name):  # todo add detection flag to the datasets so the
         elif files[0][-4:] == '.jpg':  # list of images
             img_list = files
         dataset = DetectSet(img_list)
+
     elif dataset_name[-4:] == '.jpg':  # single image
         dataset = DetectSet([dataset_name])
+
     elif dataset_name[-4:] == '.mp4':
         # make frames in tmp folder
         img_list = video_to_frames(dataset_name, os.path.join('data', 'tmp'),
                                    os.path.join('data', 'tmp', 'stats'), overwrite=False)
         dataset = DetectSet(img_list)
+
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset_name))
+
     return dataset
 
 
-def get_dataloader(dataset, data_shape, batch_size, num_workers):
-    """Get dataloader."""
-    width, height = data_shape, data_shape
-    batchify_fn = Tuple(Stack(), Pad(pad_val=-1), Stack())  # todo ensure this is correct
+def get_dataloader(dataset, batch_size):
+    width, height = FLAGS.data_shape, FLAGS.data_shape
+    batchify_fn = Tuple(Stack(), Pad(pad_val=-1), Stack())
     loader = gluon.data.DataLoader(dataset.transform(YOLO3DefaultInferenceTransform(width, height)),
-        batch_size, False, last_batch='keep', num_workers=num_workers, batchify_fn=batchify_fn)
+                                   batch_size, False, last_batch='keep', num_workers=FLAGS.num_workers,
+                                   batchify_fn=batchify_fn)
     return loader
 
 
@@ -241,7 +284,7 @@ def evaluate(metrics, dataset, predictions):
         # get the gt boxes : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
         img, y, _ = dataset[idx]
         gt_bboxes = [np.expand_dims(y[:, :4], axis=0)]
-        gt_ids = [np.expand_dims(y[:, 4],axis=0)]
+        gt_ids = [np.expand_dims(y[:, 4], axis=0)]
         gt_difficults = [np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None]
 
         # get the predictions : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
@@ -302,7 +345,7 @@ def main(_argv):
     ctx = ctx if ctx else [mx.cpu()]
 
     # dataloader
-    loader = get_dataloader(dataset, FLAGS.data_shape, batch_size, FLAGS.num_workers)
+    loader = get_dataloader(dataset, batch_size)
 
     # network
     net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
@@ -351,40 +394,6 @@ def main(_argv):
 
 
 if __name__ == '__main__':
-
-    flags.DEFINE_string('model_path', 'yolo3_darknet53_voc_best.params',
-                        'Path to the detection model to use')
-    flags.DEFINE_string('network', 'darknet53',
-                        'Base network name: darknet53 or mobilenet1.0.')
-    flags.DEFINE_string('dataset', 'voc',
-                        'Dataset or .jpg image or .mp4 video or .txt image/video list.')
-    flags.DEFINE_string('trained_on', 'voc',
-                        'Dataset the model was trained on.')
-    flags.DEFINE_string('save_prefix', '0001',
-                        'Model save prefix.')
-    flags.DEFINE_string('save_dir', 'results',
-                        'Save directory to save images.')
-    flags.DEFINE_string('metrics', 'voc,coco',
-                        'List of metrics separated by , eg. voc,coco')
-    flags.DEFINE_integer('batch_size', 1,
-                         'Batch size for detection: higher faster, but more memory intensive.')
-    flags.DEFINE_integer('data_shape', 416,
-                         'Input data shape.')
-    flags.DEFINE_float('detection_threshold', 0.5,
-                       'The threshold on detections to them being displayed.')
-    flags.DEFINE_integer('max_do', 5000,
-                         'Maximum samples to detect on. -1 is all.')
-
-    flags.DEFINE_boolean('visualise', False,
-                         'Do you want to display the detections?')
-    flags.DEFINE_boolean('display_gt', True,
-                         'Do you want to display the ground truth boxes on the images?')
-
-    flags.DEFINE_string('gpus', '0',
-                        'GPU IDs to use. Use comma for multiple eg. 0,1.')
-    flags.DEFINE_integer('num_workers', 8,
-                         'The number of workers should be picked so that it’s equal to number of cores on your machine'
-                         ' for max parallelization.')
 
     try:
         app.run(main)
