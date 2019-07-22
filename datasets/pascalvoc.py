@@ -45,12 +45,13 @@ class VOCDetection(VisionDataset):
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'voc'),
                  splits=((2007, 'trainval'), (2012, 'trainval')),
-                 transform=None, index_map=None, preload_label=True, inference=False):
+                 transform=None, index_map=None, preload_label=True, difficult=True, inference=False):
         super(VOCDetection, self).__init__(root)
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
         self._transform = transform
         self._splits = splits
+        self._difficult = difficult
         self._inference = inference
         self._items = self._load_items(splits)
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
@@ -141,7 +142,10 @@ class VOCDetection(VisionDataset):
                 self._validate_label(xmin, ymin, xmax, ymax, width, height)
             except AssertionError as e:
                 raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
-            label.append([xmin, ymin, xmax, ymax, cls_id, difficult])
+            if self._difficult:
+                label.append([xmin, ymin, xmax, ymax, cls_id, difficult])
+            else:
+                label.append([xmin, ymin, xmax, ymax, cls_id, 0])
         return np.array(label)
 
     def _validate_label(self, xmin, ymin, xmax, ymax, width, height):
