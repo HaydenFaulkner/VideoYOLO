@@ -159,9 +159,9 @@ class VOCMApMetric(mx.metric.EvalMetric):
 
                 # VOC evaluation follows integer typed bounding boxes.
                 pred_bbox_l = pred_bbox_l.copy()
-                pred_bbox_l[:, 2:] += 1
+                pred_bbox_l[:, 2:]# += 1
                 gt_bbox_l = gt_bbox_l.copy()
-                gt_bbox_l[:, 2:] += 1
+                gt_bbox_l[:, 2:]# += 1
 
                 iou = bbox_iou(pred_bbox_l, gt_bbox_l)
                 gt_index = iou.argmax(axis=1)
