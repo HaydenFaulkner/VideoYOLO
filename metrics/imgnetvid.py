@@ -24,7 +24,7 @@ def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10):
     """
     res = []
     ids = dataset.image_ids
-    for idx, (_, frame) in enumerate(dataset):
+    for idx, (_, frame, _) in enumerate(dataset):
         w = frame[:, 2] - frame[:, 0] + 1
         h = frame[:, 3] - frame[:, 1] + 1
         thr = (w*h)/((w+pixel_tolerance)*(h+pixel_tolerance))

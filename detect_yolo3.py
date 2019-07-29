@@ -52,6 +52,11 @@ flags.DEFINE_float('detection_threshold', 0.5,
                    'The threshold on detections to them being displayed.')
 flags.DEFINE_integer('max_do', -1,
                      'Maximum samples to detect on. -1 is all.')
+flags.DEFINE_float('frames', 0.04,
+                   'Based per video - and is NOT randomly sampled:'
+                   'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
+                   'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
+                   'If =1: Every sample used - full dataset')
 
 flags.DEFINE_boolean('visualise', False,
                      'Do you want to display the detections?')
@@ -80,7 +85,7 @@ def get_dataset(dataset_name):
 
     elif dataset_name.lower() == 'vid':
         dataset = ImageNetVidDetection(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-                                       splits=[(2017, 'val')], allow_empty=False, videos=False, frames=0.2,
+                                       splits=[(2017, 'val')], allow_empty=False, videos=False, frames=FLAGS.frames,
                                        inference=True)
 
     elif dataset_name[-4:] == '.txt':  # list of images or list of videos
@@ -140,7 +145,7 @@ def detect(net, dataset, loader, ctx, max_do=-1):
     if max_do < 0:
         max_do = len(dataset)
     c = 0
-    with tqdm(total=min(max_do, len(dataset))) as pbar:
+    with tqdm(total=min(max_do, len(dataset)), desc="Detecting") as pbar:
         for ib, batch in enumerate(loader):
 
             data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
@@ -200,25 +205,35 @@ def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1):
     for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out prediction .txts"):
         img_path = dataset.sample_path(idx)
 
-        sample_id = img_path
-        file_id = sample_id.split('/')[-1][:-4]
+        file_id = img_path.split('/')[-1][:-4]
         if FLAGS.dataset == 'vid':
-            file_id = img_path.split('/')[-2]
+            file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+            os.makedirs(os.path.join(save_dir, 'pred', img_path.split('/')[-2]), exist_ok=True)
 
         with open(os.path.join(save_dir, 'pred', file_id + '.txt'), 'w') as f:
             if img_path in boxes:
                 for box in boxes[img_path]:  # sid, class, score, box
-                    f.write("{},{},{},{},{},{},{}\n".format(sample_id, box[0], box[1], box[2], box[3], box[4], box[5]))
+                    f.write("{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5]))
 
 
-def load_predictions(save_dir):
+def load_predictions(save_dir, dataset, max_do=-1):
     if not os.path.exists(os.path.join(save_dir, 'pred')):
         logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'pred')))
         return None
 
     boxes = dict()
-    for pred_file in os.listdir(os.path.join(save_dir, 'pred')):
-        with open(os.path.join(save_dir, 'pred', pred_file), 'r') as f:
+    for idx in tqdm(range(min(len(dataset), max_do)), desc="Loading in prediction .txts"):
+        img_path = dataset.sample_path(idx)
+
+        file_id = img_path.split('/')[-1][:-4]
+        if FLAGS.dataset == 'vid':
+            file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+
+        if not os.path.exists(os.path.join(save_dir, 'pred', file_id + '.txt')):
+            logging.error("Prediction file does not exist {}".format(os.path.join(save_dir, 'pred', file_id + '.txt')))
+            return None
+
+        with open(os.path.join(save_dir, 'pred', file_id + '.txt'), 'r') as f:
             bb = [line.rstrip().split(',') for line in f.readlines()]
         for box in bb:
             if box[0] in boxes:
@@ -364,7 +379,7 @@ def main(_argv):
     os.makedirs(save_dir, exist_ok=True)
 
     # attempt to load predictions
-    predictions = load_predictions(save_dir)
+    predictions = load_predictions(save_dir, dataset, max_do=max_do)
 
     if predictions is None:  # id not exist detect and make
         predictions = detect(net, dataset, loader, ctx, max_do=max_do)  # todo fix det thresh

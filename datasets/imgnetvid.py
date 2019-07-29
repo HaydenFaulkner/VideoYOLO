@@ -365,7 +365,7 @@ class ImageNetVidDetection(VisionDataset):
         annotations = list()
         for idx in range(len(self)):
             img_id = self._items[idx]
-            filename = self._anno_path.format(*img_id)
+            filename = self._anno_path.format(*img_id[1:])
             width, height = self._im_shapes[idx]
 
             img_id = self.image_ids[idx]
@@ -387,6 +387,8 @@ class ImageNetVidDetection(VisionDataset):
 
         with open(self._coco_path, 'w') as f:
             json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
+
+        return self._coco_path
 
     def _load_motion_ious(self):
         path = os.path.join(self._root, '{}_motion_ious.json'.format(self._splits[0][1]))
@@ -467,16 +469,16 @@ def generate_motion_ious(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
 
 
 if __name__ == '__main__':
-    train_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'train')],
-        allow_empty=False, videos=False, frames=0.04)
+    # train_dataset = ImageNetVidDetection(
+    #     root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'train')],
+    #     allow_empty=False, videos=False, frames=0.04)
     val_dataset = ImageNetVidDetection(
         root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'val')],
         allow_empty=False, videos=False, frames=0.04)
-    test_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'test')],
-        allow_empty=True, videos=False)
+    # test_dataset = ImageNetVidDetection(
+    #     root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'test')],
+    #     allow_empty=True, videos=False)
 
-    print(train_dataset)
+    # print(train_dataset)
     print(val_dataset)
-    print(test_dataset)
+    # print(test_dataset)
