@@ -69,21 +69,31 @@ conda activate viddet-mx
 ### Training
 To train a model you can use something like:
 ```
-python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save-prefix 0001 --num-workers 16 --warmup-lr 0.0001 --warmup-epochs 3 --syncbn
+python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
 ```
 
 If you don't have this much power available you will need to specify a lower batch size:
 ```
-python train_yolov3.py --batch-size 4 --dataset voc --save-prefix 0001 --warmup-lr 0.0001 --warmup-epochs 3
+python train_yolov3.py --batch_size 4 --dataset voc --save_prefix 0001 --warmup_lr 0.0001 --warmup_epochs 3
 ```
 
 ***We found a warmup was necessary for YOLOv3***
 
-### Testing
+### Finetuning
+To finetune a model you need to specify a `--resume` path and a `--trained_on` dataset:
+```
+python train_yolov3.py --dataset voc --dataset coco --resume models/0003/yolo3_darknet53_coco_best.params --gpus 0,1,2,3 --save_prefix 0006 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+```
+
+### Detection, Testing & Visualisation
 To evaluate a model you can use something like:
 ```
-eval_yolov3.py --batch-size 4 --pretrained models/0001/yolo3_darknet53_voc_best.params --metric voc --dataset voc --save-prefix 0001
+python detect_yolov3.py --batch_size 1 --pretrained models/0001/yolo3_darknet53_voc_best.params --metric voc --dataset voc --save_prefix 0001
 ```
-### Detection & Visualisation
 
-Coming soon
+Visualisation is **off** by default use `--visualise True` to write out images with boxes displayed.
+
+## Results
+| Model  | Trained On | Tested On | VOC<sub>12</sub> | AP<sub>.5-.95</sub> | AP<sub>.5 | AP<sub>.75</sub> | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>L</sub> |
+|--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
+| `0001` | VOC `trainval 07+12` | VOC `test 07` | | | | | |
