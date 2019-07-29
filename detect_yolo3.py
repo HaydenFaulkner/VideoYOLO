@@ -50,7 +50,7 @@ flags.DEFINE_integer('data_shape', 416,
                      'Input data shape.')
 flags.DEFINE_float('detection_threshold', 0.5,
                    'The threshold on detections to them being displayed.')
-flags.DEFINE_integer('max_do', 5000,
+flags.DEFINE_integer('max_do', -1,
                      'Maximum samples to detect on. -1 is all.')
 
 flags.DEFINE_boolean('visualise', False,
