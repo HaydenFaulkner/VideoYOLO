@@ -135,7 +135,7 @@ def get_metric(dataset, metric_name, data_shape, save_dir, class_map=None):
         metric = COCODetectionMetric(dataset, save_dir, cleanup=True, data_shape=None)
 
     elif metric_name.lower() == 'vid':
-        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=(data_shape, data_shape), class_map=class_map)
+        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=None, class_map=class_map)
 
     else:
         raise NotImplementedError('Mertic: {} not implemented.'.format(metric_name))
