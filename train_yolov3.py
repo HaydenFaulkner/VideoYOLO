@@ -8,15 +8,17 @@ import logging
 import time
 import warnings
 import numpy as np
-import mxnet as mx
-from mxnet import gluon
-from mxnet import autograd
+
 from gluoncv import utils as gutils
 from gluoncv.data.batchify import Tuple, Stack, Pad
 from gluoncv.data.transforms.presets.yolo import YOLO3DefaultTrainTransform
 from gluoncv.data.transforms.presets.yolo import YOLO3DefaultValTransform
 from gluoncv.data.dataloader import RandomTransformDataLoader
 from gluoncv.utils import LRScheduler, LRSequential
+import mxnet as mx
+from mxnet import gluon
+from mxnet import autograd
+from tensorboardX import SummaryWriter
 
 from datasets.pascalvoc import VOCDetection
 from datasets.mscoco import COCODetection
@@ -29,6 +31,9 @@ from metrics.mscoco import COCODetectionMetric
 from models.definitions import yolo3_darknet53, yolo3_mobilenet1_0
 
 from utils.general import as_numpy
+
+# disable autotune
+os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = '0'
 
 logging.basicConfig(level=logging.INFO)
 
@@ -226,6 +231,7 @@ def resume(net, async_net, resume, start_epoch):
 
     return start_epoch
 
+
 def validate(net, val_data, ctx, eval_metric):
     """Test on validation dataset."""
     eval_metric.reset()
@@ -314,6 +320,11 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
     fh = logging.FileHandler(log_file_path)
     logger.addHandler(fh)
     logger.info(FLAGS)
+
+    # set up tensorboard summary writer
+    tb_sw = SummaryWriter(log_dir=os.path.join(log_dir, 'tb'), comment=FLAGS.save_prefix)
+
+    # Check if wanting to resume
     logger.info('Start training from [Epoch {}]'.format(start_epoch))
     if FLAGS.resume.strip() and os.path.exists(save_prefix+'_best_map.log'):
         with open(save_prefix+'_best_map.log', 'r') as f:
@@ -321,6 +332,8 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
             best_map = [float(lines[-1])]
     else:
         best_map = [0]
+
+    # Training loop
     for epoch in range(start_epoch, FLAGS.epochs+1):
         if FLAGS.mixup:
             # TODO(zhreshold): more elegant way to control mixup during runtime
@@ -370,6 +383,10 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
                 name4, loss4 = cls_metrics.get()
                 logger.info('[Epoch {}][Batch {}], LR: {:.2E}, Speed: {:.3f} samples/sec, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
                     epoch, i, trainer.learning_rate, batch_size/(time.time()-btic), name1, loss1, name2, loss2, name3, loss3, name4, loss4))
+                tb_sw.add_scalar(tag='Training_' + name1, scalar_value=loss1, global_step=(epoch * len(train_data) + i))
+                tb_sw.add_scalar(tag='Training_' + name2, scalar_value=loss2, global_step=(epoch * len(train_data) + i))
+                tb_sw.add_scalar(tag='Training_' + name3, scalar_value=loss3, global_step=(epoch * len(train_data) + i))
+                tb_sw.add_scalar(tag='Training_' + name4, scalar_value=loss4, global_step=(epoch * len(train_data) + i))
             btic = time.time()
 
         name1, loss1 = obj_metrics.get()
@@ -382,6 +399,8 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
             # consider reduce the frequency of validation to save time
             map_name, mean_ap = validate(net, val_data, ctx, eval_metric)
             val_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name, mean_ap)])
+            for k, v in zip(map_name, mean_ap):
+                tb_sw.add_scalar(tag='Validation_' + k, scalar_value=v, global_step=(epoch * len(train_data) + i))
             logger.info('[Epoch {}] Validation: \n{}'.format(epoch, val_msg))
             current_map = float(mean_ap[-1])
         else:
