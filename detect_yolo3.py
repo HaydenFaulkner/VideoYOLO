@@ -28,6 +28,9 @@ from utils.general import as_numpy, YOLO3DefaultInferenceTransform
 from utils.image import cv_plot_bbox
 from utils.video import video_to_frames
 
+# disable autotune
+os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = '0'
+
 logging.basicConfig(level=logging.INFO)
 
 flags.DEFINE_string('model_path', 'yolo3_darknet53_voc_best.params',
@@ -127,13 +130,16 @@ def get_dataloader(dataset, batch_size):
 def get_metric(dataset, metric_name, data_shape, save_dir, class_map=None):
     if metric_name.lower() == 'voc':
         metric = VOCMApMetric(iou_thresh=0.5, class_names=dataset.classes, class_map=class_map)
+
     elif metric_name.lower() == 'coco':
-        metric = COCODetectionMetric(dataset, save_dir, cleanup=True,
-                                     data_shape=None)#(data_shape, data_shape))
+        metric = COCODetectionMetric(dataset, save_dir, cleanup=True, data_shape=None)
+
     elif metric_name.lower() == 'vid':
-        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=(data_shape, data_shape))
+        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=(data_shape, data_shape), class_map=class_map)
+
     else:
         raise NotImplementedError('Mertic: {} not implemented.'.format(metric_name))
+
     return metric
 
 

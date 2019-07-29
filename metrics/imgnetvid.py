@@ -62,7 +62,7 @@ def vid_ap(rec, prec):
     return ap
 
 
-def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5):
+def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, class_map=None):
     """
     Do the evaluation
 
@@ -118,8 +118,16 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5):
     npos = np.zeros(len(classname_map))
     for index, rec in enumerate(recs):
         id = rec['img_ids']
-        gt_labels = rec['label']
         gt_bboxes = rec['bbox']
+        gt_labels = rec['label']
+
+        # change the class ids for the ground truths
+        if class_map is not None:
+            gt_labels = np.array([class_map[int(l)] for l in gt_labels.flat])
+            valid_gt = np.where(gt_labels.flat >= 0)[0]
+            gt_bboxes = gt_bboxes[valid_gt, :]
+            gt_labels = gt_labels.flat[valid_gt].astype(int)
+
         num_gt_obj = len(gt_labels)
 
         # calculate total gt for each class
@@ -170,10 +178,18 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5):
 
             for index, rec in enumerate(recs):
                 id = rec['img_ids']
-                gt_labels = rec['label']
                 gt_bboxes = rec['bbox']
                 gt_thr = rec['thr']
+                gt_labels = rec['label']
+                # change the class ids for the ground truths
+                if class_map is not None:
+                    gt_labels = np.array([class_map[int(l)] for l in gt_labels.flat])
+                    valid_gt = np.where(gt_labels.flat >= 0)[0]
+                    gt_bboxes = gt_bboxes[valid_gt, :]
+                    gt_labels = gt_labels.flat[valid_gt].astype(int)
+
                 num_gt_obj = len(gt_labels)
+
                 gt_detected = np.zeros(num_gt_obj)
 
                 gt_motion_iou = motion_iou[index]
@@ -299,7 +315,7 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
 
     """
     def __init__(self, dataset, conf_score_thresh=0.05, iou_thresh=0.5,
-                 data_shape=None):
+                 data_shape=None, class_map=None):
         super(VIDDetectionMetric, self).__init__('ImgNetVIDMeanAP')
         self.dataset = dataset
         self._img_ids = sorted(dataset.image_ids)
@@ -307,6 +323,7 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
         self._results = []
         self._conf_score_thresh = conf_score_thresh
         self._iou_thresh = iou_thresh
+        self._class_map = class_map  # for use when model preds are diff to eval set classes
         self._motion_ranges = [[0.0, 1.0], [0.0, 0.7], [0.7, 0.9], [0.9, 1.0]]
         self._area_ranges = [[0, 1e5 * 1e5], [0, 50 * 50], [50 * 50, 150 * 150], [150 * 150, 1e5 * 1e5]]
         # self._area_ranges = [[0, 1e5 * 1e5]]
@@ -334,7 +351,7 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
             return ['mAP',], ['0.0',]
 
         ap = vid_eval_motion(self.dataset, self._results, self._motion_ranges, self._area_ranges,
-                             iou_threshold=self._iou_thresh)
+                             iou_threshold=self._iou_thresh, class_map=self._class_map)
 
         names, values = [], []
         names.append('~~~~ Summary metrics ~~~~\n')
