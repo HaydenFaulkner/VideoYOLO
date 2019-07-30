@@ -77,6 +77,9 @@ If you don't have this much power available you will need to specify a lower bat
 python train_yolov3.py --batch_size 4 --dataset voc --save_prefix 0001 --warmup_lr 0.0001 --warmup_epochs 3
 ```
 
+Using MobileNet1.0 `--network mobilenet1.0` and batch size of 16
+`--batch_size 16` for `voc` uses **9GB** of GPU memory
+
 ***We found a warmup was necessary for YOLOv3***
 
 ### Finetuning
