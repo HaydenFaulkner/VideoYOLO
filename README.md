@@ -88,7 +88,7 @@ Using MobileNet1.0 `--network mobilenet1.0` and batch size of 16
 ### Finetuning
 To finetune a model you need to specify a `--resume` path and a `--trained_on` dataset:
 ```
-python train_yolov3.py --dataset voc --dataset coco --resume models/0003/yolo3_darknet53_coco_best.params --gpus 0,1,2,3 --save_prefix 0006 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --dataset voc --trained_on coco --resume models/0003/yolo3_darknet53_coco_best.params --gpus 0,1,2,3 --save_prefix 0006 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
 ```
 
 ### Detection, Testing & Visualisation
