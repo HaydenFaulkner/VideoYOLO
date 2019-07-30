@@ -319,7 +319,7 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
         os.makedirs(log_dir)
     fh = logging.FileHandler(log_file_path)
     logger.addHandler(fh)
-    logger.info(FLAGS)
+    # logger.info(FLAGS)
 
     # set up tensorboard summary writer
     tb_sw = SummaryWriter(log_dir=os.path.join(log_dir, 'tb'), comment=FLAGS.save_prefix)
