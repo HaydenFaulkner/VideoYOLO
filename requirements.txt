@@ -9,4 +9,5 @@ lxml
 Pillow==5.4.1
 contextlib2
 nltk
+absl-py
 tensorboardX
