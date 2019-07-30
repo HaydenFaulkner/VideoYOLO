@@ -2,7 +2,10 @@
 A fast, accurate and diverse object detection pipeline for video written
 in [MXNet](https://mxnet.apache.org/) and [GluonCV](https://gluon-cv.mxnet.io/).
 
-**BE WARNED : STILL A WORK IN PROGRESS**
+## Todo
+- Train and upload pre-trained models for all datasets and MobileNet
+backbone
+- Add temporal processing models
 
 ## Datasets
 
