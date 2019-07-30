@@ -399,8 +399,8 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
             # consider reduce the frequency of validation to save time
             map_name, mean_ap = validate(net, val_data, ctx, eval_metric)
             val_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name, mean_ap)])
-            for k, v in zip(map_name, mean_ap):
-                tb_sw.add_scalar(tag='Validation_' + k, scalar_value=v, global_step=(epoch * len(train_data) + i))
+            tb_sw.add_scalar(tag='Validation_mAP', scalar_value=float(mean_ap[-1]),
+                             global_step=(epoch * len(train_data) + i))
             logger.info('[Epoch {}] Validation: \n{}'.format(epoch, val_msg))
             current_map = float(mean_ap[-1])
         else:
@@ -443,7 +443,7 @@ def main(_argv):
         else:
             net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True)
             async_net = net
-    elif FLAGS.network == 'mobilenet1_0':
+    elif FLAGS.network == 'mobilenet1.0':
         if FLAGS.syncbn and len(ctx) > 1:
             net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True,
                                      norm_layer=gluon.contrib.nn.SyncBatchNorm,
@@ -458,6 +458,7 @@ def main(_argv):
     if FLAGS.resume.strip():
         start_epoch = resume(net, async_net, FLAGS.resume, FLAGS.start_epoch)
     else:
+        start_epoch = FLAGS.start_epoch
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             net.initialize()
