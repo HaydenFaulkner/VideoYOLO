@@ -28,7 +28,7 @@ from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
 
 from models.definitions import yolo3_darknet53, yolo3_mobilenet1_0
-from models.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultValTransform
+from models.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultInferenceTransform
 
 from utils.general import as_numpy
 
@@ -182,7 +182,7 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
             shuffle=True, batchify_fn=batchify_fn, num_workers=FLAGS.num_workers)
     val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
     val_loader = gluon.data.DataLoader(
-        val_dataset.transform(YOLO3DefaultValTransform(width, height, 3)),
+        val_dataset.transform(YOLO3DefaultInferenceTransform(width, height, 3)),
         batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
     # NOTE for val batch loader last_batch='keep' changed to last_batch='discard' so exception not thrown
     # when last batch size is smaller than the number of GPUS (which throws exception) this is fixed in gluon

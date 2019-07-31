@@ -123,7 +123,7 @@ class YOLO3DefaultTrainTransform(object):
                 class_targets[0], gt_bboxes[0])
 
 
-class YOLO3DefaultValTransform(object):
+class YOLO3DefaultInferenceTransform(object):
     """Default YOLO validation transform.
 
     Parameters
@@ -132,6 +132,8 @@ class YOLO3DefaultValTransform(object):
         Image width.
     height : int
         Image height.
+    channels : int
+        Image channels.
     mean : array-like of size 3
         Mean pixel values to be subtracted from image tensor. Default is [0.485, 0.456, 0.406].
     std : array-like of size 3
@@ -145,7 +147,7 @@ class YOLO3DefaultValTransform(object):
         self._mean = mean
         self._std = std
 
-    def __call__(self, src, label):
+    def __call__(self, src, label, idx=None):
         """Apply transform to validation image/label."""
         h, w, c = src.shape
         assert self._channels == c
@@ -166,47 +168,6 @@ class YOLO3DefaultValTransform(object):
                 imgs = mx.ndarray.concatenate([imgs, img], axis=2)
     
         img = imgs
-        return img, bbox.astype(img.dtype)
-
-class YOLO3DefaultInferenceTransform(object):
-    """Default YOLO inference transform.
-    Parameters
-    ----------
-    width : int
-        Image width.
-    height : int
-        Image height.
-    mean : array-like of size 3
-        Mean pixel values to be subtracted from image tensor. Default is [0.485, 0.456, 0.406].
-    std : array-like of size 3
-        Standard deviation to be divided from image. Default is [0.229, 0.224, 0.225].
-    """
-    def __init__(self, width, height, channels=3, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
-        self._width = width
-        self._height = height
-        self._channels = channels
-        self._mean = mean
-        self._std = std
-
-    def __call__(self, src, label, idx):
-        """Apply transform to validation image/label."""
-        h, w, c = src.shape
-        assert self._channels == c
-        # box resize
-        bbox = tbbox.resize(label, in_size=(w, h), out_size=(self._width, self._height))
-
-        imgs = None
-        for still_i in range(int(self._channels / 3)):
-            # image resize
-            img = timage.imresize(src[:, :, still_i * 3:(still_i * 3 + 3)], self._width, self._height, interp=9)
-
-            img = mx.nd.image.to_tensor(img)
-            img = mx.nd.image.normalize(img, mean=self._mean, std=self._std)
-
-            if imgs is None:
-                imgs = img
-            else:
-                imgs = mx.ndarray.concatenate([imgs, img], axis=2)
-
-        img = imgs
+        if idx is None:
+            return img, bbox.astype(img.dtype)
         return img, bbox.astype(img.dtype), idx
