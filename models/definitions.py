@@ -6,6 +6,7 @@ from gluoncv.model_zoo.yolo.darknet import darknet53
 from gluoncv.model_zoo.mobilenet import get_mobilenet
 
 
+
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
                     norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
@@ -33,11 +34,20 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
     mxnet.gluon.HybridBlock
         Fully hybrid yolo3 network.
     """
+    input_channels = 3  # todo fix hardcode
     if pretrained:
         warnings.warn("Custom models don't provide `pretrained` weights, ignored.")
     if transfer is None:
         base_net = darknet53(
             pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+
+        if input_channels != 3:
+            assert input_channels % 3 == 0
+            base_net.collect_params()['darknetv30_conv0_weight']._data = \
+                [mx.nd.repeat(base_net.collect_params()['darknetv30_conv0_weight'].data(), int(input_channels/3.0), axis=1)]
+            base_net.collect_params()['darknetv30_conv0_weight']._shape = (32, input_channels, 3, 3)
+            base_net.collect_params()['darknetv30_conv0_weight'].shape = (32, input_channels, 3, 3)
+
         stages = [base_net.features[:15], base_net.features[15:24], base_net.features[24:]]
         anchors = [
             [10, 13, 16, 30, 33, 23],
