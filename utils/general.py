@@ -17,34 +17,3 @@ def as_numpy(a):
     elif isinstance(a, mx.nd.NDArray):
         a = a.asnumpy()
     return a
-
-
-class YOLO3DefaultInferenceTransform(object):
-    """Default YOLO inference transform.
-    Parameters
-    ----------
-    width : int
-        Image width.
-    height : int
-        Image height.
-    mean : array-like of size 3
-        Mean pixel values to be subtracted from image tensor. Default is [0.485, 0.456, 0.406].
-    std : array-like of size 3
-        Standard deviation to be divided from image. Default is [0.229, 0.224, 0.225].
-    """
-    def __init__(self, width, height, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
-        self._width = width
-        self._height = height
-        self._mean = mean
-        self._std = std
-
-    def __call__(self, src, label, idx):
-        """Apply transform to validation image/label."""
-        # resize
-        h, w, _ = src.shape
-        img = timage.imresize(src, self._width, self._height, interp=9)
-        img = mx.nd.image.to_tensor(img)
-        img = mx.nd.image.normalize(img, mean=self._mean, std=self._std)
-
-        bbox = tbbox.resize(label, in_size=(w, h), out_size=(self._width, self._height))
-        return img, bbox.astype(img.dtype), idx

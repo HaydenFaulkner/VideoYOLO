@@ -37,10 +37,11 @@ class YOLO3DefaultTrainTransform(object):
         Std value to be divided from encoded values.
 
     """
-    def __init__(self, width, height, net=None, mean=(0.485, 0.456, 0.406),
+    def __init__(self, width, height, channels=3, net=None, mean=(0.485, 0.456, 0.406),
                  std=(0.229, 0.224, 0.225), mixup=False, **kwargs):
         self._width = width
         self._height = height
+        self._channels = channels
         self._mean = mean
         self._std = std
         self._mixup = mixup
@@ -49,7 +50,7 @@ class YOLO3DefaultTrainTransform(object):
             return
 
         # in case network has reset_ctx to gpu
-        self._fake_x = mx.nd.zeros((1, 3, height, width))  # todo hardcode
+        self._fake_x = mx.nd.zeros((1, channels, height, width))  # todo hardcode
         net = copy.deepcopy(net)
         net.collect_params().reset_ctx(None)
         with autograd.train_mode():
@@ -60,11 +61,12 @@ class YOLO3DefaultTrainTransform(object):
 
     def __call__(self, src, label):
         """Apply transform to training image/label."""
-        if src.shape[2] > 3:  # more than 3 channels
-            assert src.shape[2] % 3 == 0
+        if self._channels > 3:  # more than 3 channels
+            assert self._channels == src.shape[2]
+            assert self._channels % 3 == 0
         
         imgs = None
-        for still_i in range(int(src.shape[2] / 3)):
+        for still_i in range(int(self._channels / 3)):
             
             # random color jittering
             img = experimental.image.random_color_distort(src[:, :, still_i*3:(still_i*3+3)])
@@ -136,20 +138,23 @@ class YOLO3DefaultValTransform(object):
         Standard deviation to be divided from image. Default is [0.229, 0.224, 0.225].
 
     """
-    def __init__(self, width, height, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+    def __init__(self, width, height, channels=3, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
         self._width = width
         self._height = height
+        self._channels = channels
         self._mean = mean
         self._std = std
 
     def __call__(self, src, label):
         """Apply transform to validation image/label."""
-        # resize
         h, w, c = src.shape
+        assert self._channels == c
+        # box resize
         bbox = tbbox.resize(label, in_size=(w, h), out_size=(self._width, self._height))
 
         imgs = None
-        for still_i in range(int(src.shape[2] / 3)):
+        for still_i in range(int(self._channels / 3)):
+            # image resize
             img = timage.imresize(src[:, :, still_i * 3:(still_i * 3 + 3)], self._width, self._height, interp=9)
     
             img = mx.nd.image.to_tensor(img)
@@ -162,3 +167,46 @@ class YOLO3DefaultValTransform(object):
     
         img = imgs
         return img, bbox.astype(img.dtype)
+
+class YOLO3DefaultInferenceTransform(object):
+    """Default YOLO inference transform.
+    Parameters
+    ----------
+    width : int
+        Image width.
+    height : int
+        Image height.
+    mean : array-like of size 3
+        Mean pixel values to be subtracted from image tensor. Default is [0.485, 0.456, 0.406].
+    std : array-like of size 3
+        Standard deviation to be divided from image. Default is [0.229, 0.224, 0.225].
+    """
+    def __init__(self, width, height, channels=3, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        self._width = width
+        self._height = height
+        self._channels = channels
+        self._mean = mean
+        self._std = std
+
+    def __call__(self, src, label, idx):
+        """Apply transform to validation image/label."""
+        h, w, c = src.shape
+        assert self._channels == c
+        # box resize
+        bbox = tbbox.resize(label, in_size=(w, h), out_size=(self._width, self._height))
+
+        imgs = None
+        for still_i in range(int(self._channels / 3)):
+            # image resize
+            img = timage.imresize(src[:, :, still_i * 3:(still_i * 3 + 3)], self._width, self._height, interp=9)
+
+            img = mx.nd.image.to_tensor(img)
+            img = mx.nd.image.normalize(img, mean=self._mean, std=self._std)
+
+            if imgs is None:
+                imgs = img
+            else:
+                imgs = mx.ndarray.concatenate([imgs, img], axis=2)
+
+        img = imgs
+        return img, bbox.astype(img.dtype), idx
