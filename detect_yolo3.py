@@ -47,8 +47,8 @@ flags.DEFINE_string('save_prefix', '0001',
                     'Model save prefix.')
 flags.DEFINE_string('save_dir', 'results',
                     'Save directory to save images.')
-flags.DEFINE_string('metrics', 'voc,coco',
-                    'List of metrics separated by , eg. voc,coco')
+flags.DEFINE_list('metrics', ['voc', 'coco'],
+                  'List of metrics separated by , eg. voc,coco')
 flags.DEFINE_integer('batch_size', 1,
                      'Batch size for detection: higher faster, but more memory intensive.')
 flags.DEFINE_integer('data_shape', 416,
@@ -68,8 +68,8 @@ flags.DEFINE_boolean('visualise', False,
 flags.DEFINE_boolean('display_gt', True,
                      'Do you want to display the ground truth boxes on the images?')
 
-flags.DEFINE_string('gpus', '0',
-                    'GPU IDs to use. Use comma for multiple eg. 0,1.')
+flags.DEFINE_list('gpus', [0],
+                  'GPU IDs to use. Use comma or space for multiple eg. 0,1 or 0 1.')
 flags.DEFINE_integer('num_workers', 8,
                      'The number of workers should be picked so that it’s equal to number of cores on your machine'
                      ' for max parallelization.')
@@ -359,12 +359,12 @@ def main(_argv):
     if len(dataset) < batch_size:
         batch_size = len(dataset)
 
-    gpus = FLAGS.gpus.split(',')
+    gpus = FLAGS.gpus
     if batch_size < len(gpus):
         gpus = [gpus[0]]
 
     # contexts
-    ctx = [mx.gpu(int(i)) for i in gpus if i.strip()]
+    ctx = [mx.gpu(int(i)) for i in gpus]
     ctx = ctx if ctx else [mx.cpu()]
 
     # dataloader
@@ -399,7 +399,7 @@ def main(_argv):
 
     metrics = list()
     if FLAGS.metrics:
-        for metric_name in FLAGS.metrics.split(','):
+        for metric_name in FLAGS.metrics:
             if FLAGS.trained_on:  # for use when model preds are diff to eval set classes
                 metrics.append(get_metric(dataset, metric_name, FLAGS.data_shape, save_dir,
                                           class_map=get_class_map(trained_on_dataset, dataset)))
@@ -408,7 +408,7 @@ def main(_argv):
 
         results = evaluate(metrics, dataset, predictions)
 
-        for m, metric_name in enumerate(FLAGS.metrics.split(',')):
+        for m, metric_name in enumerate(FLAGS.metrics):
             names, values = results[m]
             with open(os.path.join(save_dir, metric_name+'.txt'), 'w') as f:
                 for k, v in zip(names, values):

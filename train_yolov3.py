@@ -73,8 +73,8 @@ flags.DEFINE_float('lr_decay', 0.1,
                    'Decay rate of learning rate.')
 flags.DEFINE_integer('lr_decay_period', 0,
                      'Interval for periodic learning rate decays.')
-flags.DEFINE_string('lr_decay_epoch', '160,180',
-                    'Epochs at which learning rate decays.')
+flags.DEFINE_list('lr_decay_epoch', [160, 180],
+                  'Epochs at which learning rate decays.')
 flags.DEFINE_float('warmup_lr', 0.0,
                    'Starting warmup learning rate.')
 flags.DEFINE_integer('warmup_epochs', 0,
@@ -102,8 +102,8 @@ flags.DEFINE_boolean('label_smooth', False,
 flags.DEFINE_boolean('allow_empty', False,
                      'Allow samples that contain 0 boxes as [-1s * 6]?')
 
-flags.DEFINE_string('gpus', '0',
-                    'GPU IDs to use. Use comma for multiple eg. 0,1.')
+flags.DEFINE_list('gpus', [0],
+                  'GPU IDs to use. Use comma for multiple eg. 0,1.')
 flags.DEFINE_integer('num_workers', 8,
                      'The number of workers should be picked so that it’s equal to number of cores on your machine '
                      'for max parallelization. If this number is bigger than your number of cores it will use up '
@@ -284,7 +284,7 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
     if FLAGS.lr_decay_period > 0:
         lr_decay_epoch = list(range(FLAGS.lr_decay_period, FLAGS.epochs, FLAGS.lr_decay_period))
     else:
-        lr_decay_epoch = [int(i) for i in FLAGS.lr_decay_epoch.split(',')]
+        lr_decay_epoch = FLAGS.lr_decay_epoch
     lr_decay_epoch = [e - FLAGS.warmup_epochs for e in lr_decay_epoch]
     num_batches = num_samples // FLAGS.batch_size
     lr_scheduler = LRSequential([
@@ -417,7 +417,7 @@ def main(_argv):
     gutils.random.seed(FLAGS.seed)
 
     # training contexts
-    ctx = [mx.gpu(int(i)) for i in FLAGS.gpus.split(',') if i.strip()]
+    ctx = [mx.gpu(i) for i in FLAGS.gpus]
     ctx = ctx if ctx else [mx.cpu()]
 
     # training data
