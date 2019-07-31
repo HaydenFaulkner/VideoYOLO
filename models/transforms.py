@@ -49,7 +49,7 @@ class YOLO3DefaultTrainTransform(object):
             return
 
         # in case network has reset_ctx to gpu
-        self._fake_x = mx.nd.zeros((1, 9, height, width))  # todo hardcode
+        self._fake_x = mx.nd.zeros((1, 3, height, width))  # todo hardcode
         net = copy.deepcopy(net)
         net.collect_params().reset_ctx(None)
         with autograd.train_mode():
