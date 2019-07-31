@@ -11,8 +11,7 @@ import numpy as np
 
 from gluoncv import utils as gutils
 from gluoncv.data.batchify import Tuple, Stack, Pad
-from gluoncv.data.transforms.presets.yolo import YOLO3DefaultTrainTransform
-from gluoncv.data.transforms.presets.yolo import YOLO3DefaultValTransform
+# from gluoncv.data.transforms.presets.yolo import YOLO3DefaultTrainTransform, YOLO3DefaultValTransform
 from gluoncv.data.dataloader import RandomTransformDataLoader
 from gluoncv.utils import LRScheduler, LRSequential
 import mxnet as mx
@@ -29,6 +28,7 @@ from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
 
 from models.definitions import yolo3_darknet53, yolo3_mobilenet1_0
+from models.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultValTransform
 
 from utils.general import as_numpy
 
@@ -84,6 +84,8 @@ flags.DEFINE_float('momentum', 0.9,
 flags.DEFINE_float('wd', 0.0005,
                    'Weight decay.')
 
+flags.DEFINE_boolean('pretrained_cnn', True,
+                     'Use an imagenet pretrained cnn as base network.')
 flags.DEFINE_boolean('syncbn', False,
                      'Use synchronize BN across devices.')
 flags.DEFINE_boolean('no_random_shape', False,
@@ -103,8 +105,9 @@ flags.DEFINE_boolean('allow_empty', False,
 flags.DEFINE_string('gpus', '0',
                     'GPU IDs to use. Use comma for multiple eg. 0,1.')
 flags.DEFINE_integer('num_workers', 8,
-                     'The number of workers should be picked so that it’s equal to number of cores on your machine'
-                     ' for max parallelization.')
+                     'The number of workers should be picked so that it’s equal to number of cores on your machine '
+                     'for max parallelization. If this number is bigger than your number of cores it will use up '
+                     'a bunch of extra CPU memory.')
 
 flags.DEFINE_integer('num_samples', -1,
                      'Training images. Use -1 to automatically get the number.')
@@ -436,21 +439,33 @@ def main(_argv):
 
     if FLAGS.network == 'darknet53':
         if FLAGS.syncbn and len(ctx) > 1:
-            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True,
+            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                  root='models',
+                                  pretrained_base=FLAGS.pretrained_cnn,
                                   norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                   norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=False)  # used by cpu worker
+            async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                        root='models',
+                                        pretrained_base=False)  # used by cpu worker
         else:
-            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True)
+            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                  root='models',
+                                  pretrained_base=FLAGS.pretrained_cnn)
             async_net = net
     elif FLAGS.network == 'mobilenet1.0':
         if FLAGS.syncbn and len(ctx) > 1:
-            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True,
+            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                     root='models',
+                                     pretrained_base=FLAGS.pretrained_cnn,
                                      norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                      norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=False)  # used by cpu worker
+            async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                           root='models',
+                                           pretrained_base=False)  # used by cpu worker
         else:
-            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset, root='models', pretrained_base=True)
+            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                     root='models',
+                                     pretrained_base=FLAGS.pretrained_cnn)
             async_net = net
     else:
         raise NotImplementedError('Model: {} not implemented.'.format(FLAGS.network))
