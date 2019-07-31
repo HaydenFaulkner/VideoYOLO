@@ -39,7 +39,8 @@ class ImageNetVidDetection(VisionDataset):
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'vid'),
                  splits=((2017, 'train'),), allow_empty=False, videos=False,
-                 transform=None, index_map=None, frames=1, inference=False):
+                 transform=None, index_map=None, frames=1, inference=False,
+                 window_size=1, window_step=1):
         super(ImageNetVidDetection, self).__init__(root)
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
@@ -50,11 +51,15 @@ class ImageNetVidDetection(VisionDataset):
         self._frames = frames
         self._inference = inference
         self._allow_empty = allow_empty
+        self._window_size = window_size
+        self._window_step = window_step
+        self._windows = None
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
         self._anno_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'VID', '{}', '{}.JPEG')
         self.index_map = index_map or dict(zip(self.wn_classes, range(self.num_class)))
-        self._items = self._load_items(splits)
+        self._samples = self._load_items(splits)
+        self._sample_ids = sorted(list(self._samples.keys()))
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
@@ -78,10 +83,10 @@ class ImageNetVidDetection(VisionDataset):
     @property
     def image_ids(self):
         if self._videos:
-            return [sample[3].split('/')[0] for sample in self._items] # todo check which we want?
+            return [sample[3].split('/')[0] for sample in self._samples.values()] # todo check which we want?
             # return [id for id in [sample[4] for sample in self._items]] # todo check which we want?
         else:
-            return [sample[0] for sample in self._items]
+            return self._sample_ids
 
     @property
     def motion_ious(self):
@@ -90,14 +95,26 @@ class ImageNetVidDetection(VisionDataset):
         return motion_ious
 
     def __len__(self):
-        return len(self._items)
+        return len(self._sample_ids)
 
     def __getitem__(self, idx):
         if not self._videos:
-            img_id = self._items[idx]
-            img_path = self._image_path.format(*img_id[1:])
+            img_path = self._image_path.format(*self._samples[self._sample_ids[idx]])
             label = self._load_label(idx)[:, :-1]  # remove track id
-            img = mx.image.imread(img_path, 1)
+
+            if self._window_size > 1:
+                imgs = None
+                window = self._windows[self._sample_ids[idx]]
+                for sid in window:
+                    img_path = self._image_path.format(*self._samples[sid])
+                    img = mx.image.imread(img_path, 1)
+                    if imgs is None:
+                        imgs = img
+                    else:
+                        imgs = mx.ndarray.concatenate([imgs, img], axis=2)
+                img = imgs
+            else:
+                img = mx.image.imread(img_path, 1)
 
             if self._inference:
                 if self._transform is not None:
@@ -108,11 +125,12 @@ class ImageNetVidDetection(VisionDataset):
                     return self._transform(img, label)
                 return img, label
         else:
-            sample_id = self._items[idx]
+            sample_id = self._sample_ids[idx]
+            sample = self._samples[sample_id]
             vid = None
             labels = None
-            for frame in sample_id[3]:
-                img_id = (sample_id[0], sample_id[1], sample_id[2]+'/'+frame)
+            for frame in sample[3]:
+                img_id = (sample[0], sample[1], sample[2]+'/'+frame)
                 img_path = self._image_path.format(*img_id)
                 label = self._load_label(idx, frame=frame)
                 img = mx.image.imread(img_path, 1)
@@ -121,17 +139,15 @@ class ImageNetVidDetection(VisionDataset):
 
                 label = self._pad_to_dense(label, 20)
                 if labels is None:
-                    # vid = mx.ndarray.expand_dims(img, 0)  # todo investigate why this uses so much mem, maybe long video?
+                    vid = mx.ndarray.expand_dims(img, 0)  # extra mem used if num_workers wrong on the dataloader
                     labels = np.expand_dims(label, 0)
                 else:
-                    # vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, 0)])
+                    vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, 0)])
                     labels = np.concatenate((labels, np.expand_dims(label, 0)))
             return None, labels
 
     def sample_path(self, idx):
-        img_id = self._items[idx]
-        img_path = self._image_path.format(*img_id[1:])
-        return img_path
+        return self._image_path.format(*self._samples[self._sample_ids[idx]])
 
     def _load_items(self, splits):
         """Load individual image indices from splits."""
@@ -165,7 +181,7 @@ class ImageNetVidDetection(VisionDataset):
             return ids
 
         # We only want a subset of each video, so need to find the videos
-        vid_ids = []
+        vid_ids = dict()
         past_vid_id = ''
         for id in ids:
             vid_id = id[3][:-7]
@@ -179,7 +195,7 @@ class ImageNetVidDetection(VisionDataset):
                         frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
                         sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(math.ceil(len(frames)/self._frames)))]
 
-                    vid_ids.append((past_id[1], past_id[2], past_vid_id, frames, sample_ids))
+                    vid_ids[past_vid_id] = (past_id[1], past_id[2], past_vid_id, frames, sample_ids)
                 past_id = id
                 frames = [frame]
                 sample_ids = [id[0]]
@@ -195,29 +211,59 @@ class ImageNetVidDetection(VisionDataset):
             frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
             sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(math.ceil(len(frames)/self._frames)))]
 
-        vid_ids.append((id[1], id[2], vid_id, frames, sample_ids))
+        vid_ids[vid_id] = (id[1], id[2], vid_id, frames, sample_ids)
 
         if self._videos:
             return vid_ids
         else:
             # reconstruct the ids from vid ids
-            frame_ids = []
-            for vid_id in vid_ids:
+            frame_ids = dict()
+            for vid_id in vid_ids.values():
                 for frame_name, frame_id in zip(vid_id[3], vid_id[4]):
-                    frame_ids.append((frame_id, vid_id[0], vid_id[1], vid_id[2]+'/'+frame_name))
+                    frame_ids[frame_id] = (vid_id[0], vid_id[1], vid_id[2]+'/'+frame_name)
+
+            # build a temporal window of frames around each sample, adheres to the 'frames param' only containing frames
+            # that are in the cut down set... so step is actually step*the_dataset_set
+            if self._window_size > 1:
+                self._windows = dict()
+
+                for vid_id in vid_ids.values():  # lock to only getting frames from the same video
+                    frame_ids_ = vid_id[4]
+                    for i in range(len(frame_ids_)):  # for each frame in this video
+                        window = list()  # setup a new window (will hold the frame_ids)
+
+                        window_size = int(self._window_size / 2.0)  # halves and floors it
+
+                        # lets step back through the video and get the frame_ids
+                        for back_i in range(window_size*self._window_step, self._window_step-1, -self._window_step):
+                            window.append(frame_ids_[max(0, i-back_i)])  # will add first frame to pad if window too big
+
+                        # add the current frame
+                        window.append(frame_ids_[i])
+
+                        # lets step forward and add future frame_ids
+                        for forw_i in range(self._window_step, window_size*self._window_step+1, self._window_step):
+                            if len(window) == self._window_size:
+                                break  # only triggered if self._window_size is even, we disregard last frame
+                            window.append(frame_ids_[min(len(frame_ids_)-1, i+forw_i)])  # will add last frame to pad if window too big
+
+                        # add the window frame ids to a dict to be used in the get() function
+                        self._windows[frame_ids_[i]] = window
             return frame_ids
 
-    def _load_label(self, idx, items=None, frame=None):
+    def _load_label(self, idx, frame=None):
         """Parse xml file and return labels."""
-        if items:  # used to process items before they are actually assigned to self
-            img_id = items[idx]
-        else:
-            img_id = self._items[idx]
+        # if samples:  # used to process items before they are actually assigned to self
+        #     assert "TODO FIX"
+        #     sample = samples[idx]
+        # else:
+        sample_id = self._sample_ids[idx]
+        sample = self._samples[sample_id]
 
-        anno_path = self._anno_path.format(*img_id[1:])
+        anno_path = self._anno_path.format(*sample)
         if self._videos:
             assert frame is not None
-            img_id = (img_id[0], img_id[1], img_id[2]+'/'+frame)
+            img_id = (sample[0], sample[1], sample[2]+'/'+frame)
             anno_path = self._anno_path.format(*img_id)
 
         if not os.path.exists(anno_path):
@@ -226,9 +272,10 @@ class ImageNetVidDetection(VisionDataset):
         size = root.find('size')
         width = float(size.find('width').text)
         height = float(size.find('height').text)
-        if idx not in self._im_shapes:
+        if sample_id not in self._im_shapes:
             # store the shapes for later usage
-            self._im_shapes[idx] = (width, height)
+            self._im_shapes[sample_id] = (width, height)
+
         label = []
         for obj in root.iter('object'):
             cls_name = obj.find('name').text.strip().lower()
@@ -313,9 +360,9 @@ class ImageNetVidDetection(VisionDataset):
 
     def image_size(self, id):
         if len(self._im_shapes) == 0:
-            for idx in tqdm(range(len(self._items)), desc="populating im_shapes"):
-                self._load_label(idx, items=self._items)
-        return self._im_shapes[self.image_ids.index(id)]
+            for idx in tqdm(range(len(self._sample_ids)), desc="populating im_shapes"):
+                self._load_label(idx)
+        return self._im_shapes[id]
 
     def stats(self):
         cls_boxes = []
