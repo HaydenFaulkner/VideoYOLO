@@ -14,9 +14,10 @@ We support training and testing with the following datasets:
 - [MSCoco](http://cocodataset.org/#download)
 - [ImageNetDET](http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php)
 - [ImageNetVID](http://bvisionweb1.cs.unc.edu/ILSVRC2017/download-videos-1p39.php)
+- [YouTube-BB](https://research.google.com/youtube-bb/)
 
 
-| Dataset     |       split      | Images (Videos) |  Boxes (Obj Instances) | Categories |
+| Dataset     |       split      |  Images (Clips) |  Boxes (Obj Instances) | Categories |
 |-------------|------------------|-----------------|----------------|------------|
 | PascalVOC   | `trainval 07+12` |           16551 |          47223 |         20 |
 | PascalVOC   |     `test 07`    |            4952 |          14976 |         20 |
@@ -42,7 +43,14 @@ We support training and testing with the following datasets:
 | ImageNetVID | `val17_nonempty` |   492183 (1314) |  795433 (3181) |         30 |
 | ImageNetVID | `train17_ne_0.04`|    47481 (4000) |   78501 (8682) |         30 |
 | ImageNetVID |  `val17_ne_0.04` |    20353 (1314) |   33384 (3295) |         30 |
+|             |                  |                 |                |            |
+| YouTubeBB   |      `train`     | 5608012 (301987) | 5608012 (444053) |         23 |
+| YouTubeBB   |       `val`      |   625338 (33578) |   625338 (49193) |         23 |
+| YouTubeBB   | `train_nonempty` | 4580762 (294853) | 4484014 (294715) |         23 |
+| YouTubeBB   |  `val_nonempty`  |   508988 (32661) |  497616 (32650) |         23 |
 
+*YouTubeBB stats are annotation stats, access to image data yet to be
+confirmed, will be updated in future*
 
 See [datasets](/datasets/) for downloading and organisation information...
 
