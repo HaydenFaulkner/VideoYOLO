@@ -20,3 +20,4 @@ dependencies:
       - nltk
       - absl-py
       - tensorboardX
+      - youtube-dl

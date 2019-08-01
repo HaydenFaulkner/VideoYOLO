@@ -11,3 +11,4 @@ contextlib2
 nltk
 absl-py
 tensorboardX
+youtube-dl
