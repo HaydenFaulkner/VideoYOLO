@@ -368,28 +368,45 @@ class ImageNetVidDetection(VisionDataset):
 
     def stats(self):
         cls_boxes = []
-        n_samples = len(self._items)
+        n_samples = len(self._sample_ids)
         n_boxes = [0]*len(self.classes)
         n_instances = [0]*len(self.classes)
         past_vid_id = ''
-        for idx in tqdm(range(len(self._items))):
-            vid_id = self._items[idx][3][:-7]
-            frame = self._items[idx][3][-6:]
+        for idx in tqdm(range(len(self._sample_ids))):
+            sample_id = self._sample_ids[idx]
+            vid_id = self._samples[sample_id][2]#[:-7]
+
             if vid_id != past_vid_id:
                 vid_instances = []
                 past_vid_id = vid_id
-            for box in self._load_label(idx):
-                n_boxes[int(box[4])] += 1
-                if int(box[5]) not in vid_instances:
-                    vid_instances.append(int(box[5]))
-                    n_instances[int(box[4])] += 1
+            if self._videos:
+                for frame in self._samples[sample_id][3]:
+                    for box in self._load_label(idx, frame):
+                        n_boxes[int(box[4])] += 1
+                        if int(box[5]) not in vid_instances:
+                            vid_instances.append(int(box[5]))
+                            n_instances[int(box[4])] += 1
+            else:
+                for box in self._load_label(idx):
+                    n_boxes[int(box[4])] += 1
+                    if int(box[5]) not in vid_instances:
+                        vid_instances.append(int(box[5]))
+                        n_instances[int(box[4])] += 1
 
-        out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n{8: <10} {9}\n'.format(
-            'Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
-            'Images:', n_samples,
-            'Boxes:', sum(n_boxes),
-            'Instances:', sum(n_instances),
-            'Classes:', len(self.classes))
+        if self._videos:
+            out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n{8: <10} {9}\n'.format(
+                'Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
+                'Videos:', n_samples,
+                'Boxes:', sum(n_boxes),
+                'Instances:', sum(n_instances),
+                'Classes:', len(self.classes))
+        else:
+            out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n{8: <10} {9}\n'.format(
+                'Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
+                'Frames:', n_samples,
+                'Boxes:', sum(n_boxes),
+                'Instances:', sum(n_instances),
+                'Classes:', len(self.classes))
         out_str += '-'*35 + '\n'
         for i in range(len(n_boxes)):
             out_str += '{0: <3} {1: <10} {2: <15} {3} {4}\n'.format(i, self.wn_classes[i], self.classes[i],
@@ -480,7 +497,6 @@ def generate_motion_ious(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
 
     dataset = ImageNetVidDetection(root=root, splits=[(2017, split)], allow_empty=True, videos=True, percent=1)
 
-    all_ious = []
     all_ious = {} # using dict for better removing of elements on loading based on sample_id
     sample_id = 1 # messy but works
     for idx in tqdm(range(len(dataset)), desc="Generation motion iou groundtruth"):
@@ -518,16 +534,16 @@ def generate_motion_ious(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
 
 
 if __name__ == '__main__':
-    # train_dataset = ImageNetVidDetection(
-    #     root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'train')],
-    #     allow_empty=False, videos=False, frames=0.04)
+    train_dataset = ImageNetVidDetection(
+        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'train')],
+        allow_empty=False, videos=True, frames=0.04)
     val_dataset = ImageNetVidDetection(
         root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'val')],
-        allow_empty=False, videos=False, frames=0.04)
+        allow_empty=False, videos=True, frames=0.04)
     # test_dataset = ImageNetVidDetection(
     #     root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'test')],
     #     allow_empty=True, videos=False)
 
-    # print(train_dataset)
+    print(train_dataset)
     print(val_dataset)
     # print(test_dataset)

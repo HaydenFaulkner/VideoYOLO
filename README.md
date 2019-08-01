@@ -40,8 +40,8 @@ We support training and testing with the following datasets:
 | ImageNetVID |     `test17`     |   765631 (2000) |             NA |         30 |
 | ImageNetVID |`train17_nonempty`|  1142945 (4000) | 1859625 (8394) |         30 |
 | ImageNetVID | `val17_nonempty` |   492183 (1314) |  795433 (3181) |         30 |
-| ImageNetVID | `train17_ne_0.04`|    47481 (4000) |   77018 (8187) |         30 |
-| ImageNetVID |  `val17_ne_0.04` |    20353 (1314) |   32718 (3092) |         30 |
+| ImageNetVID | `train17_ne_0.04`|    47481 (4000) |   78501 (8682) |         30 |
+| ImageNetVID |  `val17_ne_0.04` |    20353 (1314) |   33384 (3295) |         30 |
 
 
 See [datasets](/datasets/) for downloading and organisation information...
