@@ -20,7 +20,7 @@ class ImageNetVidDetection(VisionDataset):
 
     Parameters
     ----------
-    root : str, default '~/mxnet/datasets/vidt'
+    root : str, default '~/mxnet/datasets/vid'
         Path to folder storing the dataset.
     splits : tuple, default ('train')
         Candidates can be: 'train', 'val', 'test'.
@@ -50,6 +50,8 @@ class ImageNetVidDetection(VisionDataset):
         self._videos = videos
         self._frames = frames
         self._inference = inference
+        if videos or window_size > 1:
+            allow_empty = True  # allow true if getting video volumes, prevent empties when doing framewise only
         self._allow_empty = allow_empty
         self._window_size = window_size
         self._window_step = window_step
