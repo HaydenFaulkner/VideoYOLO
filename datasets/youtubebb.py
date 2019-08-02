@@ -3,22 +3,25 @@ from __future__ import absolute_import
 from __future__ import division
 
 from absl import app, flags, logging
+from absl.flags import FLAGS
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import csv
-import json
+import cv2
 import math
+import mxnet as mx
+import numpy as np
 import os
 from subprocess import call
 from tqdm import tqdm
 import warnings
-import numpy as np
 try:
     import xml.etree.cElementTree as ET
 except ImportError:
     import xml.etree.ElementTree as ET
-import mxnet as mx
+
 from gluoncv.data.base import VisionDataset
 
-from utils.video import video_to_frames
+from utils.general import print_progress
 
 
 class YouTubeBBDetection(VisionDataset):
@@ -44,7 +47,7 @@ class YouTubeBBDetection(VisionDataset):
     """
 
     def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'ytbb'),
-                 splits=('train',), allow_empty=False, videos=False, clips=True,
+                 splits=('train',), allow_empty=False, videos=False, clips=True, download=True, keep_vids=False,
                  transform=None, index_map=None, frames=1, inference=False,
                  window_size=1, window_step=1):
         super(YouTubeBBDetection, self).__init__(root)
@@ -55,6 +58,8 @@ class YouTubeBBDetection(VisionDataset):
         self._splits = splits
         self._videos = videos
         self._clips = clips  # used to specify if want to split clips as YTBB default one obj inst per clip, or split based on video ID
+        self._download = download
+        self._keep_vids = keep_vids
         self._frames = frames
         self._inference = inference
         if videos or window_size > 1:
@@ -63,6 +68,7 @@ class YouTubeBBDetection(VisionDataset):
         self._window_size = window_size
         self._window_step = window_step
         self._windows = None
+        self._vid_paths = os.path.join(self._root, 'videos')
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
         self._image_path = os.path.join(self._root, 'frames', '{}', '{}.jpg')
         self.index_map = index_map or dict(zip(self.class_ids, range(self.num_class)))
@@ -167,6 +173,159 @@ class YouTubeBBDetection(VisionDataset):
     def sample_path(self, idx):
         return self._image_path.format(*self._samples[self._sample_ids[idx]])
 
+    def download(self, ids):
+        """
+        Attempts to download the videos and extract the frames for the dataset
+
+        :param ids: the rows of the .csv
+        :param num_threads: the number of cpu cores your system has, defaults to 8
+        :return:
+        """
+        # Lets check the frames exist, if not we need to download videos and extract
+        videos = dict()
+        to_get = dict()
+        for id in ids:
+            vid_id = id[0]
+            frame_id = int(id[1])
+            if vid_id in videos:
+                videos[vid_id].add(frame_id)
+            else:
+                videos[vid_id] = set([frame_id])
+
+        for vid_id, frames in videos.items():
+            for frame in frames:
+                if not os.path.exists(self._image_path.format(*[vid_id, frame])):
+                    to_get[vid_id] = frames
+                    break
+
+        logging.info("Frames don't exist for {} out of {} videos.\n"
+                     "Will attempt to download and extract...".format(len(to_get), len(videos)))
+
+        if self._keep_vids:
+            each_vid_size_approx_gb = .029620394  # i have guestimated this
+            expected_size = each_vid_size_approx_gb * len(to_get)
+            logging.warning("\n\nYou have set keep_vids=True ..."
+                            "\nBe warned that this will try to download {} videos with an approximate size of {} GBs."
+                            " This could take weeks or even months depending on your download speeds."
+                            "\n\nContinue? (y/n)".format(len(to_get), int(expected_size)))
+        else:
+            logging.warning("\n\nYou have set keep_vids=False ..."
+                            "\nBe warned that this will delete videos after they have been downloaded and "
+                            "had their frames extracted"
+                            " Video downloads could take weeks or even months depending on your download speeds."
+                            "\n\nContinue? (y/n)")
+        response = input()
+        if response.lower() not in ['y', 'yes']:
+            logging.info("User Cancelled")
+            return
+
+        # Download the files
+        os.makedirs(self._vid_paths, exist_ok=True)
+        errors = set()
+        with ProcessPoolExecutor(max_workers=FLAGS.num_workers) as executor:
+
+            futures = [executor.submit(self._download_extract, v_id, frames) for v_id, frames in to_get.items()]
+
+            for i, f in enumerate(as_completed(futures)):
+                print_progress(i, len(to_get), prefix="Downloading + Extracting Clips:", suffix='Complete', decimals=5)
+                result = f.result()
+                if result[0] < 1:
+                    errors.add(result[1])
+
+            logging.info("Successfully processed {} / {} videos".format(len(to_get) - len(errors), len(to_get)))
+
+        if len(errors) > 0:
+            logging.info("Saving Error file: {}".format(os.path.join(self._root, "frame_get_errors.txt")))
+            with open(os.path.join(self._root, "frame_get_errors.txt"), "a") as f:
+                for v_id in errors:
+                    f.write(v_id + "\n")
+
+        return len(errors)
+
+    def _download_extract(self, v_id, frames):
+        """
+        download a video from youtube and extract its frames
+        :param v_id: the vid id
+        :param frames: the frames as a list of ints in milliseconds
+        :return: 1/-1 for success/fail and the v_id which is used for logging the failures
+        """
+
+        # Attempt download of video
+        v_id_ext = self._download_video(v_id)
+
+        # Attempt to extract frames
+        if v_id_ext is not None:
+            self._extract_frames(os.path.join(self._vid_paths, v_id_ext), v_id, frames)
+
+            if not self._keep_vids:
+                os.remove(os.path.join(self._vid_paths, v_id_ext))
+        else:
+            return -1, v_id
+
+        # Check if download and extraction successful
+        for frame in frames:
+            if not os.path.exists(self._image_path.format(*[v_id, frame])):
+                return -1, v_id
+
+        return 1, v_id
+
+    def _download_video(self, v_id):
+        """
+        download a video from youtube
+        requires youtube-dl
+
+        :param v_id: the video id
+        :return: the name.ext as a string or None if download was unsuccessful
+        """
+
+        extensions = [".mp4", ".mkv", ".mp4.webm"]
+
+        # check if it exists first
+        for ext in extensions:
+            if os.path.exists(os.path.join(self._vid_paths, v_id + ext)):
+                return v_id + ext
+
+        # download it, import for ensuring it's downloaded but we call from shell
+        call(["youtube-dl -o '" + os.path.join(self._vid_paths, v_id + ".mp4") + "' 'http://youtu.be/" + v_id + "'" +
+              " --quiet --no-warnings --ignore-errors "], shell=True)
+
+        # check we have downloaded it
+        for ext in extensions:
+            if os.path.exists(os.path.join(self._vid_paths, v_id + ext)):
+                return v_id + ext
+
+        # if didn't work will return None
+        return None
+
+    def _extract_frames(self, video_path, v_id, frames):
+        """
+        extract frames from a video using the fps
+
+        :param video_path: path to the video
+        :param v_id: the video id
+        :param frames: the frames as a list of ints in milliseconds
+        :return:
+        """
+        assert os.path.exists(video_path)
+
+        # Use opencv to open the video
+        capture = cv2.VideoCapture(video_path)
+        fps, total_f = capture.get(5), capture.get(7)
+
+        for frame in frames:
+            img_path = self._image_path.format(*[v_id, frame])
+            if not os.path.exists(img_path):
+
+                # Get the actual image corresponding to the frame
+                capture.set(1, int(round(fps*(frame/1000.0))))
+                ret, image = capture.read()
+
+                # Save the extracted image
+                os.makedirs(os.path.dirname(img_path), exist_ok=True)
+                cv2.imwrite(img_path, image)
+
+        capture.release()
+
     def _load_items(self, splits):
         """Load annotation data from .csv and setup with this datasets params."""
         ids = []
@@ -181,6 +340,9 @@ class YouTubeBBDetection(VisionDataset):
                     rows = csv.reader(csvfile, delimiter=',')
                     for row in rows:
                         ids.append(row)
+
+        if self._download:
+            self.download(ids)
 
         # Lets go through the data and organise as desired by set params
         videos = dict()
@@ -407,260 +569,143 @@ class YouTubeBBDetection(VisionDataset):
 
         return out_str, cls_boxes
 
-    def build_coco_json(self):
+    # def build_coco_json(self):
+    #
+    #     os.makedirs(os.path.dirname(self._coco_path), exist_ok=True)
+    #
+    #     # handle categories
+    #     categories = list()
+    #     for ci, (cls, wn_cls) in enumerate(zip(self.classes, self.wn_classes)):
+    #         categories.append({'id': ci, 'name': cls, 'wnid': wn_cls})
+    #
+    #     # handle images and boxes
+    #     images = list()
+    #     done_imgs = set()
+    #     annotations = list()
+    #     for idx in range(len(self)):
+    #         sample_id = self._sample_ids[idx]
+    #         # width, height = self._im_shapes[idx]
+    #
+    #         # img_id = self.image_ids[idx]
+    #         if sample_id not in done_imgs:
+    #             done_imgs.add(sample_id)
+    #             images.append({'file_name': sample_id,
+    #                            # 'width': int(width),
+    #                            # 'height': int(height),
+    #                            'id': sample_id})
+    #
+    #         for box in self._load_label(idx):
+    #             xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
+    #             annotations.append({'image_id': sample_id,
+    #                                 'id': len(annotations),
+    #                                 'bbox': xywh,  # todo not xywh atm but rather x1y1x2y2 and as % rather than pix
+    #                                 'area': int(xywh[2] * xywh[3]),
+    #                                 'category_id': int(box[4]),
+    #                                 'iscrowd': 0})
+    #
+    #     with open(self._coco_path, 'w') as f:
+    #         json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
+    #
+    #     return self._coco_path
 
-        os.makedirs(os.path.dirname(self._coco_path), exist_ok=True)
-
-        # handle categories
-        categories = list()
-        for ci, (cls, wn_cls) in enumerate(zip(self.classes, self.wn_classes)):
-            categories.append({'id': ci, 'name': cls, 'wnid': wn_cls})
-
-        # handle images and boxes
-        images = list()
-        done_imgs = set()
-        annotations = list()
-        for idx in range(len(self)):
-            sample_id = self._sample_ids[idx]
-            # width, height = self._im_shapes[idx]
-
-            # img_id = self.image_ids[idx]
-            if sample_id not in done_imgs:
-                done_imgs.add(sample_id)
-                images.append({'file_name': sample_id,
-                               # 'width': int(width),
-                               # 'height': int(height),
-                               'id': sample_id})
-
-            for box in self._load_label(idx):
-                xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
-                annotations.append({'image_id': sample_id,
-                                    'id': len(annotations),
-                                    'bbox': xywh,  # todo not xywh atm but rather x1y1x2y2 and as % rather than pix
-                                    'area': int(xywh[2] * xywh[3]),
-                                    'category_id': int(box[4]),
-                                    'iscrowd': 0})
-
-        with open(self._coco_path, 'w') as f:
-            json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
-
-        return self._coco_path
-
-    def _load_motion_ious(self):
-        path = os.path.join(self._root, '{}_motion_ious.json'.format(self._splits[0][1]))
-        if not os.path.exists(path):
-            generate_motion_ious(self._root, self._splits[0][1])
-
-        with open(path, 'r') as f:
-            ious = json.load(f)
-
-        return ious
-
-
-def iou(bb, bbgt):
-    """
-    helper single box iou calculation function for generate_motion_ious
-    """
-    ov = 0
-    iw = np.min((bb[2], bbgt[2])) - np.max((bb[0], bbgt[0])) + 1
-    ih = np.min((bb[3], bbgt[3])) - np.max((bb[1], bbgt[1])) + 1
-    if iw > 0 and ih > 0:
-        # compute overlap as area of intersection / area of union
-        intersect = iw * ih
-        ua = (bb[2] - bb[0] + 1.) * (bb[3] - bb[1] + 1.) + \
-             (bbgt[2] - bbgt[0] + 1.) * \
-             (bbgt[3] - bbgt[1] + 1.) - intersect
-        ov = intersect / ua
-    return ov
+    # def _load_motion_ious(self):
+    #     path = os.path.join(self._root, '{}_motion_ious.json'.format(self._splits[0][1]))
+    #     if not os.path.exists(path):
+    #         generate_motion_ious(self._root, self._splits[0][1])
+    #
+    #     with open(path, 'r') as f:
+    #         ious = json.load(f)
+    #
+    #     return ious
 
 
-def generate_motion_ious(root=os.path.join('datasets', 'YouTubeBB'), split='val'):
-    """
-    Used to generate motion_ious .json files
-
-    Note This script is relatively intensive
-
-    :param root: the root path of the imagenetvid set
-    :param split: train or val, no year necessary
-    """
-
-    dataset = YouTubeBBDetection(root=root, splits=(split,), allow_empty=True, videos=True, percent=1)
-
-    all_ious = {} # using dict for better removing of elements on loading based on sample_id
-    sample_id = 1 # messy but works
-    for idx in tqdm(range(len(dataset)), desc="Generation motion iou groundtruth"):
-        _, video = dataset[idx]
-        for frame in range(len(video)):
-            frame_ious = []
-            for box_idx in range(len(video[frame])):
-                trk_id = video[frame][box_idx][5]
-                if trk_id > -1:
-                    ious = []
-                    for i in range(-10, 11):
-                        frame_c = frame + i
-                        if 0 <= frame_c < len(video) and i != 0:
-                            for c_box_idx in range(len(video[frame_c])):
-                                c_trk_id = video[frame_c][c_box_idx][5]
-                                if trk_id == c_trk_id:
-                                    a = video[frame][box_idx]
-                                    b = video[frame_c][c_box_idx]
-                                    ious.append(iou(a, b))
-                                    break
-
-                    frame_ious.append(np.mean(ious))
-            # if frame_ious:  # if this frame has no boxes we add a 0.0
-            #     all_ious.append(frame_ious)
-            # else:
-            #     all_ious.append([0.0])
-            if frame_ious:  # if this frame has no boxes we add a 0.0
-                all_ious[sample_id] = frame_ious
-            else:
-                all_ious[sample_id] = [0.0]
-            sample_id += 1
-
-    with open(os.path.join(root, '{}_motion_ious.json'.format(split)), 'w') as f:
-        json.dump(all_ious, f)
-
-
-def download_youtube_video(url, save_path, name=None):
-    """
-    download a video from youtube
-    requires youtube-dl
-    pip install youtube-dl
-
-    :param url: the full youtube url
-    :param save_path: the directory to save the file
-    :param name: the filename to save the video as, will default to the url
-    :return: the name.ext as a string or None if download was unsuccessful
-    """
-    if name is None:
-        name = url
-
-    extensions = [".mp4", ".mkv", ".mp4.webm"]
-
-    # check if it exists first
-    for ext in extensions:
-        if os.path.exists(os.path.join(save_path, name+ext)):
-            return name+ext
-
-    # download it, import for ensuring it's downloaded but we call from shell
-    call(["youtube-dl -o '" + os.path.join(save_path, name + ".mp4") + "' '" + url + "'"], shell=True)
-
-    # check we have downloaded it
-    for ext in extensions:
-        if os.path.exists(os.path.join(save_path, name+ext)):
-            return name+ext
-
-    # if didn't work will return None
-    return None
+# def iou(bb, bbgt):
+#     """
+#     helper single box iou calculation function for generate_motion_ious
+#     """
+#     ov = 0
+#     iw = np.min((bb[2], bbgt[2])) - np.max((bb[0], bbgt[0])) + 1
+#     ih = np.min((bb[3], bbgt[3])) - np.max((bb[1], bbgt[1])) + 1
+#     if iw > 0 and ih > 0:
+#         # compute overlap as area of intersection / area of union
+#         intersect = iw * ih
+#         ua = (bb[2] - bb[0] + 1.) * (bb[3] - bb[1] + 1.) + \
+#              (bbgt[2] - bbgt[0] + 1.) * \
+#              (bbgt[3] - bbgt[1] + 1.) - intersect
+#         ov = intersect / ua
+#     return ov
+#
+#
+# def generate_motion_ious(root=os.path.join('datasets', 'YouTubeBB'), split='val'):
+#     """
+#     Used to generate motion_ious .json files
+#
+#     Note This script is relatively intensive
+#
+#     :param root: the root path of the imagenetvid set
+#     :param split: train or val, no year necessary
+#     """
+#
+#     dataset = YouTubeBBDetection(root=root, splits=(split,), allow_empty=True, videos=True, percent=1)
+#
+#     all_ious = {} # using dict for better removing of elements on loading based on sample_id
+#     sample_id = 1 # messy but works
+#     for idx in tqdm(range(len(dataset)), desc="Generation motion iou groundtruth"):
+#         _, video = dataset[idx]
+#         for frame in range(len(video)):
+#             frame_ious = []
+#             for box_idx in range(len(video[frame])):
+#                 trk_id = video[frame][box_idx][5]
+#                 if trk_id > -1:
+#                     ious = []
+#                     for i in range(-10, 11):
+#                         frame_c = frame + i
+#                         if 0 <= frame_c < len(video) and i != 0:
+#                             for c_box_idx in range(len(video[frame_c])):
+#                                 c_trk_id = video[frame_c][c_box_idx][5]
+#                                 if trk_id == c_trk_id:
+#                                     a = video[frame][box_idx]
+#                                     b = video[frame_c][c_box_idx]
+#                                     ious.append(iou(a, b))
+#                                     break
+#
+#                     frame_ious.append(np.mean(ious))
+#             # if frame_ious:  # if this frame has no boxes we add a 0.0
+#             #     all_ious.append(frame_ious)
+#             # else:
+#             #     all_ious.append([0.0])
+#             if frame_ious:  # if this frame has no boxes we add a 0.0
+#                 all_ious[sample_id] = frame_ious
+#             else:
+#                 all_ious[sample_id] = [0.0]
+#             sample_id += 1
+#
+#     with open(os.path.join(root, '{}_motion_ious.json'.format(split)), 'w') as f:
+#         json.dump(all_ious, f)
 
 
-def download_videos(annotation_paths,
-                    save_dir=os.path.join('datasets', 'YouTubeBB', 'videos')):
-    """
-    downloads the videos from youtube and can also extract the frames if frames dir specified
+def main(_argv):
 
-    :param annotation_paths: paths to the annotation .csv files for getting the youtube ids
-    :param save_dir: the directory to store the downloaded videos
-    :return: the number of videos that weren't downloaded
-    """
+    flags.DEFINE_integer('num_workers', 8,
+                         'The number of workers should be picked so that it’s equal to number of cores on your machine '
+                         'for max parallelization. If this number is bigger than your number of cores it will use up '
+                         'a bunch of extra CPU memory.')
 
-    # Get video youtube ids from annotation files
-    ids = set()
-    for annotation_path in annotation_paths:
-        if os.path.exists(annotation_path):
-            logging.info("Loading data from {}".format(annotation_path))
-            with open(annotation_path, 'r') as csvfile:
-                rows = csv.reader(csvfile, delimiter=',')
-                for row in rows:
-                    ids.add(row[0])
-        else:
-            logging.error("{} does not exist.".format(annotation_path))
-            return
+    train_dataset = YouTubeBBDetection(
+        root=os.path.join('datasets', 'YouTubeBB'), splits=('train',),
+        allow_empty=True, videos=False, clips=True, keep_vids=True)
+    val_dataset = YouTubeBBDetection(
+        root=os.path.join('datasets', 'YouTubeBB'), splits=('val',),
+        allow_empty=True, videos=False, clips=True, keep_vids=True)
 
-    each_vid_size_approx_gb = .029620394
-    expected_size = each_vid_size_approx_gb * len(ids)
-
-    logging.warning("\n\nBe warned that this will attempt to download {} videos with an approximate size of {} GBs."
-                    " This could take weeks or even months depending on your download speeds."
-                    "\n\nContinue? (y/n)".format(len(ids), int(expected_size)))
-    response = input()
-    if response.lower() not in ['y', 'yes']:
-        logging.info("User Cancelled")
-        return
-
-    # Download the files
-    os.makedirs(save_dir, exist_ok=True)
-    errors = set()
-    for v_id in tqdm(ids, desc="Downloading Videos"):
-
-        result = download_youtube_video(url="http://youtu.be/" + v_id, save_path=save_dir, name=v_id)
-
-        if result is None:
-            errors.add(v_id)
-
-    logging.info("Successfully downloaded {} / {} videos".format(len(ids)-len(errors), len(ids)))
-
-    if len(errors) > 0:
-        logging.info("Saving Error file: {}".format(os.path.join(save_dir, "errors.txt")))
-        with open(os.path.join(save_dir, "errors.txt"), "a") as f:
-            for v_id in errors:
-                f.write(v_id+"\n")
-
-    return len(errors)
-
-
-def extract_frames(videos_dir, save_dir, stats_dir):
-    """
-    extracts frames from the videos downloaded from youtube
-
-    :param videos_dir: directory containing the videos
-    :param save_dir: directory to save the frames
-    :param stats_dir: directory to save video stats
-    :return: the number of videos that weren't downloaded
-    """
-    videos = set(os.listdir(videos_dir))
-    videos.remove('errors.txt')
-
-    expected_size = 0
-
-    logging.warning("\n\nBe warned that this will attempt to extract frames from {} videos with an approximate size of"
-                    " {} GBs.\n\nContinue? (y/n)".format(len(videos), int(expected_size)))
-    response = input()
-    if response.lower() not in ['y', 'yes']:
-        logging.info("User Cancelled")
-        return
-
-    errors = set()
-    for video in tqdm(videos, desc="Extracting Frames"):
-        # todo, modify to extract only the frames we have annotations for and name them correctly, will need to verify the milliseconds align
-        # result = video_to_frames(os.path.join(videos_dir, video), save_dir, stats_dir, overwrite=True)
-        result = None
-        if result is None:
-            errors.add(video)
-
-    logging.info("Successfully extracted frames for {} / {} videos".format(len(videos)-len(errors), len(videos)))
-
-    if len(errors) > 0:
-        logging.info("Saving Error file: {}".format(os.path.join(save_dir, "errors.txt")))
-        with open(os.path.join(save_dir, "errors.txt"), "a") as f:
-            for video in errors:
-                f.write(video+"\n")
-
-    return len(errors)
+    # print(train_dataset)
+    # print(val_dataset)
 
 
 if __name__ == '__main__':
-    # annotation_paths = [os.path.join('datasets', 'YouTubeBB', 'yt_bb_detection_train.csv'),
-    #                     os.path.join('datasets', 'YouTubeBB', 'yt_bb_detection_validation.csv')]
-    # download_videos(annotation_paths,
-    #                 save_dir=os.path.join('datasets', 'YouTubeBB', 'videos'))
-    train_dataset = YouTubeBBDetection(
-        root=os.path.join('datasets', 'YouTubeBB'), splits=('train',),
-        allow_empty=True, videos=False, clips=True)
-    val_dataset = YouTubeBBDetection(
-        root=os.path.join('datasets', 'YouTubeBB'), splits=('val',),
-        allow_empty=True, videos=False, clips=True)
 
-    print(train_dataset)
-    print(val_dataset)
+    try:
+        app.run(main)
+    except SystemExit:
+        pass
+
