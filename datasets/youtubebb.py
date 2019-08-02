@@ -186,7 +186,7 @@ class YouTubeBBDetection(VisionDataset):
         to_get = dict()
         for id in ids:
             vid_id = id[0]
-            frame_id = int(id[1])
+            frame_id = id[1]
             if vid_id in videos:
                 videos[vid_id].add(frame_id)
             else:
@@ -317,7 +317,7 @@ class YouTubeBBDetection(VisionDataset):
             if not os.path.exists(img_path):
 
                 # Get the actual image corresponding to the frame
-                capture.set(1, int(round(fps*(frame/1000.0))))
+                capture.set(1, int(round(fps*(int(frame)/1000.0))))
                 ret, image = capture.read()
 
                 # Save the extracted image
