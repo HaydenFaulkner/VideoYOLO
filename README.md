@@ -61,7 +61,12 @@ Currently:
 See [models](/models/) for downloading and organisation information...
 
 ## Installation
-
+Install **youtube-dl** using the following command, currently `pip install youtube-dl` contains bug that prevents download
+ of videos
+```bash
+sudo curl -L https://yt-dl.org/downloads/latest/youtube-dl -o /usr/local/bin/youtube-dl
+sudo chmod a+rx /usr/local/bin/youtube-dl
+```
 #### Pip
 
 ```bash
@@ -74,7 +79,6 @@ pip install -r requirements.txt
 conda env create -f environment.yml
 conda activate viddet-mx
 ```
-
 ## Usage
 
 ### Training
