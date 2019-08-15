@@ -4,6 +4,7 @@ from __future__ import print_function
 from absl import app, flags, logging
 from absl.flags import FLAGS
 import cv2
+import glob
 from gluoncv.model_zoo import get_model
 from gluoncv.data.batchify import Tuple, Stack, Pad
 import mxnet as mx
@@ -99,8 +100,11 @@ def get_dataset(dataset_name):
         if files[0][-4:] == '.mp4':  # list of videos
             img_list = list()
             for file in files:  # make frames in tmp folder
-                img_list += video_to_frames(file, os.path.join('data', 'tmp'),
-                                            os.path.join('data', 'tmp', 'stats'), overwrite=False)
+                frames_dir = video_to_frames(file, os.path.join('data', 'tmp'),
+                                             os.path.join('data', 'tmp', 'stats'), overwrite=False)
+
+                img_list += glob.glob(frames_dir + '/**/*.jpg', recursive=True)
+
         elif files[0][-4:] == '.jpg':  # list of images
             img_list = files
         dataset = DetectSet(img_list)
@@ -110,8 +114,9 @@ def get_dataset(dataset_name):
 
     elif dataset_name[-4:] == '.mp4':
         # make frames in tmp folder
-        img_list = video_to_frames(dataset_name, os.path.join('data', 'tmp'),
-                                   os.path.join('data', 'tmp', 'stats'), overwrite=False)
+        frames_dir = video_to_frames(dataset_name, os.path.join('data', 'tmp'),
+                                     os.path.join('data', 'tmp', 'stats'), overwrite=False)
+        img_list = glob.glob(frames_dir + '/**/*.jpg', recursive=True)
         dataset = DetectSet(img_list)
 
     else:
