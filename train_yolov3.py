@@ -235,6 +235,51 @@ def resume(net, async_net, resume, start_epoch):
     return start_epoch
 
 
+def get_net(trained_on_dataset, ctx):
+    if FLAGS.network == 'darknet53':
+        if FLAGS.syncbn and len(ctx) > 1:
+            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                  root='models',
+                                  pretrained_base=FLAGS.pretrained_cnn,
+                                  norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                  norm_kwargs={'num_devices': len(ctx)})
+            async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                        root='models',
+                                        pretrained_base=False)  # used by cpu worker
+        else:
+            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                  root='models',
+                                  pretrained_base=FLAGS.pretrained_cnn)
+            async_net = net
+    elif FLAGS.network == 'mobilenet1.0':
+        if FLAGS.syncbn and len(ctx) > 1:
+            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                     root='models',
+                                     pretrained_base=FLAGS.pretrained_cnn,
+                                     norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                     norm_kwargs={'num_devices': len(ctx)})
+            async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                           root='models',
+                                           pretrained_base=False)  # used by cpu worker
+        else:
+            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                     root='models',
+                                     pretrained_base=FLAGS.pretrained_cnn)
+            async_net = net
+    else:
+        raise NotImplementedError('Model: {} not implemented.'.format(FLAGS.network))
+
+    if FLAGS.resume.strip():
+        start_epoch = resume(net, async_net, FLAGS.resume, FLAGS.start_epoch)
+    else:
+        start_epoch = FLAGS.start_epoch
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            net.initialize()
+            async_net.initialize()
+
+    return net, async_net, start_epoch
+
 def validate(net, val_data, ctx, eval_metric):
     """Test on validation dataset."""
     eval_metric.reset()
@@ -437,47 +482,7 @@ def main(_argv):
     net_name = '_'.join(('yolo3', FLAGS.network, FLAGS.dataset))
     save_prefix = os.path.join('models', FLAGS.save_prefix, net_name)
 
-    if FLAGS.network == 'darknet53':
-        if FLAGS.syncbn and len(ctx) > 1:
-            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                  root='models',
-                                  pretrained_base=FLAGS.pretrained_cnn,
-                                  norm_layer=gluon.contrib.nn.SyncBatchNorm,
-                                  norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                        root='models',
-                                        pretrained_base=False)  # used by cpu worker
-        else:
-            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                  root='models',
-                                  pretrained_base=FLAGS.pretrained_cnn)
-            async_net = net
-    elif FLAGS.network == 'mobilenet1.0':
-        if FLAGS.syncbn and len(ctx) > 1:
-            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                     root='models',
-                                     pretrained_base=FLAGS.pretrained_cnn,
-                                     norm_layer=gluon.contrib.nn.SyncBatchNorm,
-                                     norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                           root='models',
-                                           pretrained_base=False)  # used by cpu worker
-        else:
-            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                     root='models',
-                                     pretrained_base=FLAGS.pretrained_cnn)
-            async_net = net
-    else:
-        raise NotImplementedError('Model: {} not implemented.'.format(FLAGS.network))
-
-    if FLAGS.resume.strip():
-        start_epoch = resume(net, async_net, FLAGS.resume, FLAGS.start_epoch)
-    else:
-        start_epoch = FLAGS.start_epoch
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            net.initialize()
-            async_net.initialize()
+    net, async_net, start_epoch = get_net(trained_on_dataset, ctx)
 
     if FLAGS.trained_on:
         net.reset_class(train_dataset.classes)
