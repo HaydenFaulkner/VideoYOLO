@@ -44,12 +44,12 @@ Trained on [PascalVOC](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/index.html
 
 `yolo3_mobilenet1.0_voc` 75.8 mAP
 
-#### GCV4 (0009 Alternative)
+#### GCV4 (0008 Alternative)
 [**Download**](http://hf.id.au/models/VidDet/GCV4.tar.gz)
 
 Uses MobileNet1.0 instead of DarkNet53
 
-Trained on [ImageNetVID](http://bvisionweb1.cs.unc.edu/ILSVRC2017/download-videos-1p39.php) `train17_ne_0.04`
+Trained on [MSCoco](http://cocodataset.org/#download) `train 17`
 
 `yolo3_mobilenet1.0_coco` 28.6/48.9/27.8 Box AP (AP 0.5:0.95)/(AP 0.5)/(AP 0.75)
 
