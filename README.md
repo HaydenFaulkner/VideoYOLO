@@ -5,6 +5,7 @@ in [MXNet](https://mxnet.apache.org/) and [GluonCV](https://gluon-cv.mxnet.io/).
 ## Todo
 - Train and upload pre-trained models for all datasets and MobileNet
 backbone
+- Add use of default GluonCV models, as our coco isn't as good
 - Add temporal processing models
 
 ## Datasets
@@ -98,7 +99,9 @@ Using MobileNet1.0 `--network mobilenet1.0` and batch size of 16
 ***We found a warmup was necessary for YOLOv3***
 
 ### Finetuning
-To finetune a model you need to specify a `--resume` path and a `--trained_on` dataset:
+To finetune a model you need to specify a `--resume` path to a
+ pretrained params model file and specify the `--trained_on` dataset,
+ the model will be finetuned on the dataset specified with `--dataset`
 ```
 python train_yolov3.py --dataset voc --trained_on coco --resume models/0003/yolo3_darknet53_coco_best.params --gpus 0,1,2,3 --save_prefix 0006 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
 ```
@@ -106,13 +109,13 @@ python train_yolov3.py --dataset voc --trained_on coco --resume models/0003/yolo
 ### Detection, Testing & Visualisation
 To evaluate a model you can use something like:
 ```
-python detect_yolov3.py --batch_size 1 --pretrained models/0001/yolo3_darknet53_voc_best.params --metrics voc --dataset voc --save_prefix 0001
+python detect_yolov3.py --batch_size 1 --model_path models/0001/yolo3_darknet53_voc_best.params --metrics voc --dataset voc --save_prefix 0001
 ```
 
 You can also evaluate on different data than the model was trained on
 (voc trained model on vid set):
 ```
-python detect_yolov3.py --batch_size 1 --pretrained models/0001/yolo3_darknet53_voc_best.params --metrics voc,coco,vid --dataset vid --save_prefix 0001
+python detect_yolov3.py --batch_size 1 --model_path models/0001/yolo3_darknet53_voc_best.params --metrics voc,coco,vid --dataset vid --save_prefix 0001
 ```
 
 Visualisation is **off** by default use `--visualise True` to write out images with boxes displayed.
