@@ -13,6 +13,7 @@ from gluoncv import utils as gutils
 from gluoncv.data.batchify import Tuple, Stack, Pad
 # from gluoncv.data.transforms.presets.yolo import YOLO3DefaultTrainTransform, YOLO3DefaultValTransform
 from gluoncv.data.dataloader import RandomTransformDataLoader
+from gluoncv.model_zoo import get_model
 from gluoncv.utils import LRScheduler, LRSequential
 import mxnet as mx
 from mxnet import gluon
@@ -235,39 +236,56 @@ def resume(net, async_net, resume, start_epoch):
     return start_epoch
 
 
-def get_net(trained_on_dataset, ctx):
-    if FLAGS.network == 'darknet53':
-        if FLAGS.syncbn and len(ctx) > 1:
-            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                  root='models',
-                                  pretrained_base=FLAGS.pretrained_cnn,
-                                  norm_layer=gluon.contrib.nn.SyncBatchNorm,
-                                  norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                        root='models',
-                                        pretrained_base=False)  # used by cpu worker
+def get_net(trained_on_dataset, ctx, definition='ours'):
+    if definition == 'ours':  # our model definition from definitions.py, atm equiv to defaults, but might be useful in future
+        if FLAGS.network == 'darknet53':
+            if FLAGS.syncbn and len(ctx) > 1:
+                net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                      root='models',
+                                      pretrained_base=FLAGS.pretrained_cnn,
+                                      norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                      norm_kwargs={'num_devices': len(ctx)})
+                async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                            root='models',
+                                            pretrained_base=False)  # used by cpu worker
+            else:
+                net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
+                net = get_model(net_name, pretrained_base=True)
+                async_net = net
+
+        elif FLAGS.network == 'mobilenet1.0':
+            if FLAGS.syncbn and len(ctx) > 1:
+                net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                         root='models',
+                                         pretrained_base=FLAGS.pretrained_cnn,
+                                         norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                         norm_kwargs={'num_devices': len(ctx)})
+                async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                               root='models',
+                                               pretrained_base=False)  # used by cpu worker
+            else:
+                net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                         root='models',
+                                         pretrained_base=FLAGS.pretrained_cnn)
+                async_net = net
         else:
-            net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                  root='models',
-                                  pretrained_base=FLAGS.pretrained_cnn)
-            async_net = net
-    elif FLAGS.network == 'mobilenet1.0':
-        if FLAGS.syncbn and len(ctx) > 1:
-            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                     root='models',
-                                     pretrained_base=FLAGS.pretrained_cnn,
-                                     norm_layer=gluon.contrib.nn.SyncBatchNorm,
-                                     norm_kwargs={'num_devices': len(ctx)})
-            async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                           root='models',
-                                           pretrained_base=False)  # used by cpu worker
+            raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
+
+    else:  # the default definition from gluoncv
+        if FLAGS.network == 'darknet53' or FLAGS.network == 'mobilenet1.0':
+            if FLAGS.syncbn and len(ctx) > 1:
+                net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
+                net = get_model(net_name, root='models', pretrained_base=True, classes=trained_on_dataset.classes,
+                                norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                norm_kwargs={'num_devices': len(ctx)})
+                async_net = get_model(net_name, pretrained_base=False, classes=trained_on_dataset.classes)
+            else:
+                net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                                      root='models',
+                                      pretrained_base=FLAGS.pretrained_cnn)
+                async_net = net
         else:
-            net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                     root='models',
-                                     pretrained_base=FLAGS.pretrained_cnn)
-            async_net = net
-    else:
-        raise NotImplementedError('Model: {} not implemented.'.format(FLAGS.network))
+            raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
 
     if FLAGS.resume.strip():
         start_epoch = resume(net, async_net, FLAGS.resume, FLAGS.start_epoch)
@@ -279,6 +297,7 @@ def get_net(trained_on_dataset, ctx):
             async_net.initialize()
 
     return net, async_net, start_epoch
+
 
 def validate(net, val_data, ctx, eval_metric):
     """Test on validation dataset."""
@@ -482,7 +501,7 @@ def main(_argv):
     net_name = '_'.join(('yolo3', FLAGS.network, FLAGS.dataset))
     save_prefix = os.path.join('models', FLAGS.save_prefix, net_name)
 
-    net, async_net, start_epoch = get_net(trained_on_dataset, ctx)
+    net, async_net, start_epoch = get_net(trained_on_dataset, ctx, definition='gluon')  # use gluons defs, not ours for now
 
     if FLAGS.trained_on:
         net.reset_class(train_dataset.classes)
