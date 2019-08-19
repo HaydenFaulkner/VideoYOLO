@@ -274,15 +274,14 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
 
     else:  # the default definition from gluoncv
         if FLAGS.network == 'darknet53' or FLAGS.network == 'mobilenet1.0':
+            net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))  # only get custom, use FLAGS.resume to load particular set (voc, coco) weights
             if FLAGS.syncbn and len(ctx) > 1:
-                net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
                 net = get_model(net_name, root='models', pretrained_base=FLAGS.pretrained_cnn,
                                 classes=trained_on_dataset.classes,
                                 norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                 norm_kwargs={'num_devices': len(ctx)})
                 async_net = get_model(net_name, pretrained_base=False, classes=trained_on_dataset.classes)
             else:
-                net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
                 net = get_model(net_name, pretrained_base=FLAGS.pretrained_cnn)
                 async_net = net
         else:
