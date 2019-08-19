@@ -5,7 +5,7 @@ in [MXNet](https://mxnet.apache.org/) and [GluonCV](https://gluon-cv.mxnet.io/).
 ## Todo
 - Train and upload pre-trained models for all datasets and MobileNet
 backbone
-- Add use of default GluonCV models, as our coco isn't as good
+- Add evaluation results for models
 - Add temporal processing models
 
 ## Datasets
