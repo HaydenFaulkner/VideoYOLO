@@ -346,15 +346,21 @@ def get_class_map(trained_on, eval_on):
 
 def main(_argv):
 
+    # if we aren't given a full path, assume the file is in 'models/save_prefix' directory
+    if len(os.path.split(FLAGS.model_path)[0]) > 0:
+        model_path = FLAGS.model_path
+    else:
+        model_path = os.path.join('models', FLAGS.save_prefix, FLAGS.model_path)
+
     # check model exists
-    model_path = os.path.join('models', FLAGS.save_prefix, FLAGS.model_path)
     if not os.path.exists(model_path):
         logging.error("Model doesn't appear where it's expected: {}".format(model_path))
 
-    # dataset
+    # get dataset
     dataset = get_dataset(FLAGS.dataset)
 
-    if FLAGS.trained_on:  # for use when model preds are diff to eval set classes
+    # for use when model predictions are different to evaluation set classes
+    if FLAGS.trained_on:
         trained_on_dataset = get_dataset(FLAGS.trained_on)
     else:
         trained_on_dataset = dataset
@@ -364,6 +370,7 @@ def main(_argv):
     if len(dataset) < batch_size:
         batch_size = len(dataset)
 
+    # handle gpu usage
     gpus = FLAGS.gpus
     if batch_size < len(gpus):
         gpus = [gpus[0]]
@@ -375,7 +382,7 @@ def main(_argv):
     # dataloader
     loader = get_dataloader(dataset, batch_size)
 
-    # network
+    # setup network
     net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
     net = get_model(net_name, root='models', pretrained_base=True, classes=trained_on_dataset.classes)
     net.load_parameters(model_path)
@@ -384,7 +391,7 @@ def main(_argv):
     if max_do < 0:
         max_do = len(dataset)
 
-    # detect
+    # organise the save directories for the results
     if FLAGS.dataset in ['voc', 'coco', 'det', 'vid']:
         save_dir = os.path.join('models', FLAGS.save_prefix, FLAGS.save_dir, FLAGS.dataset)
     else:
