@@ -121,6 +121,5 @@ python detect_yolov3.py --batch_size 1 --model_path models/0001/yolo3_darknet53_
 Visualisation is **off** by default use `--visualise True` to write out images with boxes displayed.
 
 ## Results
-| Model  | Trained On | Tested On | VOC<sub>12</sub> | AP<sub>.5-.95</sub> | AP<sub>.5 | AP<sub>.75</sub> | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>L</sub> |
-|--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
-| `0001` | VOC `trainval 07+12` | VOC `test 07` | .835 | .463 | .733 | .510 | .118| .317 | .559 |
+
+See [models](/models/) for all of the results

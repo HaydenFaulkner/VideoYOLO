@@ -133,3 +133,9 @@ Trained on [ImageNetVID](http://bvisionweb1.cs.unc.edu/ILSVRC2017/download-video
 ```
 python train_yolov3.py --network mobilenet1_0 --dataset vid --gpus 0,1,2,3 --save_prefix 0004 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True --frames 0.04
 ```
+
+## Results
+| Model  | Trained On | Tested On | VOC<sub>12</sub> | AP<sub>.5-.95</sub> | AP<sub>.5 | AP<sub>.75</sub> | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>L</sub> |
+|--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
+| `0001` | VOC `trainval 07+12` | VOC `test 07` | .835 | .463 | .733 | .510 | .118 | .317 | .559 |
+| `GCV1` | VOC `trainval 07+12` | VOC `test 07` | .836 | .462 | .735 | .500 | .113 | .304 | .564 |
