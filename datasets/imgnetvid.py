@@ -179,9 +179,6 @@ class ImageNetVidDetection(VisionDataset):
 
             ids += ids_
 
-        if self._frames == 1:
-            return ids
-
         # We only want a subset of each video, so need to find the videos
         vid_ids = dict()
         past_vid_id = ''
