@@ -427,21 +427,20 @@ class ImageNetVidDetection(VisionDataset):
         done_imgs = set()
         annotations = list()
         for idx in range(len(self)):
-            img_id = self._items[idx]
-            filename = self._anno_path.format(*img_id[1:])
-            width, height = self._im_shapes[idx]
+            sample_id = self._sample_ids[idx]
+            filename = self._image_path.format(*self._samples[sample_id])
+            width, height = self._im_shapes[sample_id]
 
-            img_id = self.image_ids[idx]
-            if img_id not in done_imgs:
-                done_imgs.add(img_id)
+            if sample_id not in done_imgs:
+                done_imgs.add(sample_id)
                 images.append({'file_name': filename,
                                'width': int(width),
                                'height': int(height),
-                               'id': img_id})
+                               'id': sample_id})
 
             for box in self._load_label(idx):
                 xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
-                annotations.append({'image_id': img_id,
+                annotations.append({'image_id': sample_id,
                                     'id': len(annotations),
                                     'bbox': xywh,
                                     'area': int(xywh[2] * xywh[3]),
