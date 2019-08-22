@@ -26,14 +26,14 @@ our trained models.
 
 Trained on [PascalVOC](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/index.html#devkit) `trainval 07+12`
 
-`yolo3_darknet53_voc` 81.5 mAP
+`yolo3_darknet53_voc`
 
 #### GCV2 (0003 Alternative)
 [**Download**](http://hf.id.au/models/VidDet/GCV2.tar.gz)
 
 Trained on [MSCoco](http://cocodataset.org/#download) `train 17`
 
-`yolo3_darknet53_coco` 36.0/57.2/38.7 Box AP (AP 0.5:0.95)/(AP 0.5)/(AP 0.75)
+`yolo3_darknet53_coco`
 
 #### GCV3 (0006 Alternative)
 [**Download**](http://hf.id.au/models/VidDet/GCV3.tar.gz)
@@ -135,7 +135,20 @@ python train_yolov3.py --network mobilenet1_0 --dataset vid --gpus 0,1,2,3 --sav
 ```
 
 ## Results
+Evaluated with `voc` and `coco` metrics. Box Area's - **S**mall `<32`,
+ **M**edium `32-96`, **L**arge `>96`
+
 | Model  | Trained On | Tested On | VOC<sub>12</sub> | AP<sub>.5-.95</sub> | AP<sub>.5 | AP<sub>.75</sub> | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>L</sub> |
 |--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
 | `0001` | VOC `trainval 07+12` | VOC `test 07` | .835 | .463 | .733 | .510 | .118 | .317 | .559 |
 | `GCV1` | VOC `trainval 07+12` | VOC `test 07` | .836 | .462 | .735 | .500 | .113 | .304 | .564 |
+| `0003` | COCO `train 17` | COCO `val 17` | .525 | .288 | .515 | .296 | .136 | .306 | .427 |
+| `GCV2` | COCO `train 17` | COCO `val 17` | .579 | .360 | .571 | .387 | .173 | .387 | .522 |
+| `0004` | VID `train17_ne_0.04` | VID `val_ne_0.04` | .478 | .274 | .453 | .298 | .031 | .130 | .330 |
+
+Evaluated with `vid` metric. Instance's Speed - **S**low `mIoU > 0.9`,
+ **M**edium `0.7 <= mIoU <= 0.9`, **F**ast `mIoU < 0.7`
+
+| Model  | Trained On | Tested On | mAP | AP<sub><50</sub> | AP<sub>50-150</sub> | AP<sub>>150</sub> | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>F</sub> |
+|--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
+| `0004` | VID `train17_ne_0.04` | VID `val_ne_0.04` | .454 | .136 | .328 | .555 | .522 | .442 | .292 |
