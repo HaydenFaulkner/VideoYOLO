@@ -42,7 +42,7 @@ flags.DEFINE_string('network', 'darknet53',
                     'Base network name: darknet53 or mobilenet1.0.')
 flags.DEFINE_string('dataset', 'voc',
                     'Dataset or .jpg image or .mp4 video or .txt image/video list.')
-flags.DEFINE_string('trained_on', 'voc',
+flags.DEFINE_string('trained_on', '',
                     'Dataset the model was trained on.')
 flags.DEFINE_string('save_prefix', '0001',
                     'Model save prefix.')
