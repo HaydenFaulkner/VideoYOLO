@@ -146,9 +146,10 @@ Evaluated with `voc` and `coco` metrics. Box Area's - **S**mall `<32`,
 | `GCV2` | COCO `train 17` | COCO `val 17` | .579 | .360 | .571 | .387 | .173 | .387 | .522 |
 | `0004` | VID `train17_ne_0.04` | VID `val_ne_0.04` | .478 | .274 | .453 | .298 | .031 | .130 | .330 |
 
-Evaluated with `vid` metric. Instance's Speed - **S**low `mIoU > 0.9`,
- **M**edium `0.7 <= mIoU <= 0.9`, **F**ast `mIoU < 0.7`
+Evaluated with `vid` metric. Box Area's - **S**mall `<50`,
+ **M**edium `50-150`, **L**arge `>150`. Instance's Speed (motion IoU) -
+ **SL**ow `>0.9`,  **MO**derate `0.7-0.9`, **FA**st `<0.7`
 
-| Model  | Trained On | Tested On | mAP | AP<sub><50</sub> | AP<sub>50-150</sub> | AP<sub>>150</sub> | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>F</sub> |
+| Model  | Trained On | Tested On | mAP | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>L</sub> | AP<sub>SL</sub> | AP<sub>MO</sub> | AP<sub>FA</sub> |
 |--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
 | `0004` | VID `train17_ne_0.04` | VID `val_ne_0.04` | .454 | .136 | .328 | .555 | .522 | .442 | .292 |
