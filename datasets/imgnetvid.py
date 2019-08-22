@@ -1,51 +1,49 @@
 """ImageNet VID object detection dataset."""
-from __future__ import absolute_import
-from __future__ import division
+
+from absl import app, flags, logging
+from gluoncv.data.base import VisionDataset
 import json
 import math
+import mxnet as mx
+import numpy as np
 import os
 from tqdm import tqdm
-import warnings
-import numpy as np
 try:
-    import xml.etree.cElementTree as ET
+    import xml.etree.cElementTree as et
 except ImportError:
-    import xml.etree.ElementTree as ET
-import mxnet as mx
-from gluoncv.data.base import VisionDataset
+    import xml.etree.ElementTree as et
 
 
 class ImageNetVidDetection(VisionDataset):
-    """ImageNet VID detection Dataset.
+    """ImageNet VID object detection dataset."""
 
-    Parameters
-    ----------
-    root : str, default '~/mxnet/datasets/vid'
-        Path to folder storing the dataset.
-    splits : tuple, default ('train')
-        Candidates can be: 'train', 'val', 'test'.
-    transform : callable, default None
-        A function that takes data and label and transforms them. Refer to
-        :doc:`./transforms` for examples.
-
-        A transform function for object detection should take label into consideration,
-        because any geometric modification will require label to be modified.
-    index_map : dict, default None
-        In default, the 30 classes are mapped into indices from 0 to 29. We can
-        customize it by providing a str to int dict specifying how to map class
-        names to indices. Use by advanced users only, when you want to swap the orders
-        of class labels.
-    """
-
-    def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'vid'),
-                 splits=((2017, 'train'),), allow_empty=False, videos=False,
+    def __init__(self, root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
+                 splits=[(2017, 'train')], allow_empty=False, videos=False,
                  transform=None, index_map=None, frames=1, inference=False,
                  window_size=1, window_step=1):
+
+        """
+        Args:
+            root (str): root file path of the dataset (default is 'datasets/ImageNetVID/ILSVRC')
+            splits (list): a list of splits as tuples (default is [(2017, 'train')])
+            allow_empty (bool): include samples that don't have any labelled boxes? (default is False)
+            videos (bool): interpret samples as full videos rather than frames (default is False)
+            transform: the transform to apply to the image/video and label (default is None)
+            index_map (dict): custom class to id dictionary (default is None)
+            frames (float): Based per video - and is evenly sampled, NOT randomly sampled (default is 1)
+                            <1: Percent of the full dataset to take -> range(0, len(video), int(1/frames))
+                                eg. .04 takes every 25th frame
+                            >1: This many frames per video -> range(0, len(video), int(ceil(len(video)/frames)))
+                            =1: Every sample used -> full dataset
+            inference (bool): are we doing inference? (default is False)
+            window_size (int): how many frames does a sample consist of? ie. the temporal window size (default is 1)
+            window_step (int): the step distance of the temporal window (default is 1)
+        """
         super(ImageNetVidDetection, self).__init__(root)
         self._im_shapes = {}
-        self._root = os.path.expanduser(root)
+        self.root = os.path.expanduser(root)
         self._transform = transform
-        assert len(splits) == 1, print('Can only take one split currently as otherwise conflicting image ids')
+        assert len(splits) == 1, logging.error('Can only take one split currently as otherwise conflicting image ids')
         self._splits = splits
         self._videos = videos
         self._frames = frames
@@ -56,223 +54,310 @@ class ImageNetVidDetection(VisionDataset):
         self._window_size = window_size
         self._window_step = window_step
         self._windows = None
-        self._coco_path = os.path.join(self._root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
-        self._anno_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
+        
+        # setup a few paths
+        self._coco_path = os.path.join(self.root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
+        self._annotations_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'VID', '{}', '{}.JPEG')
+        
+        # setup the class index map
         self.index_map = index_map or dict(zip(self.wn_classes, range(self.num_class)))
-        self._samples = self._load_items(splits)
-        self._sample_ids = sorted(list(self._samples.keys()))
+        
+        # load the samples
+        self.samples = self._load_samples()
+        
+        # generate a sorted list of the sample ids
+        self.sample_ids = sorted(list(self.samples.keys()))
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
 
     @property
     def classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/imagenetvid.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class names as specified in the imagenetvid.names file
+
+        Returns:
+            list : a list of strings
+
+        """
+        names_file = os.path.join('datasets', 'names', 'imagenetvid.names')
+        with open(names_file, 'r') as f:
             classes = [line.strip() for line in f.readlines()]
         return classes
 
     @property
     def wn_classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/imagenetvid_wn.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class names as specified in the imagenetvid_wn.names file
+
+        Returns:
+            list : a list of strings
+
+        """
+        names_file = os.path.join('datasets', 'names', 'imagenetvid_wn.names')
+        with open(names_file, 'r') as f:
             wn_classes = [line.strip() for line in f.readlines()]
         return wn_classes
 
     @property
-    def image_ids(self):
-        if self._videos:
-            return [sample[3].split('/')[0] for sample in self._samples.values()] # todo check which we want?
-            # return [id for id in [sample[4] for sample in self._items]] # todo check which we want?
-        else:
-            return self._sample_ids
-
-    @property
     def motion_ious(self):
-        ious = self._load_motion_ious()
-        motion_ious = np.array([v for k, v in ious.items() if int(k) in self.image_ids])
+        path = os.path.join(self.root, '{}_motion_ious.json'.format(self._splits[0][1]))
+        if not os.path.exists(path):
+            generate_motion_ious()
+
+        with open(path, 'r') as f:
+            motion_ious = json.load(f)
+        
+        # filter only the samples in the set
+        motion_ious = np.array([v for k, v in motion_ious.items() if int(k) in self.sample_ids])
+        
         return motion_ious
 
     def __len__(self):
-        return len(self._sample_ids)
+        return len(self.sample_ids)
 
     def __getitem__(self, idx):
-        if not self._videos:
-            img_path = self._image_path.format(*self._samples[self._sample_ids[idx]])
+        """
+        Get a sample from the dataset
+
+        Args:
+            idx (int): index of the sample in the dataset
+
+        Returns:
+            mxnet.NDArray: input image/volume
+            numpy.ndarray: label
+            int: idx (if inference=True)
+        """
+        if not self._videos:  # frames are samples
+            img_path = self._image_path.format(*self.samples[self.sample_ids[idx]])
             label = self._load_label(idx)[:, :-1]  # remove track id
 
-            if self._window_size > 1:
+            if self._window_size > 1:  # lets load the temporal window
                 imgs = None
-                window = self._windows[self._sample_ids[idx]]
-                for sid in window:
-                    img_path = self._image_path.format(*self._samples[sid])
-                    img = mx.image.imread(img_path, 1)
-                    if imgs is None:
-                        imgs = img
-                    else:
-                        imgs = mx.ndarray.concatenate([imgs, img], axis=2)
-                img = imgs
-            else:
-                img = mx.image.imread(img_path, 1)
+                window_sample_ids = self._windows[self.sample_ids[idx]]
 
-            if self._inference:
-                if self._transform is not None:
-                    return self._transform(img, label, idx)
-                return img, label, idx
-            else:
-                if self._transform is not None:
-                    return self._transform(img, label)
-                return img, label
-        else:
-            sample_id = self._sample_ids[idx]
-            sample = self._samples[sample_id]
-            vid = None
-            labels = None
-            for frame in sample[3]:
-                img_id = (sample[0], sample[1], sample[2]+'/'+frame)
-                img_path = self._image_path.format(*img_id)
-                label = self._load_label(idx, frame=frame)
+                # go through the sample ids for the window
+                for sid in window_sample_ids:
+                    img_path = self._image_path.format(*self.samples[sid])
+                    img = mx.image.imread(img_path, 1)
+
+                    if self._transform is not None:  # transform each image in the window
+                        img, _ = self._transform(img, label)  # todo check we transform the same (NOT rand acr win)
+
+                    if imgs is None:
+                        # imgs = img  # is the first frame in the window
+                        imgs = mx.ndarray.expand_dims(img, axis=0)  # is the first frame in the window
+                    else:
+                        # imgs = mx.ndarray.concatenate([imgs, img], axis=2)  # isn't first frame, concat to the window
+                        imgs = mx.ndarray.concatenate([imgs, mx.ndarray.expand_dims(img, axis=0)], axis=0)
+                img = imgs
+
+            else:  # window size is 1, so just load one image
                 img = mx.image.imread(img_path, 1)
                 if self._transform is not None:
                     img, label = self._transform(img, label)
+            # transform the label
+            if self._transform is not None:
+                _, label = self._transform(img, label)
 
+            if self._inference:  # in inference we want to return the idx also
+                return img, label, idx
+            else:
+                return img, label
+        else:
+            sample_id = self.sample_ids[idx]
+            sample = self.samples[sample_id]
+            vid = None
+            labels = None
+            for frame_id in sample[3]:  # for each frame in the video
+                # load the frame and the label
+                img_id = (sample[0], sample[1], os.path.join(sample[2], frame_id))
+                img_path = self._image_path.format(*img_id)
+                label = self._load_label(idx, frame_id=frame_id)
+                img = mx.image.imread(img_path, 1)
+
+                # transform the image and label
+                if self._transform is not None:
+                    img, label = self._transform(img, label)
+
+                # pad label to ensure all same size for concatenation
                 label = self._pad_to_dense(label, 20)
+
+                # concatenate the data to make video and label volumes
                 if labels is None:
-                    vid = mx.ndarray.expand_dims(img, 0)  # extra mem used if num_workers wrong on the dataloader
-                    labels = np.expand_dims(label, 0)
+                    vid = mx.ndarray.expand_dims(img, axis=0)
+                    labels = np.expand_dims(label, axis=0)
                 else:
-                    vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, 0)])
-                    labels = np.concatenate((labels, np.expand_dims(label, 0)))
-            return None, labels
+                    vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, axis=0)], axis=0)
+                    labels = np.concatenate((labels, np.expand_dims(label, axis=0)), axis=0)
 
-    def sample_path(self, idx):
-        return self._image_path.format(*self._samples[self._sample_ids[idx]])
+            if self._inference:  # in inference we want to return the idx also
+                return vid, labels, idx
+            else:
+                return vid, labels
 
-    def _load_items(self, splits):
-        """Load individual image indices from splits."""
-        ids = []
-        for year, split in splits:
-            root = self._root
-            ne_lf = os.path.join(root, 'ImageSets', 'VID', split + '_nonempty.txt')
-            lf = os.path.join(root, 'ImageSets', 'VID', split + '.txt')
+    def _load_samples(self):
+        """
+        Load the samples of this dataset using the settings supplied
+
+        Returns:
+            dict : a dict of either video (videos=True) or frame (videos=False) samples
+
+        """
+        ids = list()
+        for year, split in self._splits:
+
+            # do we want the full split or just the non-empty split?
+            ne_lf = os.path.join(self.root, 'ImageSets', 'VID', split + '_nonempty.txt')
+            lf = os.path.join(self.root, 'ImageSets', 'VID', split + '.txt')
             if os.path.exists(ne_lf) and not self._allow_empty:
                 lf = ne_lf
 
-            print("Loading splits from: {}".format(lf))
+            # load the splits file
+            logging.info("Loading splits from: {}".format(lf))
             with open(lf, 'r') as f:
-                ids_ = [(int(line.split()[1]), root, split, line.split()[0]) for line in f.readlines()]
+                ids_ = [(int(line.split()[1]), self.root, split, line.split()[0]) for line in f.readlines()]
 
+            # if the non-empty split file didn't exist and we want non-empty only, we need to make
             if not os.path.exists(ne_lf) and not self._allow_empty:
                 ids_, str_ = self._verify_nonempty_annotations(ids_)  # ensure non-empty for this split
-                print("Writing out new splits file: {}\n\n{}".format(ne_lf, str_))
+                logging.info("Writing out new splits file: {}\n\n{}".format(ne_lf, str_))
                 with open(ne_lf, 'w') as f:
                     for l in ids_:
                         f.write('{} {}\n'.format(l[3], l[0]))
-                with open(os.path.join(root, 'ImageSets', 'VID', split + '_nonempty_stats.txt'), 'a') as f:
+                with open(os.path.join(self.root, 'ImageSets', 'VID', split + '_nonempty_stats.txt'), 'a') as f:
                     f.write(str_)
 
+            # use only the 2015 samples
             if year == 2015:
-                ids_ = [id for id in ids_ if 'ILSVRC2015' in id[-1]]
+                ids_ = [id_ for id_ in ids_ if 'ILSVRC2015' in id_[-1]]
 
             ids += ids_
 
-        # We only want a subset of each video, so need to find the videos
-        vid_ids = dict()
+        # Build a dictionary of videos {vid_id: (path str, split str, vid_id str, frames list, frame_ids list), ...}
+        videos = dict()
         past_vid_id = ''
-        for id in ids:
-            vid_id = id[3][:-7]
-            frame = id[3][-6:]
-            if vid_id != past_vid_id:
-                if past_vid_id:
+        frames = None
+        frame_ids = None
+        past_id = None
+        for i, id_ in enumerate(ids):
+            vid_id = id_[3][:-7]
+            frame = id_[3][-6:]
+
+            if i == 0:  # fist iteration - set the variables
+                past_id = id_
+                frames = [frame]
+                frame_ids = [id_[0]]
+                past_vid_id = vid_id
+
+            elif i == len(ids)-1:  # last iteration - add the last video
+                if self._frames < 1:  # cut down per video
+                    frames = [frames[i] for i in range(0, len(frames), int(1 / self._frames))]
+                    frame_ids = [frame_ids[i] for i in range(0, len(frame_ids), int(1 / self._frames))]
+                elif self._frames > 1:  # cut down per video
+                    frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames) / self._frames)))]
+                    frame_ids = [frame_ids[i] for i in
+                                 range(0, len(frame_ids), int(math.ceil(len(frames) / self._frames)))]
+
+                videos[vid_id] = (id_[1], id_[2], vid_id, frames, frame_ids)
+
+            else:
+                if vid_id != past_vid_id:  # new video - add it
+
                     if self._frames < 1:  # cut down per video
                         frames = [frames[i] for i in range(0, len(frames), int(1/self._frames))]
-                        sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(1/self._frames))]
+                        frame_ids = [frame_ids[i] for i in range(0, len(frame_ids), int(1/self._frames))]
                     elif self._frames > 1:  # cut down per video
                         frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
-                        sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(math.ceil(len(frames)/self._frames)))]
+                        frame_ids = [frame_ids[i] for i in
+                                     range(0, len(frame_ids), int(math.ceil(len(frames)/self._frames)))]
 
-                    vid_ids[past_vid_id] = (past_id[1], past_id[2], past_vid_id, frames, sample_ids)
-                past_id = id
-                frames = [frame]
-                sample_ids = [id[0]]
-                past_vid_id = vid_id
-            else:
-                frames.append(frame)
-                sample_ids.append(id[0])
+                    videos[past_vid_id] = (past_id[1], past_id[2], past_vid_id, frames, frame_ids)
 
-        if self._frames < 1: # cut down per video
-            frames = [frames[i] for i in range(0, len(frames), int(1 / self._frames))]
-            sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(1 / self._frames))]
-        elif self._frames > 1:  # cut down per video
-            frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
-            sample_ids = [sample_ids[i] for i in range(0, len(sample_ids), int(math.ceil(len(frames)/self._frames)))]
+                    past_id = id_
+                    frames = [frame]
+                    frame_ids = [id_[0]]
+                    past_vid_id = vid_id
 
-        vid_ids[vid_id] = (id[1], id[2], vid_id, frames, sample_ids)
+                else:  # same video - just append the frames
+                    frames.append(frame)
+                    frame_ids.append(id_[0])
 
+        # if we want samples to be full videos, return the dictionary of videos
         if self._videos:
-            return vid_ids
-        else:
-            # reconstruct the ids from vid ids
-            frame_ids = dict()
-            for vid_id in vid_ids.values():
-                for frame_name, frame_id in zip(vid_id[3], vid_id[4]):
-                    frame_ids[frame_id] = (vid_id[0], vid_id[1], vid_id[2]+'/'+frame_name)
+            return videos
+        else:  # we want frames, or windows of frames
 
-            # build a temporal window of frames around each sample, adheres to the 'frames param' only containing frames
-            # that are in the cut down set... so step is actually step*the_dataset_set
+            # reconstruct the frame samples from vid video samples
+            frames = dict()
+            for video in videos.values():
+                for frame_name, frame_id in zip(video[3], video[4]):
+                    frames[frame_id] = (video[0], video[1], os.path.join(video[2], frame_name))
+
+            # build a temporal window of frames around each sample, adheres to the 'self._frames param' only containing
+            # frames that are in the cut down set... so step is actually step*the_dataset_step
             if self._window_size > 1:
                 self._windows = dict()
 
-                for vid_id in vid_ids.values():  # lock to only getting frames from the same video
-                    frame_ids_ = vid_id[4]
-                    for i in range(len(frame_ids_)):  # for each frame in this video
+                for video in videos.values():  # lock to only getting frames from the same video
+                    frame_ids = video[4]  # get the list of frame ids
+
+                    for i in range(len(frame_ids)):  # for each frame in this video
                         window = list()  # setup a new window (will hold the frame_ids)
 
                         window_size = int(self._window_size / 2.0)  # halves and floors it
 
                         # lets step back through the video and get the frame_ids
                         for back_i in range(window_size*self._window_step, self._window_step-1, -self._window_step):
-                            window.append(frame_ids_[max(0, i-back_i)])  # will add first frame to pad if window too big
+                            window.append(frame_ids[max(0, i-back_i)])  # will add first frame to pad if window too big
 
                         # add the current frame
-                        window.append(frame_ids_[i])
+                        window.append(frame_ids[i])
 
                         # lets step forward and add future frame_ids
-                        for forw_i in range(self._window_step, window_size*self._window_step+1, self._window_step):
+                        for forward_i in range(self._window_step, window_size*self._window_step+1, self._window_step):
                             if len(window) == self._window_size:
                                 break  # only triggered if self._window_size is even, we disregard last frame
-                            window.append(frame_ids_[min(len(frame_ids_)-1, i+forw_i)])  # will add last frame to pad if window too big
+                            # will add last frame to pad if window too big
+                            window.append(frame_ids[min(len(frame_ids)-1, i+forward_i)])
 
                         # add the window frame ids to a dict to be used in the get() function
-                        self._windows[frame_ids_[i]] = window
-            return frame_ids
+                        self._windows[frame_ids[i]] = window
 
-    def _load_label(self, idx, frame=None):
-        """Parse xml file and return labels."""
-        # if samples:  # used to process items before they are actually assigned to self
-        #     assert "TODO FIX"
-        #     sample = samples[idx]
-        # else:
-        sample_id = self._sample_ids[idx]
-        sample = self._samples[sample_id]
+            return frames
 
-        anno_path = self._anno_path.format(*sample)
+    def _load_label(self, idx, frame_id=None):
+        """
+        Parse the xml annotation files for a sample
+
+        Args:
+            idx (int): the sample index
+            frame_id (str): needed if videos=True, will get the label for this particular frame
+
+        Returns:
+            numpy.ndarray : labels of shape (n, 6) - [[xmin, ymin, xmax, ymax, cls_id, trk_id], ...]
+        """
+
+        sample_id = self.sample_ids[idx]
+        sample = self.samples[sample_id]
+
+        anno_path = self._annotations_path.format(*sample)
         if self._videos:
-            assert frame is not None
-            img_id = (sample[0], sample[1], sample[2]+'/'+frame)
-            anno_path = self._anno_path.format(*img_id)
+            assert frame_id is not None
+            img_id = (sample[0], sample[1], os.path.join(sample[2], frame_id))
+            anno_path = self._annotations_path.format(*img_id)
 
         if not os.path.exists(anno_path):
-            return np.array([])
-        root = ET.parse(anno_path).getroot()
+            return np.array([[-1, -1, -1, -1, -1, -1]])
+
+        root = et.parse(anno_path).getroot()
         size = root.find('size')
         width = float(size.find('width').text)
         height = float(size.find('height').text)
+
+        # store the shapes for later usage
         if sample_id not in self._im_shapes:
-            # store the shapes for later usage
             self._im_shapes[sample_id] = (width, height)
 
         label = []
@@ -283,43 +368,35 @@ class ImageNetVidDetection(VisionDataset):
             cls_id = self.index_map[cls_name]
             trk_id = int(obj.find('trackid').text)
             xml_box = obj.find('bndbox')
-            # assert int(obj.find('trackid').text) == len(label), print(anno_path)  # this ensures that boxes are ordered based on their track ids (useful for making the the motion iou)
-            xmin = float(xml_box.find('xmin').text)  # we dont need to minus 1 here as the already 0 > h/w
+
+            xmin = float(xml_box.find('xmin').text)
             ymin = float(xml_box.find('ymin').text)
             xmax = float(xml_box.find('xmax').text)
             ymax = float(xml_box.find('ymax').text)
-            try:
-                xmin, ymin, xmax, ymax = self._validate_label(xmin, ymin, xmax, ymax, width, height, anno_path)
-            except AssertionError as e:
-                raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
+
+            # validate the label so it fits in the image and has a positive area
+            xmin, ymin, xmax, ymax = self._validate_label(xmin, ymin, xmax, ymax, width, height, anno_path)
             label.append([xmin, ymin, xmax, ymax, cls_id, trk_id])
 
+        # if we didn't find a box label we need to add one
         if self._allow_empty and len(label) < 1:
             label.append([-1, -1, -1, -1, -1, -1])
+
         return np.array(label)
 
     @staticmethod
     def _validate_label(xmin, ymin, xmax, ymax, width, height, anno_path):
         """Validate labels."""
         if not 0 <= xmin < width or not 0 <= ymin < height or not xmin < xmax <= width or not ymin < ymax <= height:
-            print("box: {} {} {} {} incompatable with img size {}x{} in {}.".format(xmin,
-                                                                                    ymin,
-                                                                                    xmax,
-                                                                                    ymax,
-                                                                                    width,
-                                                                                    height,
-                                                                                    anno_path))
+            logging.warning("box: {} {} {} {} incompatible with img size {}x{} in {}.".format(xmin, ymin, xmax, ymax,
+                                                                                              width, height, anno_path))
 
             xmin = min(max(0, xmin), width - 1)
             ymin = min(max(0, ymin), height - 1)
             xmax = min(max(xmin + 1, xmax), width)
             ymax = min(max(ymin + 1, ymax), height)
 
-            print("new box: {} {} {} {}.".format(xmin, ymin, xmax, ymax))
-        assert 0 <= xmin < width, "xmin must in [0, {}), given {}".format(width, xmin)
-        assert 0 <= ymin < height, "ymin must in [0, {}), given {}".format(height, ymin)
-        assert xmin < xmax <= width, "xmax must in (xmin, {}], given {}".format(width, xmax)
-        assert ymin < ymax <= height, "ymax must in (ymin, {}], given {}".format(height, ymax)
+            logging.info("new box: {} {} {} {}.".format(xmin, ymin, xmax, ymax))
         return xmin, ymin, xmax, ymax
 
     @staticmethod
@@ -328,63 +405,92 @@ class ImageNetVidDetection(VisionDataset):
         assert all(c.islower() for c in class_list), "uppercase characters"
         stripped = [c for c in class_list if c.strip() != c]
         if stripped:
-            warnings.warn('white space removed for {}'.format(stripped))
+            logging.warning('white space removed for {}'.format(stripped))
 
-    def _verify_nonempty_annotations(self, ids):
-        """Checks annotations and returns only those that contain at least one box, as well as a lil stats str"""
-        good_ids = []
+    def _verify_nonempty_annotations(self, sample_ids):
+        """
+        Checks annotations and returns only those that contain at least one box, as well as a lil stats str
+
+        Args:
+            sample_ids (list): a list of sample ids to process
+
+        Returns:
+            list: the sample ids kept in the set
+            str: just a helpful string
+
+        """
+        assert not self._videos, logging.error("Can't exclude non-empty samples for videos")
+        good_sample_ids = []
         removed = 0
-        nboxes = 0
-        for idx in tqdm(range(len(ids)), desc="Removing images that have 0 boxes"):
-            nb = len(self._load_label(idx, items=ids))
-            if nb < 1:
+        n_boxes = 0
+        for idx in tqdm(range(len(sample_ids)), desc="Removing images that have 0 boxes"):
+            n_boxes_in_sample = len(self._load_label(idx))
+            if n_boxes_in_sample < 1:
                 removed += 1
             else:
-                nboxes += nb
-                good_ids.append(ids[idx])
+                n_boxes += n_boxes_in_sample
+                good_sample_ids.append(sample_ids[idx])
 
         str_ = "Removed {} out of {} images, leaving {} with {} boxes over {} classes.\n".format(
-            removed, len(ids), len(good_ids), nboxes, len(self.classes))
+            removed, len(sample_ids), len(good_sample_ids), n_boxes, len(self.classes))
 
-        return good_ids, str_
+        return good_sample_ids, str_
 
-    def _pad_to_dense(self, labels, maxlen=100):
-        """Appends the minimal required amount of zeroes at the end of each
-         array in the jagged array `M`, such that `M` looses its jagedness."""
+    @staticmethod
+    def _pad_to_dense(labels, maxlen=100):
+        """
+        pad a labels numpy array to have a length maxlen
+        Args:
+            labels (numpy.ndarray): the array to pad
+            maxlen: (int): the padding size (default is 100)
+
+        Returns:
+            numpy.ndarray: a padded array
+        """
 
         x = -np.ones((maxlen, 6))
         for enu, row in enumerate(labels):
             x[enu, :] += row + 1
         return x
 
-    def image_size(self, id):
-        if len(self._im_shapes) == 0:
-            for idx in tqdm(range(len(self._sample_ids)), desc="populating im_shapes"):
-                self._load_label(idx)
-        return self._im_shapes[id]
+    # def image_size(self, sample_id):
+    #     if len(self._im_shapes) == 0:
+    #         for idx in tqdm(range(len(self.sample_ids)), desc="populating im_shapes"):
+    #             self._load_label(idx)
+    #     return self._im_shapes[sample_id]
 
     def stats(self):
+        """
+        Get the dataset statistics
+
+        Returns:
+            str: an output string with all of the information
+            list: a list of counts of the number of boxes per class
+
+        """
         cls_boxes = []
-        n_samples = len(self._sample_ids)
+        n_samples = len(self.sample_ids)
         n_boxes = [0]*len(self.classes)
         n_instances = [0]*len(self.classes)
         past_vid_id = ''
-        for idx in tqdm(range(len(self._sample_ids))):
-            sample_id = self._sample_ids[idx]
-            vid_id = self._samples[sample_id][2]#[:-7]
+        for idx in tqdm(range(len(self.sample_ids)), desc="Calculating stats"):
+            sample_id = self.sample_ids[idx]
+            vid_id = self.samples[sample_id][2]
 
             if vid_id != past_vid_id:
                 vid_instances = []
                 past_vid_id = vid_id
             if self._videos:
-                for frame in self._samples[sample_id][3]:
-                    for box in self._load_label(idx, frame):
+                for frame_id in self.samples[sample_id][3]:
+                    for box in self._load_label(idx, frame_id):
                         n_boxes[int(box[4])] += 1
                         if int(box[5]) not in vid_instances:
                             vid_instances.append(int(box[5]))
                             n_instances[int(box[4])] += 1
             else:
                 for box in self._load_label(idx):
+                    if int(box[4]) < 0:  # not actually a box
+                        continue
                     n_boxes[int(box[4])] += 1
                     if int(box[5]) not in vid_instances:
                         vid_instances.append(int(box[5]))
@@ -414,7 +520,13 @@ class ImageNetVidDetection(VisionDataset):
         return out_str, cls_boxes
 
     def build_coco_json(self):
+        """
+        Builds a groundtruth ms coco style .json for evaluation on this dataset
 
+        Returns:
+            str: the path to the output .json file
+
+        """
         os.makedirs(os.path.dirname(self._coco_path), exist_ok=True)
 
         # handle categories
@@ -427,8 +539,8 @@ class ImageNetVidDetection(VisionDataset):
         done_imgs = set()
         annotations = list()
         for idx in range(len(self)):
-            sample_id = self._sample_ids[idx]
-            filename = self._image_path.format(*self._samples[sample_id])
+            sample_id = self.sample_ids[idx]
+            filename = self._image_path.format(*self.samples[sample_id])
             width, height = self._im_shapes[sample_id]
 
             if sample_id not in done_imgs:
@@ -452,20 +564,17 @@ class ImageNetVidDetection(VisionDataset):
 
         return self._coco_path
 
-    def _load_motion_ious(self):
-        path = os.path.join(self._root, '{}_motion_ious.json'.format(self._splits[0][1]))
-        if not os.path.exists(path):
-            generate_motion_ious(self._root, self._splits[0][1])
-
-        with open(path, 'r') as f:
-            ious = json.load(f)
-
-        return ious
-
 
 def iou(bb, bbgt):
     """
-    helper single box iou calculation function for generate_motion_ious
+    Single box IoU calculation function for generate_motion_ious
+
+    Args:
+        bb: bounding box 1
+        bbgt: bounding box 2
+
+    Returns:
+        float: the IoU between the two boxes
     """
     ov = 0
     iw = np.min((bb[2], bbgt[2])) - np.max((bb[0], bbgt[0])) + 1
@@ -480,66 +589,61 @@ def iou(bb, bbgt):
     return ov
 
 
-def generate_motion_ious(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), split='val'):
+def generate_motion_ious():
     """
     Used to generate motion_ious .json files matching that of imagenet_vid_groundtruth_motion_iou.mat from FGFA
     Except these are keyed on the image ids listed beside each frame in the ImageSets
 
     Note This script is relatively intensive
+    
+    Returns:
+        None
 
-    :param root: the root path of the imagenetvid set
-    :param split: train or val, no year necessary
     """
+    for split in ['train', 'val']:
+        dataset = ImageNetVidDetection(splits=[(2017, split)], allow_empty=True, videos=True, percent=1)
+    
+        all_ious = {}  # using dict for better removing of elements on loading based on sample_id
+        sample_id = 1  # messy but works
+        for idx in tqdm(range(len(dataset)), desc="Generation motion iou groundtruth"):
+            _, video = dataset[idx]
+            for frame in range(len(video)):
+                frame_ious = []
+                for box_idx in range(len(video[frame])):
+                    trk_id = video[frame][box_idx][5]
+                    if trk_id > -1:
+                        ious = []
+                        for i in range(-10, 11):
+                            frame_c = frame + i
+                            if 0 <= frame_c < len(video) and i != 0:
+                                for c_box_idx in range(len(video[frame_c])):
+                                    c_trk_id = video[frame_c][c_box_idx][5]
+                                    if trk_id == c_trk_id:
+                                        a = video[frame][box_idx]
+                                        b = video[frame_c][c_box_idx]
+                                        ious.append(iou(a, b))
+                                        break
+    
+                        frame_ious.append(np.mean(ious))
 
-    dataset = ImageNetVidDetection(root=root, splits=[(2017, split)], allow_empty=True, videos=True, percent=1)
-
-    all_ious = {} # using dict for better removing of elements on loading based on sample_id
-    sample_id = 1 # messy but works
-    for idx in tqdm(range(len(dataset)), desc="Generation motion iou groundtruth"):
-        _, video = dataset[idx]
-        for frame in range(len(video)):
-            frame_ious = []
-            for box_idx in range(len(video[frame])):
-                trk_id = video[frame][box_idx][5]
-                if trk_id > -1:
-                    ious = []
-                    for i in range(-10, 11):
-                        frame_c = frame + i
-                        if 0 <= frame_c < len(video) and i != 0:
-                            for c_box_idx in range(len(video[frame_c])):
-                                c_trk_id = video[frame_c][c_box_idx][5]
-                                if trk_id == c_trk_id:
-                                    a = video[frame][box_idx]
-                                    b = video[frame_c][c_box_idx]
-                                    ious.append(iou(a, b))
-                                    break
-
-                    frame_ious.append(np.mean(ious))
-            # if frame_ious:  # if this frame has no boxes we add a 0.0
-            #     all_ious.append(frame_ious)
-            # else:
-            #     all_ious.append([0.0])
-            if frame_ious:  # if this frame has no boxes we add a 0.0
-                all_ious[sample_id] = frame_ious
-            else:
-                all_ious[sample_id] = [0.0]
-            sample_id += 1
-
-    with open(os.path.join(root, '{}_motion_ious.json'.format(split)), 'w') as f:
-        json.dump(all_ious, f)
+                if frame_ious:  # if this frame has no boxes we add a 0.0
+                    all_ious[sample_id] = frame_ious
+                else:
+                    all_ious[sample_id] = [0.0]
+                sample_id += 1
+    
+        with open(os.path.join(dataset.root, '{}_motion_ious.json'.format(split)), 'w') as f:
+            json.dump(all_ious, f)
 
 
 if __name__ == '__main__':
-    train_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'train')],
-        allow_empty=False, videos=True, frames=0.04)
-    val_dataset = ImageNetVidDetection(
-        root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2017, 'val')],
-        allow_empty=False, videos=True, frames=0.04)
-    # test_dataset = ImageNetVidDetection(
-    #     root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'), splits=[(2015, 'test')],
-    #     allow_empty=True, videos=False)
-
+    train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=False, frames=0.04)
     print(train_dataset)
+
+    val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=False, frames=0.04, window_size=5)
+    # for s in val_dataset:
+    #     print(s)
     print(val_dataset)
-    # print(test_dataset)
+
+    test_dataset = ImageNetVidDetection(splits=[(2015, 'test')], allow_empty=True)
+    print(test_dataset)
