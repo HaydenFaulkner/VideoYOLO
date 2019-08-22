@@ -147,7 +147,7 @@ class YOLO3DefaultInferenceTransform(object):
         self._mean = mean
         self._std = std
 
-    def __call__(self, src, label, idx=None):
+    def __call__(self, src, label):
         """Apply transform to validation image/label."""
         h, w, c = src.shape
         assert self._channels == c
@@ -168,6 +168,5 @@ class YOLO3DefaultInferenceTransform(object):
                 imgs = mx.ndarray.concatenate([imgs, img], axis=2)
     
         img = imgs
-        if idx is None:
-            return img, bbox.astype(img.dtype)
-        return img, bbox.astype(img.dtype), idx
+
+        return img, bbox.astype(img.dtype)
