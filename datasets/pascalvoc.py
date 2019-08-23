@@ -1,5 +1,4 @@
-"""Pascal VOC object detection dataset - Edited  from gluoncv
-"""
+"""Pascal VOC object detection dataset - Edited from GluonCV voc dataset code"""
 from absl import app, flags, logging
 from gluoncv.data.base import VisionDataset
 import json
