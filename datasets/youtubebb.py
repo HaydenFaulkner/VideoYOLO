@@ -1,23 +1,16 @@
 """YouTube-BB object detection dataset."""
-from __future__ import absolute_import
-from __future__ import division
 
 from absl import app, flags, logging
-from absl.flags import FLAGS
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import csv
 import cv2
 import math
+import multiprocessing
 import mxnet as mx
 import numpy as np
 import os
 from subprocess import call
 from tqdm import tqdm
-import warnings
-try:
-    import xml.etree.cElementTree as ET
-except ImportError:
-    import xml.etree.ElementTree as ET
 
 from gluoncv.data.base import VisionDataset
 
@@ -25,39 +18,42 @@ from utils.general import print_progress
 
 
 class YouTubeBBDetection(VisionDataset):
-    """YouTube-BB detection Dataset.
+    """YouTube-BB object detection dataset."""
 
-    Parameters
-    ----------
-    root : str, default '~/mxnet/datasets/ytbb'
-        Path to folder storing the dataset.
-    splits : tuple, default ('train')
-        Candidates can be: 'train', 'val', 'test'.
-    transform : callable, default None
-        A function that takes data and label and transforms them. Refer to
-        :doc:`./transforms` for examples.
-
-        A transform function for object detection should take label into consideration,
-        because any geometric modification will require label to be modified.
-    index_map : dict, default None
-        In default, the 23 classes are mapped into indices from 0 to 22. We can
-        customize it by providing a str to int dict specifying how to map class
-        names to indices. Use by advanced users only, when you want to swap the orders
-        of class labels.
-    """
-
-    def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'ytbb'),
-                 splits=('train',), allow_empty=False, videos=False, clips=True, download=True, keep_vids=False,
+    def __init__(self, root=os.path.join('datasets', 'YouTubeBB'),
+                 splits=['train'], allow_empty=False, videos=False, clips=True, download=True, keep_vids=False,
                  transform=None, index_map=None, frames=1, inference=False,
                  window_size=1, window_step=1):
+        """
+        Args:
+            root (str): root file path of the dataset (default is 'datasets/YouTubeBB')
+            splits (list): a list of splits as strings (default is ['train'])
+            allow_empty (bool): include samples that don't have any labelled boxes? (default is False)
+            videos (bool): interpret samples as full videos rather than frames (default is False)
+            clips (bool): split clips as YTBB default (one obj inst per clip), or split based on video ID
+                          (default is True)
+            download: todo
+            keep_vids: todo
+            transform: the transform to apply to the image/video and label (default is None)
+            index_map (dict): custom class to id dictionary (default is None)
+            frames (float): Based per video - and is evenly sampled, NOT randomly sampled (default is 1)
+                            <1: Percent of the full dataset to take -> range(0, len(video), int(1/frames))
+                                eg. .04 takes every 25th frame
+                            >1: This many frames per video -> range(0, len(video), int(ceil(len(video)/frames)))
+                            =1: Every sample used -> full dataset
+            inference (bool): are we doing inference? (default is False)
+            window_size (int): how many frames does a sample consist of? ie. the temporal window size (default is 1)
+            window_step (int): the step distance of the temporal window (default is 1)
+        """
+
         super(YouTubeBBDetection, self).__init__(root)
         self._im_shapes = {}
         self._root = os.path.expanduser(root)
         self._transform = transform
-        assert len(splits) == 1, print('Can only take one split currently as otherwise conflicting image ids')
+        assert len(splits) == 1, logging.error('Can only take one split currently as otherwise conflicting image ids')
         self._splits = splits
         self._videos = videos
-        self._clips = clips  # used to specify if want to split clips as YTBB default one obj inst per clip, or split based on video ID
+        self._clips = clips
         self._download = download
         self._keep_vids = keep_vids
         self._frames = frames
@@ -68,11 +64,19 @@ class YouTubeBBDetection(VisionDataset):
         self._window_size = window_size
         self._window_step = window_step
         self._windows = None
+
+        # setup a few paths
         self._vid_paths = os.path.join(self._root, 'videos')
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
         self._image_path = os.path.join(self._root, 'frames', '{}', '{}.jpg')
+
+        # setup the class index map
         self.index_map = index_map or dict(zip(self.class_ids, range(self.num_class)))
+
+        # load the samples
         self._samples = self._load_items(splits)
+
+        # generate a sorted list of the sample ids
         self._sample_ids = sorted(list(self._samples.keys()))
 
     def __str__(self):
@@ -80,50 +84,77 @@ class YouTubeBBDetection(VisionDataset):
 
     @property
     def classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/youtubebb.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class names as specified in the youtubebb.names file
+
+        Returns:
+            list : a list of strings
+
+        """
+        names_file = os.path.join('./datasets/names/youtubebb.names')
+        with open(names_file, 'r') as f:
             classes = [line.strip() for line in f.readlines()]
         return classes
 
     @property
     def class_ids(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/youtubebb_ids.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class ids as specified in the youtubebb_ids.names file
+
+        Returns:
+            list : a list of ints
+
+        """
+        names_file = os.path.join('./datasets/names/youtubebb_ids.names')
+        with open(names_file, 'r') as f:
             class_ids = [int(line.strip()) for line in f.readlines()]
         return class_ids
 
     @property
     def wn_classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/youtubebb_wn.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class names as specified in the youtubebb_wn.names file
+
+        Returns:
+            list : a list of strings
+
+        """
+        names_file = os.path.join('./datasets/names/youtubebb_wn.names')
+        with open(names_file, 'r') as f:
             wn_classes = [line.strip() for line in f.readlines()]
         return wn_classes
 
     # @property
-    def image_ids(self):
-    #     # if self._videos:
-    #     #     return [sample[3].split('/')[0] for sample in self._samples.values()] # todo check which we want?
-    #     #     # return [id for id in [sample[4] for sample in self._items]] # todo check which we want?
-    #     # else:
-        return self._sample_ids
+    # def image_ids(self):
+    #     if self._videos:
+    #         return [sample[3].split('/')[0] for sample in self._samples.values()] # todo check which we want?
+    #         # return [id for id in [sample[4] for sample in self._items]] # todo check which we want?
+    #     else:
+    #     return self._sample_ids
 
-    @property
-    def motion_ious(self):
-        ious = self._load_motion_ious()
-        motion_ious = np.array([v for k, v in ious.items() if int(k) in self.image_ids])
-        return motion_ious
+    # @property
+    # def motion_ious(self):
+    #     ious = self._load_motion_ious()
+    #     motion_ious = np.array([v for k, v in ious.items() if int(k) in self.image_ids])
+    #     return motion_ious
 
     def __len__(self):
         return len(self._sample_ids)
 
     def __getitem__(self, idx):
-        sample_id = self._sample_ids[idx]
-        sample = self._samples[sample_id]
+        """
+        Get a sample from the dataset
+
+        Args:
+            idx (int): index of the sample in the dataset
+
+        Returns:
+            mxnet.NDArray: input image/volume
+            numpy.ndarray: label
+            int: idx (if inference=True)
+        """
         if not self._videos:
-            img_path = self._image_path.format(*[sample_id.split(',')[0], sample_id.split(',')[-1]])
+            img_path = self.sample_path(idx)
             label = self._load_label(idx)[:, :-1]  # remove track id
 
             if self._window_size > 1:
@@ -131,22 +162,35 @@ class YouTubeBBDetection(VisionDataset):
                 window = self._windows[self._sample_ids[idx]]
                 for sid in window:
                     img_path = self._image_path.format(*self._samples[sid])
-                    img = mx.image.imread(img_path, 1)
-                    if imgs is None:
-                        imgs = img
-                    else:
-                        imgs = mx.ndarray.concatenate([imgs, img], axis=2)
-                img = imgs
-            else:
-                img = mx.image.imread(img_path, 1)
+                    img = mx.image.imread(img_path)
 
-            if self._inference:
+                    if self._transform is not None:  # transform each image in the window
+                        img, _ = self._transform(img, label)  # todo check we transform the same (NOT rand acr win)
+                        # todo i think we should change the transforms to handle video volumes instead of per img here
+
+                    if imgs is None:
+                        # imgs = img  # is the first frame in the window
+                        imgs = mx.ndarray.expand_dims(img, axis=0)  # is the first frame in the window
+                    else:
+                        # imgs = mx.ndarray.concatenate([imgs, img], axis=2)  # isn't first frame, concat to the window
+                        imgs = mx.ndarray.concatenate([imgs, mx.ndarray.expand_dims(img, axis=0)], axis=0)
+                img = imgs
+
+                # transform the label
                 if self._transform is not None:
-                    return self._transform(img, label, idx)
+                    _, label = self._transform(img, label)
+
+                # necessary to prevent asynchronous operation overload and memory issue
+                # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
+                mx.nd.waitall()
+            else:
+                img = mx.image.imread(img_path)
+                if self._transform is not None:
+                    img, label = self._transform(img, label)
+
+            if self._inference:  # in inference we want to return the idx also
                 return img, label, idx
             else:
-                if self._transform is not None:
-                    return self._transform(img, label)
                 return img, label
         else:
             sample_id = self._sample_ids[idx]
@@ -154,7 +198,7 @@ class YouTubeBBDetection(VisionDataset):
             vid = None
             labels = None
             for frame in sample[3]:
-                img_id = (sample[0], sample[1], sample[2]+'/'+frame)
+                img_id = (sample[0], sample[1], os.path.join(sample[2], frame))
                 img_path = self._image_path.format(*img_id)
                 label = self._load_label(idx, frame=frame)
                 img = mx.image.imread(img_path, 1)
@@ -168,12 +212,23 @@ class YouTubeBBDetection(VisionDataset):
                 else:
                     vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, 0)])
                     labels = np.concatenate((labels, np.expand_dims(label, 0)))
-            return None, labels
+
+            # necessary to prevent asynchronous operation overload and memory issue
+            # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
+            mx.nd.waitall()
+
+            return vid, labels
 
     def sample_path(self, idx):
-        return self._image_path.format(*self._samples[self._sample_ids[idx]])
+        sample_id = self.sample_ids[idx]
+        sample = self.samples[sample_id]
+        if self._videos:
+            return NotImplementedError  # todo return clip path/name
+
+        return self._image_path.format(*[sample_id.split(',')[0], sample_id.split(',')[-1]])
 
     def download(self, ids):
+        # todo consider how to do this all better...
         """
         Attempts to download the videos and extract the frames for the dataset
 
@@ -222,7 +277,7 @@ class YouTubeBBDetection(VisionDataset):
         # Download the files
         os.makedirs(self._vid_paths, exist_ok=True)
         errors = set()
-        with ProcessPoolExecutor(max_workers=FLAGS.num_workers) as executor:
+        with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
 
             futures = [executor.submit(self._download_extract, v_id, frames) for v_id, frames in to_get.items()]
 
@@ -385,7 +440,7 @@ class YouTubeBBDetection(VisionDataset):
         if self._frames != 1:
             for vid_id in videos:
                 frames = sorted(videos[vid_id].keys())
-                if self._frames < 1: # cut down per video
+                if self._frames < 1:  # cut down per video
                     frames = [frames[i] for i in range(0, len(frames), int(1 / self._frames))]
                 elif self._frames > 1:  # cut down per video
                     frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
@@ -457,11 +512,7 @@ class YouTubeBBDetection(VisionDataset):
             if obj[3] == 'absent' or xmin < 0 or xmax < 0 or ymin < 0 or ymax < 0:  # no box
                 continue
 
-            try:
-                xmin, ymin, xmax, ymax = self._validate_label(xmin, ymin, xmax, ymax, sample_id)
-            except AssertionError as e:
-                logging.error("Invalid label at {}, {}".format(sample_id, e))
-                continue
+            xmin, ymin, xmax, ymax = self._validate_label(xmin, ymin, xmax, ymax, sample_id)
 
             label.append([xmin, ymin, xmax, ymax, cls_id, trk_id])
 
@@ -481,12 +532,6 @@ class YouTubeBBDetection(VisionDataset):
             ymax = min(max(ymin + 1, ymax), 1)
 
             logging.info("new box: {} {} {} {}.".format(xmin, ymin, xmax, ymax))
-
-        assert 0 <= xmin < 1, "xmin must in [0, {}), given {}".format(1, xmin)
-        assert 0 <= ymin < 1, "ymin must in [0, {}), given {}".format(1, ymin)
-        assert xmin < xmax <= 1, "xmax must in (xmin, {}], given {}".format(1, xmax)
-        assert ymin < ymax <= 1, "ymax must in (ymin, {}], given {}".format(1, ymax)
-
         return xmin, ymin, xmax, ymax
 
     @staticmethod
@@ -495,26 +540,41 @@ class YouTubeBBDetection(VisionDataset):
         assert all(c.islower() for c in class_list), "uppercase characters"
         stripped = [c for c in class_list if c.strip() != c]
         if stripped:
-            warnings.warn('white space removed for {}'.format(stripped))
+            logging.warning('white space removed for {}'.format(stripped))
 
-    def _pad_to_dense(self, labels, maxlen=100):
-        """Appends the minimal required amount of zeroes at the end of each
-         array in the jagged array `M`, such that `M` looses its jagedness."""
+    @staticmethod
+    def _pad_to_dense(labels, maxlen=100):
+        """
+        pad a labels numpy array to have a length maxlen
+        Args:
+            labels (numpy.ndarray): the array to pad
+            maxlen: (int): the padding size (default is 100)
+
+        Returns:
+            numpy.ndarray: a padded array
+        """
 
         x = -np.ones((maxlen, 6))
         for enu, row in enumerate(labels):
             x[enu, :] += row + 1
         return x
 
-    def image_size(self, id):
-        # todo
-        # if len(self._im_shapes) == 0:
-        #     for idx in tqdm(range(len(self._sample_ids)), desc="populating im_shapes"):
-        #         self._load_label(idx)
-        # return self._im_shapes[id]
-        return None
+    # def image_size(self, id):
+    #     if len(self._im_shapes) == 0:
+    #         for idx in tqdm(range(len(self._sample_ids)), desc="populating im_shapes"):
+    #             self._load_label(idx)
+    #     return self._im_shapes[id]
+    #     return None
 
     def stats(self):
+        """
+        Get the dataset statistics
+
+        Returns:
+            str: an output string with all of the information
+            list: a list of counts of the number of boxes per class
+
+        """
         cls_boxes = []
         n_videos = 0
         n_samples = len(self._sample_ids)
@@ -686,20 +746,15 @@ class YouTubeBBDetection(VisionDataset):
 
 def main(_argv):
 
-    flags.DEFINE_integer('num_workers', 8,
-                         'The number of workers should be picked so that it’s equal to number of cores on your machine '
-                         'for max parallelization. If this number is bigger than your number of cores it will use up '
-                         'a bunch of extra CPU memory.')
+    train_dataset = YouTubeBBDetection(splits=['train'], allow_empty=True, videos=False, clips=True, keep_vids=True)
+    for s in tqdm(train_dataset, desc='Test Pass of Training Set'):
+        pass
+    print(train_dataset)
 
-    train_dataset = YouTubeBBDetection(
-        root=os.path.join('datasets', 'YouTubeBB'), splits=('train',),
-        allow_empty=True, videos=False, clips=True, keep_vids=True)
-    val_dataset = YouTubeBBDetection(
-        root=os.path.join('datasets', 'YouTubeBB'), splits=('val',),
-        allow_empty=True, videos=False, clips=True, keep_vids=True)
-
-    # print(train_dataset)
-    # print(val_dataset)
+    val_dataset = YouTubeBBDetection(splits=['val'], allow_empty=True, videos=False, clips=True, keep_vids=True)
+    for s in tqdm(val_dataset, desc='Test Pass of Validation Set'):
+        pass
+    print(val_dataset)
 
 
 if __name__ == '__main__':
@@ -708,4 +763,3 @@ if __name__ == '__main__':
         app.run(main)
     except SystemExit:
         pass
-
