@@ -144,7 +144,7 @@ class ImageNetVidDetection(VisionDataset):
 
                     if self._transform is not None:  # transform each image in the window
                         img, _ = self._transform(img, label)  # todo check we transform the same (NOT rand acr win)
-
+                        # todo i think we should change the transforms to handle video volumes instead of per img here
                     if imgs is None:
                         # imgs = img  # is the first frame in the window
                         imgs = mx.ndarray.expand_dims(img, axis=0)  # is the first frame in the window
@@ -152,6 +152,10 @@ class ImageNetVidDetection(VisionDataset):
                         # imgs = mx.ndarray.concatenate([imgs, img], axis=2)  # isn't first frame, concat to the window
                         imgs = mx.ndarray.concatenate([imgs, mx.ndarray.expand_dims(img, axis=0)], axis=0)
                 img = imgs
+
+                # transform the label
+                if self._transform is not None:
+                    _, label = self._transform(img, label)
 
                 # necessary to prevent asynchronous operation overload and memory issue
                 # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
@@ -161,9 +165,6 @@ class ImageNetVidDetection(VisionDataset):
                 img = mx.image.imread(img_path, 1)
                 if self._transform is not None:
                     img, label = self._transform(img, label)
-            # transform the label
-            if self._transform is not None:
-                _, label = self._transform(img, label)
 
             if self._inference:  # in inference we want to return the idx also
                 return img, label, idx
