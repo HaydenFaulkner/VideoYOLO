@@ -103,22 +103,20 @@ class VOCDetection(VisionDataset):
             numpy.ndarray: label
             int: idx (if inference=True)
         """
-        img_path = self._image_path.format(*self.samples[self.sample_ids[idx]])
+        img_path = self.sample_path(idx)
         label = self._labels[idx] if self._labels else self._load_label(idx)
         img = mx.image.imread(img_path, 1)
 
         if self._transform is not None:
-            return self._transform(img, label)
+            img, label = self._transform(img, label)
 
         if self._inference:
             return img, label, idx
         else:
             return img, label
 
-    # def sample_path(self, idx):
-    #     img_id = self.samples[idx]
-    #     img_path = self._image_path.format(*img_id)
-    #     return img_path
+    def sample_path(self, idx):
+        return self._image_path.format(*self.samples[self.sample_ids[idx]])
 
     def _load_samples(self):
         """
