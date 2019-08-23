@@ -84,10 +84,6 @@ class VOCDetection(VisionDataset):
             wn_classes = [line.strip() for line in f.readlines()]
         return wn_classes
 
-    # @property
-    # def image_ids(self):
-    #     return [int(img_id[1]) for img_id in self.samples]
-
     def __len__(self):
         return len(self.samples)
 

@@ -130,7 +130,7 @@ class ImageNetVidDetection(VisionDataset):
             int: idx (if inference=True)
         """
         if not self._videos:  # frames are samples
-            img_path = self._image_path.format(*self.samples[self.sample_ids[idx]])
+            img_path = self.sample_path(idx)
             label = self._load_label(idx)[:, :-1]  # remove track id
 
             if self._window_size > 1:  # lets load the temporal window
@@ -204,6 +204,13 @@ class ImageNetVidDetection(VisionDataset):
                 return vid, labels, idx
             else:
                 return vid, labels
+
+    def sample_path(self, idx):
+        if self._videos:
+            sample = self.samples[self.sample_ids[idx]]
+            return os.path.join(sample[0], sample[1], sample[2])
+
+        return self._image_path.format(*self.samples[self.sample_ids[idx]])
 
     def _load_samples(self):
         """

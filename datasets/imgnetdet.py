@@ -96,7 +96,7 @@ class ImageNetDetection(VisionDataset):
             int: idx (if inference=True)
         """
         # load the image and label
-        img_path = self._image_path.format(*self.samples[self.sample_ids[idx]])
+        img_path = self.sample_path(idx)
         label = self._load_label(idx)
         img = mx.image.imread(img_path, 1)
 
@@ -108,6 +108,9 @@ class ImageNetDetection(VisionDataset):
             return img, label, idx
         else:
             return img, label
+
+    def sample_path(self, idx):
+        return self._image_path.format(*self.samples[self.sample_ids[idx]])
 
     def _load_samples(self):
         """

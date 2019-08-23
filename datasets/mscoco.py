@@ -133,7 +133,7 @@ class COCODetection(VisionDataset):
             numpy.ndarray: label
             int: idx (if inference=True)
         """
-        img_path = self.samples[idx]
+        img_path = self.sample_path(idx)
         label = np.array(self._labels[idx])
         img = mx.image.imread(img_path, 1)
 
@@ -145,8 +145,8 @@ class COCODetection(VisionDataset):
         else:
             return img, label
 
-    # def sample_path(self, idx):
-    #     return self.samples[idx]
+    def sample_path(self, idx):
+        return self.samples[idx]
 
     def _load_jsons(self):
         """Load all image paths and labels from JSON annotation files into buffer."""
