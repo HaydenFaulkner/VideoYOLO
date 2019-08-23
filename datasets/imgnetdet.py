@@ -156,16 +156,17 @@ class ImageNetDetection(VisionDataset):
         Returns:
             numpy.ndarray : labels of shape (n, 5) - [[xmin, ymin, xmax, ymax, cls_id], ...]
         """
-        anno_path = self._annotations_path.format(*self.samples[self.sample_ids[idx]])
+        sample_id = self.sample_ids[idx]
+        anno_path = self._annotations_path.format(*self.samples[sample_id])
         if not os.path.exists(anno_path):
             return np.array([[-1, -1, -1, -1, -1]])
         root = et.parse(anno_path).getroot()
         size = root.find('size')
         width = float(size.find('width').text)
         height = float(size.find('height').text)
-        if idx not in self._im_shapes:
+        if sample_id not in self._im_shapes:
             # store the shapes for later usage
-            self._im_shapes[idx] = (width, height)
+            self._im_shapes[sample_id] = (width, height)
         label = []
         for obj in root.iter('object'):
             cls_name = obj.find('name').text.strip().lower()
@@ -293,21 +294,20 @@ class ImageNetDetection(VisionDataset):
         done_imgs = set()
         annotations = list()
         for idx in range(len(self)):
-            img_id = self.samples[idx]
-            filename = self._annotations_path.format(*img_id)
-            width, height = self._im_shapes[idx]
+            sample_id = self.sample_ids[idx]
+            filename = self._annotations_path.format(*self.samples[sample_id])
+            width, height = self._im_shapes[sample_id]
 
-            img_id = self.image_ids[idx]
-            if img_id not in done_imgs:
-                done_imgs.add(img_id)
+            if sample_id not in done_imgs:
+                done_imgs.add(sample_id)
                 images.append({'file_name': filename,
                                'width': int(width),
                                'height': int(height),
-                               'id': img_id})
+                               'id': sample_id})
 
             for box in self._load_label(idx):
                 xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
-                annotations.append({'image_id': img_id,
+                annotations.append({'image_id': sample_id,
                                     'id': len(annotations),
                                     'bbox': xywh,
                                     'area': int(xywh[2] * xywh[3]),
