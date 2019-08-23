@@ -46,6 +46,8 @@ class COCODetection(VisionDataset):
         # load the samples and labels at once
         self.samples, self._labels = self._load_jsons()
 
+        self.sample_ids = self.coco.getImgIds()
+
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
 
@@ -98,10 +100,6 @@ class COCODetection(VisionDataset):
         You can override if custom dataset don't follow the same pattern
         """
         return 'annotations'
-
-    # @property
-    # def image_ids(self):
-    #     return self.coco.getImgIds()
 
     def _parse_image_path(self, entry):
         """

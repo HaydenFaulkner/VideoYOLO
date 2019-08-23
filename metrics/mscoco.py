@@ -41,7 +41,7 @@ class COCODetectionMetric(mx.metric.EvalMetric):
                  data_shape=None):
         super(COCODetectionMetric, self).__init__('COCOMeanAP')
         self.dataset = dataset
-        self._img_ids = sorted(dataset.image_ids)
+        self._img_ids = sorted(dataset.sample_ids)
         self._current_id = 0
         self._cleanup = cleanup
         self._results = []
