@@ -1,62 +1,50 @@
-"""MS COCO object detection dataset."""
-from __future__ import absolute_import
-from __future__ import division
-import os
-import numpy as np
-import mxnet as mx
+"""MS COCO object detection dataset - Edited from GluonCV coco dataset code"""
+
 from gluoncv.data.mscoco.utils import try_import_pycocotools
 from gluoncv.data.base import VisionDataset
 from gluoncv.utils.bbox import bbox_xywh_to_xyxy, bbox_clip_xyxy
+import mxnet as mx
+import numpy as np
+import os
+from tqdm import tqdm
 
 __all__ = ['COCODetection']
 
 
 class COCODetection(VisionDataset):
-    """MS COCO detection dataset.
+    """MS COCO detection dataset."""
 
-    Parameters
-    ----------
-    root : str, default '~/.mxnet/datasets/coco'
-        Path to folder storing the dataset.
-    splits : list of str, default ['instances_val2017']
-        Json annotations name.
-        Candidates can be: instances_val2017, instances_train2017.
-    transform : callable, default None
-        A function that takes data and label and transforms them. Refer to
-        :doc:`./transforms` for examples.
-
-        A transform function for object detection should take label into consideration,
-        because any geometric modification will require label to be modified.
-    min_object_area : float
-        Minimum accepted ground-truth area, if an object's area is smaller than this value,
-        it will be ignored.
-    skip_empty : bool, default is True
-        Whether skip images with no valid object. This should be `True` in training, otherwise
-        it will cause undefined behavior.
-    use_crowd : bool, default is True
-        Whether use boxes labeled as crowd instance.
-
-    """
-
-    def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'coco'),
-                 splits=('instances_val2017',), transform=None, min_object_area=0,
-                 skip_empty=True, use_crowd=True, inference=False):
+    def __init__(self, root=os.path.join('datasets', 'MSCoco'),
+                 splits=['instances_train2017'], transform=None, min_object_area=0,
+                 allow_empty=False, use_crowd=True, inference=False):
+        """
+        Args:
+            root (str): root file path of the dataset (default is 'datasets/MSCoco')
+            splits (list): a list of splits as strings (default is ['instances_train2017'])
+            transform: the transform to apply to the image/video and label (default is None)
+            min_object_area (int): minimum accepted ground-truth area of box, if smaller ignored (default is 0)
+            allow_empty (bool): include samples that don't have any labelled boxes? (default is False)
+            use_crowd (bool): use boxes labeled as crowd instance? (default is True)
+            inference (bool): are we doing inference? (default is False)
+        """
         super(COCODetection, self).__init__(root)
-        self._root = os.path.expanduser(root)
+        self.root = os.path.expanduser(root)
         self._transform = transform
         self._min_object_area = min_object_area
-        self._skip_empty = skip_empty
+        self._allow_empty = allow_empty
         self._use_crowd = use_crowd
         self._inference = inference
-        if isinstance(splits, mx.base.string_types):
-            splits = [splits]
         self._splits = splits
+        
         # to avoid trouble, we always use contiguous IDs except dealing with cocoapi
         self.index_map = dict(zip(self.classes, range(self.num_class)))
+        
         self.json_id_to_contiguous = None
         self.contiguous_id_to_json = None
         self._coco = []
-        self._items, self._labels = self._load_jsons()
+
+        # load the samples and labels at once
+        self.samples, self._labels = self._load_jsons()
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
@@ -74,28 +62,30 @@ class COCODetection(VisionDataset):
 
     @property
     def classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/coco.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class names as specified in the coco.names file
+
+        Returns:
+            list : a list of strings
+
+        """
+        names_file = os.path.join('./datasets/names/coco.names')
+        with open(names_file, 'r') as f:
             classes = [line.strip() for line in f.readlines()]
 
-        # type(self).CLASSES = classes
-        # return type(self).CLASSES
-        return classes
-
-    @property
-    def classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/coco.names')
-        with open(names, 'r') as f:
-            classes = [line.strip() for line in f.readlines()]
         return classes
 
     @property
     def wn_classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/coco_wn.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class names as specified in the coco_wn.names file
+
+        Returns:
+            list : a list of strings
+
+        """
+        names_file = os.path.join('./datasets/names/coco_wn.names')
+        with open(names_file, 'r') as f:
             wn_classes = [line.strip() for line in f.readlines()]
         return wn_classes
 
@@ -109,56 +99,64 @@ class COCODetection(VisionDataset):
         """
         return 'annotations'
 
-    @property
-    def image_ids(self):
-        return self.coco.getImgIds()
+    # @property
+    # def image_ids(self):
+    #     return self.coco.getImgIds()
 
     def _parse_image_path(self, entry):
-        """How to parse image dir and path from entry.
+        """
+        How to parse image dir and path from entry.
 
-        Parameters
-        ----------
-        entry : dict
-            COCO entry, e.g. including width, height, image path, etc..
+        Args:
+            entry (dict): COCO entry, e.g. including width, height, image path, etc..
 
-        Returns
-        -------
-        abs_path : str
-            Absolute path for corresponding image.
+        Returns:
+            str : absolute path for corresponding image.
 
         """
         dirname, filename = entry['coco_url'].split('/')[-2:]
-        abs_path = os.path.join(self._root, dirname, filename)
+        abs_path = os.path.join(self.root, dirname, filename)
         return abs_path
 
     def __len__(self):
-        return len(self._items)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        img_path = self._items[idx]
+        """
+        Get a sample from the dataset
+
+        Args:
+            idx (int): index of the sample in the dataset
+
+        Returns:
+            mxnet.NDArray: input image/volume
+            numpy.ndarray: label
+            int: idx (if inference=True)
+        """
+        img_path = self.samples[idx]
         label = np.array(self._labels[idx])
         img = mx.image.imread(img_path, 1)
+
+        if self._transform is not None:
+            return self._transform(img, label)
+
         if self._inference:
-            if self._transform is not None:
-                return self._transform(img, label, idx)
             return img, label, idx
         else:
-            if self._transform is not None:
-                return self._transform(img, label)
             return img, label
 
-    def sample_path(self, idx):
-        return self._items[idx]
+    # def sample_path(self, idx):
+    #     return self.samples[idx]
 
     def _load_jsons(self):
         """Load all image paths and labels from JSON annotation files into buffer."""
-        items = []
-        labels = []
+        samples = list()
+        labels = list()
         # lazy import pycocotools
         try_import_pycocotools()
         from pycocotools.coco import COCO
         for split in self._splits:
-            anno = os.path.join(self._root, self.annotation_dir, split) + '.json'
+            anno = os.path.join(self.root, self.annotation_dir, split) + '.json'
             _coco = COCO(anno)
             self._coco.append(_coco)
             classes = [c['name'] for c in _coco.loadCats(_coco.getCatIds())]
@@ -183,9 +181,9 @@ class COCODetection(VisionDataset):
                 label = self._check_load_bbox(_coco, entry)
                 if not label:
                     continue
-                items.append(abs_path)
+                samples.append(abs_path)
                 labels.append(label)
-        return items, labels
+        return samples, labels
 
     def _check_load_bbox(self, coco, entry):
         """Check and load ground-truth labels"""
@@ -212,16 +210,24 @@ class COCODetection(VisionDataset):
                 contiguous_cid = self.json_id_to_contiguous[obj['category_id']]
                 valid_objs.append([xmin, ymin, xmax, ymax, contiguous_cid])
         if not valid_objs:
-            if not self._skip_empty:
+            if self._allow_empty:
                 # dummy invalid labels if no valid objects are found
                 valid_objs.append([-1, -1, -1, -1, -1])
         return valid_objs
 
-    def image_size(self, id):
-        entry = self.coco.loadImgs(id)[0]
-        return entry['width'], entry['height']
+    # def image_size(self, id):
+    #     entry = self.coco.loadImgs(id)[0]
+    #     return entry['width'], entry['height']
 
     def stats(self):
+        """
+        Get the dataset statistics
+
+        Returns:
+            str: an output string with all of the information
+            list: a list of counts of the number of boxes per class
+
+        """
         cls_boxes = []
         n_samples = len(self._labels)
         n_boxes = [0]*len(self.classes)
@@ -243,10 +249,12 @@ class COCODetection(VisionDataset):
 
 
 if __name__ == '__main__':
-    train_dataset = COCODetection(
-        root=os.path.join('datasets', 'MSCoco'), splits='instances_train2017', use_crowd=False)
-    val_dataset = COCODetection(
-        root=os.path.join('datasets', 'MSCoco'), splits='instances_val2017', skip_empty=False)
-
+    train_dataset = COCODetection(splits=['instances_train2017'], use_crowd=False)
+    for s in tqdm(train_dataset, desc='Test Pass of Training Set'):
+        pass
     print(train_dataset)
+    val_dataset = COCODetection(splits=['instances_val2017'], allow_empty=True)
+    for s in tqdm(val_dataset, desc='Test Pass of Validation Set'):
+        pass
     print(val_dataset)
+
