@@ -140,7 +140,7 @@ class ImageNetVidDetection(VisionDataset):
                 # go through the sample ids for the window
                 for sid in window_sample_ids:
                     img_path = self._image_path.format(*self.samples[sid])
-                    img = mx.image.imread(img_path, 1)
+                    img = mx.image.imread(img_path)
 
                     if self._transform is not None:  # transform each image in the window
                         img, _ = self._transform(img, label)  # todo check we transform the same (NOT rand acr win)
@@ -152,6 +152,10 @@ class ImageNetVidDetection(VisionDataset):
                         # imgs = mx.ndarray.concatenate([imgs, img], axis=2)  # isn't first frame, concat to the window
                         imgs = mx.ndarray.concatenate([imgs, mx.ndarray.expand_dims(img, axis=0)], axis=0)
                 img = imgs
+
+                # necessary to prevent asynchronous operation overload and memory issue
+                # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
+                mx.nd.waitall()
 
             else:  # window size is 1, so just load one image
                 img = mx.image.imread(img_path, 1)
@@ -191,6 +195,10 @@ class ImageNetVidDetection(VisionDataset):
                 else:
                     vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, axis=0)], axis=0)
                     labels = np.concatenate((labels, np.expand_dims(label, axis=0)), axis=0)
+
+            # necessary to prevent asynchronous operation overload and memory issue
+            # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
+            mx.nd.waitall()
 
             if self._inference:  # in inference we want to return the idx also
                 return vid, labels, idx
