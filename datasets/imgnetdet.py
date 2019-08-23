@@ -1,102 +1,125 @@
 """ImageNet DET object detection dataset."""
-from __future__ import absolute_import
-from __future__ import division
+
+from absl import app, flags, logging
+from gluoncv.data.base import VisionDataset
 import json
+import mxnet as mx
+import numpy as np
 import os
 from tqdm import tqdm
-import warnings
-import numpy as np
 try:
-    import xml.etree.cElementTree as ET
+    import xml.etree.cElementTree as et
 except ImportError:
-    import xml.etree.ElementTree as ET
-import mxnet as mx
-from gluoncv.data.base import VisionDataset
+    import xml.etree.ElementTree as et
 
 
 class ImageNetDetection(VisionDataset):
-    """ImageNet DET detection Dataset.
+    """ImageNet DET object detection dataset."""
 
-    Parameters
-    ----------
-    root : str, default '~/mxnet/datasets/det'
-        Path to folder storing the dataset.
-    splits : tuple, default ('train')
-        Candidates can be: 'train', 'val', 'test'.
-    transform : callable, default None
-        A function that takes data and label and transforms them. Refer to
-        :doc:`./transforms` for examples.
-
-        A transform function for object detection should take label into consideration,
-        because any geometric modification will require label to be modified.
-    index_map : dict, default None
-        In default, the 200 classes are mapped into indices from 0 to 199. We can
-        customize it by providing a str to int dict specifying how to map class
-        names to indices. Use by advanced users only, when you want to swap the orders
-        of class labels.
-    """
-
-    def __init__(self, root=os.path.join('~', '.mxnet', 'datasets', 'det'),
-                 splits=('train',), allow_empty=False,
-                 transform=None, index_map=None, inference=False):
+    def __init__(self, root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
+                 splits=['train'], allow_empty=False, transform=None, index_map=None, inference=False):
+        """
+        Args:
+            root (str): root file path of the dataset (default is 'datasets/ImageNetDET/ILSVRC')
+            splits (list): a list of splits as strings (default is ['train'])
+            allow_empty (bool): include samples that don't have any labelled boxes? (default is False)
+            transform: the transform to apply to the image/video and label (default is None)
+            index_map (dict): custom class to id dictionary (default is None)
+            inference (bool): are we doing inference? (default is False)
+        """
         super(ImageNetDetection, self).__init__(root)
         self._im_shapes = {}
-        self._root = os.path.expanduser(root)
+        self.root = os.path.expanduser(root)
         self._transform = transform
         self._splits = splits
         self._allow_empty = allow_empty
         self._inference = inference
-        self._coco_path = os.path.join(self._root, 'jsons', '_'.join([s for s in self._splits])+'.json')
-        self._anno_path = os.path.join('{}', 'Annotations', 'DET', '{}', '{}.xml')
+        
+        # setup a few paths
+        self._coco_path = os.path.join(self.root, 'jsons', '_'.join([s for s in self._splits])+'.json')
+        self._annotations_path = os.path.join('{}', 'Annotations', 'DET', '{}', '{}.xml')
         self._image_path = os.path.join('{}', 'Data', 'DET', '{}', '{}.JPEG')
+        
+        # setup the class index map
         self.index_map = index_map or dict(zip(self.wn_classes, range(self.num_class)))
-        self._items = self._load_items(splits)
+        
+        # load the samples
+        self.samples = self._load_samples()
+        
+        # generate a sorted list of the sample ids
+        self.sample_ids = sorted(list(self.samples.keys()))
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
 
     @property
     def classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/imagenetdet.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class names as specified in the imagenetdet.names file
+
+        Returns:
+            list : a list of strings
+
+        """
+        names_file = os.path.join('./datasets/names/imagenetdet.names')
+        with open(names_file, 'r') as f:
             classes = [line.strip() for line in f.readlines()]
         return classes
 
     @property
     def wn_classes(self):
-        """Category names."""
-        names = os.path.join('./datasets/names/imagenetdet_wn.names')
-        with open(names, 'r') as f:
+        """
+        Gets a list of class names as specified in the imagenetdet_wn.names file
+
+        Returns:
+            list : a list of strings
+
+        """
+        names_file = os.path.join('./datasets/names/imagenetdet_wn.names')
+        with open(names_file, 'r') as f:
             wn_classes = [line.strip() for line in f.readlines()]
         return wn_classes
 
-    @property
-    def image_ids(self):
-        return [int(img_id[2][-8:]) for img_id in self._items]
-
     def __len__(self):
-        return len(self._items)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        img_id = self._items[idx]
-        img_path = self._image_path.format(*img_id)
+        """
+        Get a sample from the dataset
+
+        Args:
+            idx (int): index of the sample in the dataset
+
+        Returns:
+            mxnet.NDArray: input image/volume
+            numpy.ndarray: label
+            int: idx (if inference=True)
+        """
+        # load the image and label
+        img_path = self._image_path.format(*self.samples[self.sample_ids[idx]])
         label = self._load_label(idx)
         img = mx.image.imread(img_path, 1)
+
+        # do transform if desired
+        if self._transform is not None:
+            return self._transform(img, label)
+
         if self._inference:
-            if self._transform is not None:
-                return self._transform(img, label, idx)
             return img, label, idx
         else:
-            if self._transform is not None:
-                return self._transform(img, label)
             return img, label
 
-    def _load_items(self, splits):
-        """Load individual image indices from splits."""
-        ids = []
-        for split in splits:
-            root = self._root  # os.path.join(self._root, 'ILSVRC')
+    def _load_samples(self):
+        """
+        Load the samples of this dataset using the settings supplied
+
+        Returns:
+            dict : a dict of image samples
+
+        """
+        ids = list()
+        for split in self._splits:
+            root = self.root  # os.path.join(self.root, 'ILSVRC')
             ne_lf = os.path.join(root, 'ImageSets', 'DET', split + '_nonempty.txt')
             lf = os.path.join(root, 'ImageSets', 'DET', split + '.txt')
             if os.path.exists(ne_lf) and not self._allow_empty:
@@ -117,18 +140,26 @@ class ImageNetDetection(VisionDataset):
 
             ids += ids_
 
-        return ids
+        samples = dict()
+        for s in ids:
+            assert s[-1] not in samples, logging.error("Sample keys not unique: {}".format(s[-1]))
+            samples[s[-1]] = s
+        return samples
 
-    def _load_label(self, idx, items=None):
-        """Parse xml file and return labels."""
-        if items:  # used to process items before they are actually assigned to self
-            img_id = items[idx]
-        else:
-            img_id = self._items[idx]
-        anno_path = self._anno_path.format(*img_id)
+    def _load_label(self, idx):
+        """
+        Parse the xml annotation files for a sample
+
+        Args:
+            idx (int): the sample index
+
+        Returns:
+            numpy.ndarray : labels of shape (n, 5) - [[xmin, ymin, xmax, ymax, cls_id], ...]
+        """
+        anno_path = self._annotations_path.format(*self.samples[self.sample_ids[idx]])
         if not os.path.exists(anno_path):
-            return np.array([])
-        root = ET.parse(anno_path).getroot()
+            return np.array([[-1, -1, -1, -1, -1]])
+        root = et.parse(anno_path).getroot()
         size = root.find('size')
         width = float(size.find('width').text)
         height = float(size.find('height').text)
@@ -160,24 +191,15 @@ class ImageNetDetection(VisionDataset):
     def _validate_label(xmin, ymin, xmax, ymax, width, height, anno_path):
         """Validate labels."""
         if not 0 <= xmin < width or not 0 <= ymin < height or not xmin < xmax <= width or not ymin < ymax <= height:
-            print("box: {} {} {} {} incompatable with img size {}x{} in {}.".format(xmin,
-                                                                                    ymin,
-                                                                                    xmax,
-                                                                                    ymax,
-                                                                                    width,
-                                                                                    height,
-                                                                                    anno_path))
+            logging.warning("box: {} {} {} {} incompatible with img size {}x{} in {}.".format(xmin, ymin, xmax, ymax,
+                                                                                              width, height, anno_path))
 
             xmin = min(max(0, xmin), width - 1)
             ymin = min(max(0, ymin), height - 1)
             xmax = min(max(xmin + 1, xmax), width)
             ymax = min(max(ymin + 1, ymax), height)
 
-            print("new box: {} {} {} {}.".format(xmin, ymin, xmax, ymax))
-        assert 0 <= xmin < width, "xmin must in [0, {}), given {}".format(width, xmin)
-        assert 0 <= ymin < height, "ymin must in [0, {}), given {}".format(height, ymin)
-        assert xmin < xmax <= width, "xmax must in (xmin, {}], given {}".format(width, xmax)
-        assert ymin < ymax <= height, "ymax must in (ymin, {}], given {}".format(height, ymax)
+            logging.info("new box: {} {} {} {}.".format(xmin, ymin, xmax, ymax))
         return xmin, ymin, xmax, ymax
 
     @staticmethod
@@ -186,37 +208,55 @@ class ImageNetDetection(VisionDataset):
         assert all(c.islower() for c in class_list), "uppercase characters"
         stripped = [c for c in class_list if c.strip() != c]
         if stripped:
-            warnings.warn('white space removed for {}'.format(stripped))
+            logging.warning('white space removed for {}'.format(stripped))
 
-    def _verify_nonempty_annotations(self, ids):
-        """Checks annotations and returns only those that contain at least one box, as well as a lil stats str"""
-        good_ids = []
+    def _verify_nonempty_annotations(self, sample_ids):
+        """
+        Checks annotations and returns only those that contain at least one box, as well as a lil stats str
+
+        Args:
+            sample_ids (list): a list of sample ids to process
+
+        Returns:
+            list: the sample ids kept in the set
+            str: just a helpful string
+
+        """
+        good_sample_ids = []
         removed = 0
-        nboxes = 0
-        for idx in tqdm(range(len(ids)), desc="Removing images that have 0 boxes"):
-            nb = len(self._load_label(idx, items=ids))
-            if nb < 1:
+        n_boxes = 0
+        for idx in tqdm(range(len(sample_ids)), desc="Removing images that have 0 boxes"):
+            n_boxes_in_sample = len(self._load_label(idx))
+            if n_boxes_in_sample < 1:
                 removed += 1
             else:
-                nboxes += nb
-                good_ids.append(ids[idx])
+                n_boxes += n_boxes_in_sample
+                good_sample_ids.append(sample_ids[idx])
 
         str_ = "Removed {} out of {} images, leaving {} with {} boxes over {} classes.\n".format(
-            removed, len(ids), len(good_ids), nboxes, len(self.classes))
+            removed, len(sample_ids), len(good_sample_ids), n_boxes, len(self.classes))
 
-        return good_ids, str_
+        return good_sample_ids, str_
 
-    def image_size(self, id):
-        if len(self._im_shapes) == 0:
-            for idx in tqdm(range(len(self._items)), desc="populating im_shapes"):
-                self._load_label(idx, items=self._items)
-        return self._im_shapes[self.image_ids.index(id)]
+    # def image_size(self, id):
+    #     if len(self._im_shapes) == 0:
+    #         for idx in tqdm(range(len(self.samples)), desc="populating im_shapes"):
+    #             self._load_label(idx, items=self.samples)
+    #     return self._im_shapes[self.image_ids.index(id)]
 
     def stats(self):
+        """
+        Get the dataset statistics
+
+        Returns:
+            str: an output string with all of the information
+            list: a list of counts of the number of boxes per class
+
+        """
         cls_boxes = []
-        n_samples = len(self._items)
+        n_samples = len(self.samples)
         n_boxes = [0]*len(self.classes)
-        for idx in tqdm(range(len(self._items))):
+        for idx in tqdm(range(len(self.samples))):
             for box in self._load_label(idx):
                 n_boxes[int(box[4])] += 1
 
@@ -233,6 +273,13 @@ class ImageNetDetection(VisionDataset):
         return out_str, cls_boxes
 
     def build_coco_json(self):
+        """
+        Builds a groundtruth ms coco style .json for evaluation on this dataset
+
+        Returns:
+            str: the path to the output .json file
+
+        """
 
         os.makedirs(os.path.dirname(self._coco_path), exist_ok=True)
 
@@ -246,8 +293,8 @@ class ImageNetDetection(VisionDataset):
         done_imgs = set()
         annotations = list()
         for idx in range(len(self)):
-            img_id = self._items[idx]
-            filename = self._anno_path.format(*img_id)
+            img_id = self.samples[idx]
+            filename = self._annotations_path.format(*img_id)
             width, height = self._im_shapes[idx]
 
             img_id = self.image_ids[idx]
@@ -274,10 +321,12 @@ class ImageNetDetection(VisionDataset):
 
 
 if __name__ == '__main__':
-    train_dataset = ImageNetDetection(
-        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['train'], allow_empty=False)
-    val_dataset = ImageNetDetection(
-        root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'), splits=['val'], allow_empty=False)
-
+    train_dataset = ImageNetDetection(splits=['train'], allow_empty=False)
+    for s in tqdm(train_dataset, desc='Test Pass of Training Set'):
+        pass
     print(train_dataset)
+
+    val_dataset = ImageNetDetection(splits=['val'], allow_empty=False)
+    for s in tqdm(val_dataset, desc='Test Pass of Validation Set'):
+        pass
     print(val_dataset)
