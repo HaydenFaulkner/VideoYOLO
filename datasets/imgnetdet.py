@@ -178,10 +178,9 @@ class ImageNetDetection(VisionDataset):
             ymin = float(xml_box.find('ymin').text)
             xmax = float(xml_box.find('xmax').text)
             ymax = float(xml_box.find('ymax').text)
-            try:
-                self._validate_label(xmin, ymin, xmax, ymax, width, height, anno_path)
-            except AssertionError as e:
-                raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
+
+            xmin, ymin, xmax, ymax = self._validate_label(xmin, ymin, xmax, ymax, width, height, anno_path)
+
             label.append([xmin, ymin, xmax, ymax, cls_id])
 
         if self._allow_empty and len(label) < 1:
