@@ -147,26 +147,34 @@ class YOLO3DefaultInferenceTransform(object):
         self._mean = mean
         self._std = std
 
-    def __call__(self, src, label):
+    def __call__(self, src, label, idx=None):
         """Apply transform to validation image/label."""
         h, w, c = src.shape
         assert self._channels == c
         # box resize
         bbox = tbbox.resize(label, in_size=(w, h), out_size=(self._width, self._height))
 
-        imgs = None
-        for still_i in range(int(self._channels / 3)):
-            # image resize
-            img = timage.imresize(src[:, :, still_i * 3:(still_i * 3 + 3)], self._width, self._height, interp=9)
-    
+        if c > 3:
+            imgs = None
+            for still_i in range(int(self._channels / 3)):
+                # image resize
+                img = timage.imresize(src[:, :, still_i * 3:(still_i * 3 + 3)], self._width, self._height, interp=9)
+
+                img = mx.nd.image.to_tensor(img)
+                img = mx.nd.image.normalize(img, mean=self._mean, std=self._std)
+
+                if imgs is None:
+                    imgs = img
+                else:
+                    imgs = mx.ndarray.concatenate([imgs, img], axis=2)
+
+            img = imgs
+        else:
+            img = timage.imresize(src, self._width, self._height, interp=9)
             img = mx.nd.image.to_tensor(img)
             img = mx.nd.image.normalize(img, mean=self._mean, std=self._std)
 
-            if imgs is None:
-                imgs = img
-            else:
-                imgs = mx.ndarray.concatenate([imgs, img], axis=2)
-    
-        img = imgs
-
+        if idx is not None:
+            return img, bbox.astype(img.dtype), idx
+        
         return img, bbox.astype(img.dtype)
