@@ -78,21 +78,16 @@ flags.DEFINE_integer('num_workers', 8,
 
 def get_dataset(dataset_name):
     if dataset_name.lower() == 'voc':
-        dataset = VOCDetection(root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'), splits=[(2007, 'test')],
-                               inference=True)
+        dataset = VOCDetection(splits=[(2007, 'test')], inference=True)
 
     elif dataset_name.lower() == 'coco':
-        dataset = COCODetection(root=os.path.join('datasets', 'MSCoco'),
-                                splits='instances_val2017', skip_empty=False, inference=True)
+        dataset = COCODetection(splits=['instances_val2017'], allow_empty=True, inference=True)
 
     elif dataset_name.lower() == 'det':
-        dataset = ImageNetDetection(root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
-                                    splits=['val'], allow_empty=False, inference=True)
+        dataset = ImageNetDetection(splits=['val'], allow_empty=False, inference=True)
 
     elif dataset_name.lower() == 'vid':
-        dataset = ImageNetVidDetection(root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-                                       splits=[(2017, 'val')], allow_empty=False, videos=False, frames=FLAGS.frames,
-                                       inference=True)
+        dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=False, frames=FLAGS.frames, inference=True)
 
     elif dataset_name[-4:] == '.txt':  # list of images or list of videos
         with open(dataset_name, 'r') as f:

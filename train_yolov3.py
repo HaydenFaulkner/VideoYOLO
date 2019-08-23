@@ -123,39 +123,25 @@ flags.DEFINE_integer('seed', 233,
 
 def get_dataset(dataset_name, save_prefix=''):
     if dataset_name.lower() == 'voc':
-        train_dataset = VOCDetection(
-            root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'),
-            splits=[(2007, 'trainval'), (2012, 'trainval')])
-        val_dataset = VOCDetection(
-            root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'),
-            splits=[(2007, 'test')])
+        train_dataset = VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')])
+        val_dataset = VOCDetection(splits=[(2007, 'test')])
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     elif dataset_name.lower() == 'coco':
-        train_dataset = COCODetection(
-            root=os.path.join('datasets', 'MSCoco'), splits='instances_train2017', use_crowd=False)
-        val_dataset = COCODetection(
-            root=os.path.join('datasets', 'MSCoco'), splits='instances_val2017', skip_empty=False)
-        val_metric = COCODetectionMetric(
-            val_dataset, save_prefix + '_eval', cleanup=True,
-            data_shape=(FLAGS.data_shape, FLAGS.data_shape))
+        train_dataset = COCODetection(splits=['instances_train2017'], use_crowd=False)
+        val_dataset = COCODetection(splits=['instances_val2017'], allow_empty=True)
+        val_metric = COCODetectionMetric(val_dataset, save_prefix + '_eval', cleanup=True,
+                                         data_shape=(FLAGS.data_shape, FLAGS.data_shape))
 
     elif dataset_name.lower() == 'det':
-        train_dataset = ImageNetDetection(
-            root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
-            splits=['train'], allow_empty=FLAGS.allow_empty)
-        val_dataset = ImageNetDetection(
-            root=os.path.join('datasets', 'ImageNetDET', 'ILSVRC'),
-            splits=['val'], allow_empty=FLAGS.allow_empty)
+        train_dataset = ImageNetDetection(splits=['train'], allow_empty=FLAGS.allow_empty)
+        val_dataset = ImageNetDetection(splits=['val'], allow_empty=FLAGS.allow_empty)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     elif dataset_name.lower() == 'vid':
-        train_dataset = ImageNetVidDetection(
-            root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty, videos=False, frames=FLAGS.frames)
-        val_dataset = ImageNetVidDetection(
-            root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-            splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty, videos=False, frames=FLAGS.frames)
+        train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty,
+                                             frames=FLAGS.frames)
+        val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty, frames=FLAGS.frames)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     else:
