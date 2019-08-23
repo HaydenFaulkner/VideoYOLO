@@ -46,7 +46,10 @@ class VOCDetection(VisionDataset):
 
         # load the samples
         self.samples = self._load_samples()
-        
+
+        # generate a sorted list of the sample ids
+        self.sample_ids = sorted(list(self.samples.keys()))
+
         # load the labels into memory
         self._labels = self._preload_labels() if preload_label else None
 
@@ -171,10 +174,9 @@ class VOCDetection(VisionDataset):
             ymin = (float(xml_box.find('ymin').text) - 1)
             xmax = (float(xml_box.find('xmax').text) - 1)
             ymax = (float(xml_box.find('ymax').text) - 1)
-            try:
-                self._validate_label(xmin, ymin, xmax, ymax, width, height)
-            except AssertionError as e:
-                raise RuntimeError("Invalid label at {}, {}".format(anno_path, e))
+
+            xmin, ymin, xmax, ymax = self._validate_label(xmin, ymin, xmax, ymax, width, height, anno_path)
+
             if self._difficult:
                 label.append([xmin, ymin, xmax, ymax, cls_id, difficult])
             else:
