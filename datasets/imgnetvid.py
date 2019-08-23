@@ -638,12 +638,16 @@ def generate_motion_ious():
 
 if __name__ == '__main__':
     train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=False, frames=0.04)
+    for s in tqdm(train_dataset, desc='Test Pass of Training Set'):
+        pass
     print(train_dataset)
 
     val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=False, frames=0.04, window_size=5)
-    # for s in val_dataset:
-    #     print(s)
+    for s in tqdm(val_dataset, desc='Test Pass of Validation Set'):
+        pass
     print(val_dataset)
 
     test_dataset = ImageNetVidDetection(splits=[(2015, 'test')], allow_empty=True)
+    for s in tqdm(test_dataset, desc='Test Pass of Testing Set'):
+        pass
     print(test_dataset)
