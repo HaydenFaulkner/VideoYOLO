@@ -100,7 +100,7 @@ Uses MobileNet1.0 instead of DarkNet53
 Trained on [PascalVOC](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/index.html#devkit) `trainval 07+12`
 
 ```
-python train_yolov3.py --network mobilenet1_0 --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --network mobilenet1.0 --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
 ```
 #### 0007
 [**Download (SOON)**]()
@@ -110,7 +110,7 @@ Uses MobileNet1.0 instead of DarkNet53
 Trained on [ImageNetDET](http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php) `train_nonempty`
 
 ```
-python train_yolov3.py --network mobilenet1_0 --dataset det --gpus 0,1,2,3 --save_prefix 0002 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --network mobilenet1.0 --dataset det --gpus 0,1,2,3 --save_prefix 0002 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
 ```
 #### 0008
 [**Download (SOON)**]()
@@ -120,7 +120,7 @@ Uses MobileNet1.0 instead of DarkNet53
 Trained on [MSCoco](http://cocodataset.org/#download) `train 17`
 
 ```
-python train_yolov3.py --network mobilenet1_0 --dataset coco --gpus 0,1,2,3 --save_prefix 0003 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --network mobilenet1.0 --dataset coco --gpus 0,1,2,3 --save_prefix 0003 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
 ```
 
 #### 0009
