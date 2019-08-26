@@ -119,6 +119,9 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
     ov_all = [None] * num_imgs
     # extract objects in :param classname:
     npos = np.zeros(len(classname_map))
+    if class_map is not None:
+        npos = np.zeros(max(class_map)+1)
+
     for index, rec in enumerate(recs):
         img_id = rec['img_ids']
         gt_bboxes = rec['bbox']
