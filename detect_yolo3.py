@@ -87,7 +87,7 @@ def get_dataset(dataset_name):
         dataset = ImageNetDetection(splits=['val'], allow_empty=False, inference=True)
 
     elif dataset_name.lower() == 'vid':
-        dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=False, frames=FLAGS.frames, inference=True)
+        dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, frames=FLAGS.frames, inference=True)
 
     elif dataset_name[-4:] == '.txt':  # list of images or list of videos
         with open(dataset_name, 'r') as f:
