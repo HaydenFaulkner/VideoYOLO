@@ -18,7 +18,7 @@ class ImageNetVidDetection(VisionDataset):
     """ImageNet VID object detection dataset."""
 
     def __init__(self, root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
-                 splits=[(2017, 'train')], allow_empty=False, videos=False,
+                 splits=[(2017, 'train')], allow_empty=True, videos=False,
                  transform=None, index_map=None, frames=1, inference=False,
                  window_size=1, window_step=1):
 
@@ -26,7 +26,7 @@ class ImageNetVidDetection(VisionDataset):
         Args:
             root (str): root file path of the dataset (default is 'datasets/ImageNetVID/ILSVRC')
             splits (list): a list of splits as tuples (default is [(2017, 'train')])
-            allow_empty (bool): include samples that don't have any labelled boxes? (default is False)
+            allow_empty (bool): include samples that don't have any labelled boxes? (default is True)
             videos (bool): interpret samples as full videos rather than frames (default is False)
             transform: the transform to apply to the image/video and label (default is None)
             index_map (dict): custom class to id dictionary (default is None)
@@ -68,6 +68,10 @@ class ImageNetVidDetection(VisionDataset):
         
         # generate a sorted list of the sample ids
         self.sample_ids = sorted(list(self.samples.keys()))
+
+        if not allow_empty:  # remove empty samples if desired
+            self.samples, self.sample_ids = self._remove_empties()
+        print()
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
@@ -213,6 +217,53 @@ class ImageNetVidDetection(VisionDataset):
 
         return self._image_path.format(*self.samples[self.sample_ids[idx]])
 
+    def _remove_empties(self):
+        """
+        removes empty samples from the set
+
+        Returns:
+            list: of the sample ids of non-empty samples
+        """
+
+        assert not self._videos, logging.error("Can't exclude non-empty samples for videos")
+
+        not_empty_file = os.path.join(self.root, 'ImageSets', 'VID', self._splits[0][1] + '_nonempty.txt')
+        not_empty_stats_file = os.path.join(self.root, 'ImageSets', 'VID', self._splits[0][1] + '_nonempty_stats.txt')
+
+        if os.path.exists(not_empty_file):  # if the splits file exists
+            logging.info("Loading splits from: {}".format(not_empty_file))
+            with open(not_empty_file, 'r') as f:
+                good_sample_ids = [int(line.rstrip()) for line in f.readlines()]
+
+        else:  # if the splits file doesn't exist, make one
+            good_sample_ids = list()
+            removed = 0
+            n_boxes = 0
+            for idx in tqdm(range(len(self.sample_ids)), desc="Removing images that have 0 boxes"):
+                n_boxes_in_sample = len(self._load_label(idx))
+                if n_boxes_in_sample < 1:
+                    removed += 1
+                else:
+                    n_boxes += n_boxes_in_sample
+                    good_sample_ids.append(self.sample_ids[idx])
+
+            str_ = "Removed {} out of {} images, leaving {} with {} boxes over {} classes.\n".format(
+                removed, len(self.sample_ids), len(good_sample_ids), n_boxes, len(self.classes))
+
+            logging.info("Writing out new splits file: {}\n\n{}".format(not_empty_file, str_))
+            with open(not_empty_file, 'w') as f:
+                for sample_id in good_sample_ids:
+                    f.write('{}\n'.format(sample_id))
+            with open(not_empty_stats_file, 'w') as f:
+                f.write(str_)
+
+        # remake the samples dict
+        good_samples = dict()
+        for sid in good_sample_ids:
+            good_samples[sid] = self.samples[sid]
+
+        return good_samples, good_sample_ids
+
     def _load_samples(self):
         """
         Load the samples of this dataset using the settings supplied
@@ -224,26 +275,10 @@ class ImageNetVidDetection(VisionDataset):
         ids = list()
         for year, split in self._splits:
 
-            # do we want the full split or just the non-empty split?
-            ne_lf = os.path.join(self.root, 'ImageSets', 'VID', split + '_nonempty.txt')
-            lf = os.path.join(self.root, 'ImageSets', 'VID', split + '.txt')
-            if os.path.exists(ne_lf) and not self._allow_empty:
-                lf = ne_lf
-
             # load the splits file
-            logging.info("Loading splits from: {}".format(lf))
-            with open(lf, 'r') as f:
+            logging.info("Loading splits from: {}".format(os.path.join(self.root, 'ImageSets', 'VID', split + '.txt')))
+            with open(os.path.join(self.root, 'ImageSets', 'VID', split + '.txt'), 'r') as f:
                 ids_ = [(int(line.split()[1]), self.root, split, line.split()[0]) for line in f.readlines()]
-
-            # if the non-empty split file didn't exist and we want non-empty only, we need to make
-            if not os.path.exists(ne_lf) and not self._allow_empty:
-                ids_, str_ = self._verify_nonempty_annotations(ids_)  # ensure non-empty for this split
-                logging.info("Writing out new splits file: {}\n\n{}".format(ne_lf, str_))
-                with open(ne_lf, 'w') as f:
-                    for l in ids_:
-                        f.write('{} {}\n'.format(l[3], l[0]))
-                with open(os.path.join(self.root, 'ImageSets', 'VID', split + '_nonempty_stats.txt'), 'a') as f:
-                    f.write(str_)
 
             # use only the 2015 samples
             if year == 2015:
@@ -422,35 +457,6 @@ class ImageNetVidDetection(VisionDataset):
         stripped = [c for c in class_list if c.strip() != c]
         if stripped:
             logging.warning('white space removed for {}'.format(stripped))
-
-    def _verify_nonempty_annotations(self, sample_ids):
-        """
-        Checks annotations and returns only those that contain at least one box, as well as a lil stats str
-
-        Args:
-            sample_ids (list): a list of sample ids to process
-
-        Returns:
-            list: the sample ids kept in the set
-            str: just a helpful string
-
-        """
-        assert not self._videos, logging.error("Can't exclude non-empty samples for videos")
-        good_sample_ids = []
-        removed = 0
-        n_boxes = 0
-        for idx in tqdm(range(len(sample_ids)), desc="Removing images that have 0 boxes"):
-            n_boxes_in_sample = len(self._load_label(idx))
-            if n_boxes_in_sample < 1:
-                removed += 1
-            else:
-                n_boxes += n_boxes_in_sample
-                good_sample_ids.append(sample_ids[idx])
-
-        str_ = "Removed {} out of {} images, leaving {} with {} boxes over {} classes.\n".format(
-            removed, len(sample_ids), len(good_sample_ids), n_boxes, len(self.classes))
-
-        return good_sample_ids, str_
 
     @staticmethod
     def _pad_to_dense(labels, maxlen=100):
