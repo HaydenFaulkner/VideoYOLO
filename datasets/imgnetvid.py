@@ -57,8 +57,8 @@ class ImageNetVidDetection(VisionDataset):
         
         # setup a few paths
         self._coco_path = os.path.join(self.root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
-        self._annotations_path = os.path.join('{}', 'Annotations', 'VID', '{}', '{}.xml')
-        self._image_path = os.path.join('{}', 'Data', 'VID', '{}', '{}.JPEG')
+        self._annotations_path = os.path.join(self.root, 'Annotations', 'VID', '{}', '{}', '{}.xml')
+        self._image_path = os.path.join(self.root, 'Data', 'VID', '{}', '{}', '{}.JPEG')
         
         # setup the class index map
         self.index_map = index_map or dict(zip(self.wn_classes, range(self.num_class)))
@@ -71,7 +71,6 @@ class ImageNetVidDetection(VisionDataset):
 
         if not allow_empty:  # remove empty samples if desired
             self.samples, self.sample_ids = self._remove_empties()
-        print()
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
@@ -311,7 +310,7 @@ class ImageNetVidDetection(VisionDataset):
                     frame_ids = [frame_ids[i] for i in
                                  range(0, len(frame_ids), int(math.ceil(len(frames) / self._frames)))]
 
-                videos[vid_id] = (id_[1], id_[2], vid_id, frames, frame_ids)
+                videos[vid_id] = (id_[2], vid_id, frames, frame_ids)
 
             else:
                 if vid_id != past_vid_id:  # new video - add it
@@ -324,7 +323,7 @@ class ImageNetVidDetection(VisionDataset):
                         frame_ids = [frame_ids[i] for i in
                                      range(0, len(frame_ids), int(math.ceil(len(frames)/self._frames)))]
 
-                    videos[past_vid_id] = (past_id[1], past_id[2], past_vid_id, frames, frame_ids)
+                    videos[past_vid_id] = (past_id[2], past_vid_id, frames, frame_ids)
 
                     past_id = id_
                     frames = [frame]
@@ -343,8 +342,9 @@ class ImageNetVidDetection(VisionDataset):
             # reconstruct the frame samples from vid video samples
             frames = dict()
             for video in videos.values():
-                for frame_name, frame_id in zip(video[3], video[4]):
-                    frames[frame_id] = (video[0], video[1], os.path.join(video[2], frame_name))
+                for frame_name, frame_id in zip(video[2], video[3]):
+                    # (split, clip_name, frame_name) eg. ('val', 'ILSVRC2015_val_00000000', '000000')
+                    frames[frame_id] = (video[0], video[1], frame_name)
 
             # build a temporal window of frames around each sample, adheres to the 'self._frames param' only containing
             # frames that are in the cut down set... so step is actually step*the_dataset_step
@@ -396,8 +396,7 @@ class ImageNetVidDetection(VisionDataset):
         anno_path = self._annotations_path.format(*sample)
         if self._videos:
             assert frame_id is not None
-            img_id = (sample[0], sample[1], os.path.join(sample[2], frame_id))
-            anno_path = self._annotations_path.format(*img_id)
+            anno_path = self._annotations_path.format(*(sample[0], sample[1], frame_id))
 
         if not os.path.exists(anno_path):
             return np.array([[-1, -1, -1, -1, -1, -1]])
@@ -493,49 +492,47 @@ class ImageNetVidDetection(VisionDataset):
         cls_boxes = []
         n_samples = len(self.sample_ids)
         n_boxes = [0]*len(self.classes)
-        n_instances = [0]*len(self.classes)
-        past_vid_id = ''
+        n_frames = 0
+        vids = set()
+        vid_instances = [set() for _ in range(len(self.classes))]  # used to store the vid+track instances per class
+
         for idx in tqdm(range(len(self.sample_ids)), desc="Calculating stats"):
             sample_id = self.sample_ids[idx]
-            vid_id = self.samples[sample_id][2]
+            vid_id = self.samples[sample_id][1]
+            vids.add(vid_id)
 
-            if vid_id != past_vid_id:
-                vid_instances = []
-                past_vid_id = vid_id
             if self._videos:
-                for frame_id in self.samples[sample_id][3]:
+                for frame_id in self.samples[sample_id][2]:
+                    n_frames += 1
                     for box in self._load_label(idx, frame_id):
+                        if int(box[4]) < 0:  # not actually a box
+                            continue
                         n_boxes[int(box[4])] += 1
-                        if int(box[5]) not in vid_instances:
-                            vid_instances.append(int(box[5]))
-                            n_instances[int(box[4])] += 1
+                        vid_instances[int(box[4])].add(vid_id+str(box[-1]))  # add the track id
             else:
+                n_frames += 1
                 for box in self._load_label(idx):
                     if int(box[4]) < 0:  # not actually a box
                         continue
                     n_boxes[int(box[4])] += 1
-                    if int(box[5]) not in vid_instances:
-                        vid_instances.append(int(box[5]))
-                        n_instances[int(box[4])] += 1
+                    vid_instances[int(box[4])].add(vid_id+str(box[-1]))  # add the track id
 
-        if self._videos:
-            out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n{8: <10} {9}\n'.format(
-                'Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
-                'Videos:', n_samples,
-                'Boxes:', sum(n_boxes),
-                'Instances:', sum(n_instances),
-                'Classes:', len(self.classes))
-        else:
-            out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n{8: <10} {9}\n'.format(
-                'Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
-                'Frames:', n_samples,
-                'Boxes:', sum(n_boxes),
-                'Instances:', sum(n_instances),
-                'Classes:', len(self.classes))
+        n_instances = [len(vi) for vi in vid_instances]  # count the number of unique object instances per class
+        n_videos = len(vids)
+
+        out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n{8: <10} {9}\n{10: <10} {11}\n'.format(
+            'Split:', ', '.join([str(s[0]) + s[1] for s in self._splits]),
+            'Videos:', n_videos,
+            'Frames:', n_frames,
+            'Boxes:', sum(n_boxes),
+            'Instances:', sum(n_instances),
+            'Classes:', len(self.classes))
+
         out_str += '-'*35 + '\n'
+        out_str += '{0: <30} {1: <6} {2: <6}\n'.format('Class (id, wnid, name)', '# bbs', '# inst')
         for i in range(len(n_boxes)):
-            out_str += '{0: <3} {1: <10} {2: <15} {3} {4}\n'.format(i, self.wn_classes[i], self.classes[i],
-                                                                    n_boxes[i], n_instances[i])
+            out_str += '{0: <3} {1: <10} {2: <15} {3: <6} {4: <6}\n'.format(i, self.wn_classes[i], self.classes[i],
+                                                                            n_boxes[i], n_instances[i])
             cls_boxes.append([i, self.wn_classes[i], self.classes[i], n_boxes[i]])
         out_str += '-'*35 + '\n'
 
@@ -659,17 +656,17 @@ def generate_motion_ious():
 
 
 if __name__ == '__main__':
-    train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=False, frames=0.04)
+    train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], frames=0.04)
     for s in tqdm(train_dataset, desc='Test Pass of Training Set'):
         pass
     print(train_dataset)
 
-    val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=False, frames=0.04, window_size=5)
+    val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], frames=0.04)
     for s in tqdm(val_dataset, desc='Test Pass of Validation Set'):
         pass
     print(val_dataset)
 
-    test_dataset = ImageNetVidDetection(splits=[(2015, 'test')], allow_empty=True)
+    test_dataset = ImageNetVidDetection(splits=[(2015, 'test')])
     for s in tqdm(test_dataset, desc='Test Pass of Testing Set'):
         pass
     print(test_dataset)
