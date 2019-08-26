@@ -268,7 +268,8 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                 norm_kwargs={'num_devices': len(ctx)})
                 async_net = get_model(net_name, pretrained_base=False, classes=trained_on_dataset.classes)
             else:
-                net = get_model(net_name, pretrained_base=FLAGS.pretrained_cnn)
+                net = get_model(net_name, root='models',
+                                pretrained_base=FLAGS.pretrained_cnn, classes=trained_on_dataset.classes)
                 async_net = net
         else:
             raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
