@@ -368,7 +368,7 @@ def main(_argv):
     # handle gpu usage
     gpus = FLAGS.gpus
     if batch_size < len(gpus):
-        gpus = [gpus[0]]
+        gpus = [int(gpus[0])]
 
     # contexts
     ctx = [mx.gpu(int(i)) for i in gpus]

@@ -468,7 +468,7 @@ def main(_argv):
     gutils.random.seed(FLAGS.seed)
 
     # training contexts
-    ctx = [mx.gpu(i) for i in FLAGS.gpus]
+    ctx = [mx.gpu(int(i)) for i in FLAGS.gpus]
     ctx = ctx if ctx else [mx.cpu()]
 
     # training data
