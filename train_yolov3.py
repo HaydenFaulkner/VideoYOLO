@@ -100,7 +100,7 @@ flags.DEFINE_integer('no_mixup_epochs', 20,
                      'Disable mixup training if enabled in the last N epochs.')
 flags.DEFINE_boolean('label_smooth', False,
                      'Use label smoothing?')
-flags.DEFINE_boolean('allow_empty', False,
+flags.DEFINE_boolean('allow_empty', True,
                      'Allow samples that contain 0 boxes as [-1s * 6]?')
 
 flags.DEFINE_list('gpus', [0],
