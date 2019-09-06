@@ -5,6 +5,7 @@ from absl import app, flags, logging
 from absl.flags import FLAGS
 import os
 import logging
+import multiprocessing
 import time
 import warnings
 import numpy as np
@@ -105,10 +106,10 @@ flags.DEFINE_boolean('allow_empty', True,
 
 flags.DEFINE_list('gpus', [0],
                   'GPU IDs to use. Use comma for multiple eg. 0,1.')
-flags.DEFINE_integer('num_workers', 8,
+flags.DEFINE_integer('num_workers', -1,
                      'The number of workers should be picked so that it’s equal to number of cores on your machine '
                      'for max parallelization. If this number is bigger than your number of cores it will use up '
-                     'a bunch of extra CPU memory.')
+                     'a bunch of extra CPU memory. -1 is auto.')
 
 flags.DEFINE_integer('num_samples', -1,
                      'Training images. Use -1 to automatically get the number.')
@@ -318,11 +319,12 @@ def validate(net, val_data, ctx, eval_metric):
         # update metric
         # eval_metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
         # lodged issue on github #872 https://github.com/dmlc/gluon-cv/issues/872
-        eval_metric.update(as_numpy(det_bboxes), as_numpy(det_ids), as_numpy(det_scores), as_numpy(gt_bboxes), as_numpy(gt_ids), as_numpy(gt_difficults))
+        eval_metric.update(as_numpy(det_bboxes), as_numpy(det_ids), as_numpy(det_scores),
+                           as_numpy(gt_bboxes), as_numpy(gt_ids), as_numpy(gt_difficults))
     return eval_metric.get()
 
 
-def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch, num_samples):
+def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefix, start_epoch, num_samples):
     """Training pipeline"""
     net.collect_params().reset_ctx(ctx)
     if FLAGS.no_wd:
@@ -388,6 +390,7 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
         best_map = [0]
 
     # Training loop
+    num_batches = int(len(train_dataset)/FLAGS.batch_size)
     for epoch in range(start_epoch, FLAGS.epochs+1):
         if FLAGS.mixup:
             # TODO(zhreshold): more elegant way to control mixup during runtime
@@ -403,7 +406,6 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
 
         tic = time.time()
         btic = time.time()
-        mx.nd.waitall()
         net.hybridize()
         for i, batch in enumerate(train_data):
             batch_size = batch[0].shape[0]
@@ -435,8 +437,8 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
                 name2, loss2 = center_metrics.get()
                 name3, loss3 = scale_metrics.get()
                 name4, loss4 = cls_metrics.get()
-                logger.info('[Epoch {}][Batch {}], LR: {:.2E}, Speed: {:.3f} samples/sec, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
-                    epoch, i, trainer.learning_rate, batch_size/(time.time()-btic), name1, loss1, name2, loss2, name3, loss3, name4, loss4))
+                logger.info('[Epoch {}][Batch {}/{}], LR: {:.2E}, Speed: {:.3f} samples/sec, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
+                    epoch, i, num_batches, trainer.learning_rate, batch_size/(time.time()-btic), name1, loss1, name2, loss2, name3, loss3, name4, loss4))
                 tb_sw.add_scalar(tag='Training_' + name1, scalar_value=loss1, global_step=(epoch * len(train_data) + i))
                 tb_sw.add_scalar(tag='Training_' + name2, scalar_value=loss2, global_step=(epoch * len(train_data) + i))
                 tb_sw.add_scalar(tag='Training_' + name3, scalar_value=loss3, global_step=(epoch * len(train_data) + i))
@@ -463,6 +465,10 @@ def train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch,
 
 
 def main(_argv):
+
+
+    if FLAGS.num_workers < 0:
+        FLAGS.num_workers = multiprocessing.cpu_count()
 
     # fix seed for mxnet, numpy and python builtin random generator.
     gutils.random.seed(FLAGS.seed)
@@ -504,7 +510,7 @@ def main(_argv):
         num_samples = len(train_dataset)
 
     # training
-    train(net, train_data, val_data, eval_metric, ctx, save_prefix, start_epoch, num_samples)
+    train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefix, start_epoch, num_samples)
 
 
 if __name__ == '__main__':

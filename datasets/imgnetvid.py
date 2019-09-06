@@ -160,14 +160,14 @@ class ImageNetVidDetection(VisionDataset):
                 if self._transform is not None:
                     _, label = self._transform(img, label)
 
-                # necessary to prevent asynchronous operation overload and memory issue
-                # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
-                mx.nd.waitall()
-
             else:  # window size is 1, so just load one image
                 img = mx.image.imread(img_path, 1)
                 if self._transform is not None:
                     img, label = self._transform(img, label)
+
+            # necessary to prevent asynchronous operation overload and memory issue
+            # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
+            mx.nd.waitall()
 
             if self._inference:  # in inference we want to return the idx also
                 return img, label, idx
