@@ -53,7 +53,7 @@ class ImageNetDetection(VisionDataset):
             self.samples, self.sample_ids = self._remove_empties()
 
     def __str__(self):
-        return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
+        return '\n\n' + self.__class__.__name__ + '\n'
 
     @property
     def classes(self):
