@@ -49,6 +49,9 @@ class ImageNetDetection(VisionDataset):
         # generate a sorted list of the sample ids
         self.sample_ids = sorted(list(self.samples.keys()))
 
+        if not allow_empty:  # remove empty samples if desired
+            self.samples, self.sample_ids = self._remove_empties()
+
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
 
@@ -122,24 +125,11 @@ class ImageNetDetection(VisionDataset):
         """
         ids = list()
         for split in self._splits:
-            root = self.root  # os.path.join(self.root, 'ILSVRC')
-            ne_lf = os.path.join(root, 'ImageSets', 'DET', split + '_nonempty.txt')
-            lf = os.path.join(root, 'ImageSets', 'DET', split + '.txt')
-            if os.path.exists(ne_lf) and not self._allow_empty:
-                lf = ne_lf
 
-            print("Loading splits from: {}".format(lf))
-            with open(lf, 'r') as f:
-                ids_ = [(root, split, line.split()[0]) for line in f.readlines()]
-
-            if not os.path.exists(ne_lf):
-                ids_, str_ = self._verify_nonempty_annotations(ids_)  # ensure non-empty for this split
-                print("Writing out new splits file: {}\n\n{}".format(ne_lf, str_))
-                with open(ne_lf, 'w') as f:
-                    for l in ids_:
-                        f.write(l[2]+"\n")
-                with open(os.path.join(root, 'ImageSets', 'DET', split + '_nonempty_stats.txt'), 'a') as f:
-                    f.write(str_)
+            # load the splits file
+            print("Loading splits from: {}".format(os.path.join(self.root, 'ImageSets', 'DET', split + '.txt')))
+            with open(os.path.join(self.root, 'ImageSets', 'DET', split + '.txt'), 'r') as f:
+                ids_ = [(self.root, split, line.split()[0]) for line in f.readlines()]
 
             ids += ids_
 
@@ -148,6 +138,51 @@ class ImageNetDetection(VisionDataset):
             assert s[-1] not in samples, logging.error("Sample keys not unique: {}".format(s[-1]))
             samples[s[-1]] = s
         return samples
+
+    def _remove_empties(self):
+        """
+        removes empty samples from the set
+
+        Returns:
+            list: of the sample ids of non-empty samples
+        """
+
+        not_empty_file = os.path.join(self.root, 'ImageSets', 'DET', self._splits[0] + '_nonempty.txt')
+        not_empty_stats_file = os.path.join(self.root, 'ImageSets', 'DET', self._splits[0] + '_nonempty_stats.txt')
+
+        if os.path.exists(not_empty_file):  # if the splits file exists
+            logging.info("Loading splits from: {}".format(not_empty_file))
+            with open(not_empty_file, 'r') as f:
+                good_sample_ids = [int(line.rstrip()) for line in f.readlines()]
+
+        else:  # if the splits file doesn't exist, make one
+            good_sample_ids = list()
+            removed = 0
+            n_boxes = 0
+            for idx in tqdm(range(len(self.sample_ids)), desc="Removing images that have 0 boxes"):
+                n_boxes_in_sample = len(self._load_label(idx))
+                if n_boxes_in_sample < 1:
+                    removed += 1
+                else:
+                    n_boxes += n_boxes_in_sample
+                    good_sample_ids.append(self.sample_ids[idx])
+
+            str_ = "Removed {} out of {} images, leaving {} with {} boxes over {} classes.\n".format(
+                removed, len(self.sample_ids), len(good_sample_ids), n_boxes, len(self.classes))
+
+            logging.info("Writing out new splits file: {}\n\n{}".format(not_empty_file, str_))
+            with open(not_empty_file, 'w') as f:
+                for sample_id in good_sample_ids:
+                    f.write('{}\n'.format(sample_id))
+            with open(not_empty_stats_file, 'w') as f:
+                f.write(str_)
+
+        # remake the samples dict
+        good_samples = dict()
+        for sid in good_sample_ids:
+            good_samples[sid] = self.samples[sid]
+
+        return good_samples, good_sample_ids
 
     def _load_label(self, idx):
         """
