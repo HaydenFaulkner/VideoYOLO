@@ -493,6 +493,9 @@ def main(_argv):
     if FLAGS.trained_on:
         net.reset_class(train_dataset.classes)
 
+    # log a summary of the network
+    logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 3, FLAGS.data_shape, FLAGS.data_shape))))
+
     # load the dataloader
     train_data, val_data = get_dataloader(async_net, train_dataset, val_dataset, FLAGS.batch_size)
 
