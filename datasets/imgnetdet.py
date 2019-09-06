@@ -153,7 +153,7 @@ class ImageNetDetection(VisionDataset):
         if os.path.exists(not_empty_file):  # if the splits file exists
             logging.info("Loading splits from: {}".format(not_empty_file))
             with open(not_empty_file, 'r') as f:
-                good_sample_ids = [int(line.rstrip()) for line in f.readlines()]
+                good_sample_ids = [line.rstrip() for line in f.readlines()]
 
         else:  # if the splits file doesn't exist, make one
             good_sample_ids = list()
@@ -294,7 +294,7 @@ class ImageNetDetection(VisionDataset):
         cls_boxes = []
         n_samples = len(self.samples)
         n_boxes = [0]*len(self.classes)
-        for idx in tqdm(range(len(self.samples))):
+        for idx in tqdm(range(len(self.samples)), desc="Calculate stats for dataset"):
             for box in self._load_label(idx):
                 n_boxes[int(box[4])] += 1
 
