@@ -338,7 +338,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
         lr_decay_epoch = list(range(FLAGS.lr_decay_period, FLAGS.epochs, FLAGS.lr_decay_period))
     else:
         lr_decay_epoch = FLAGS.lr_decay_epoch
-    lr_decay_epoch = [e - FLAGS.warmup_epochs for e in lr_decay_epoch]
+    lr_decay_epoch = [int(e) - FLAGS.warmup_epochs for e in lr_decay_epoch]
     num_batches = num_samples // FLAGS.batch_size
     lr_scheduler = LRSequential([
         LRScheduler('linear', base_lr=0, target_lr=FLAGS.lr,
