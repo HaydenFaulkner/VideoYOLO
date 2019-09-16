@@ -115,7 +115,7 @@ python detect_yolov3.py --batch_size 1 --model_path models/0001/yolo3_darknet53_
 You can also evaluate on different data than the model was trained on
 (voc trained model on vid set):
 ```
-python detect_yolov3.py --batch_size 1 --model_path models/0001/yolo3_darknet53_voc_best.params --metrics voc,coco,vid --dataset vid --save_prefix 0001
+python detect_yolov3.py --trained_on voc --batch_size 1 --model_path models/0001/yolo3_darknet53_voc_best.params --metrics voc,coco,vid --dataset vid --save_prefix 0001
 ```
 
 Visualisation is **off** by default use `--visualise True` to write out images with boxes displayed.
