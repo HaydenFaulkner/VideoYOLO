@@ -276,11 +276,11 @@ class ImageNetDetection(VisionDataset):
 
         return good_sample_ids, str_
 
-    # def image_size(self, id):
-    #     if len(self._im_shapes) == 0:
-    #         for idx in tqdm(range(len(self.samples)), desc="populating im_shapes"):
-    #             self._load_label(idx, items=self.samples)
-    #     return self._im_shapes[self.image_ids.index(id)]
+    def image_size(self, id):
+        if len(self._im_shapes) == 0:
+            for idx in tqdm(range(len(self.samples)), desc="populating im_shapes"):
+                self._load_label(idx)
+        return self._im_shapes[self.image_ids.index(id)]
 
     def stats(self):
         """

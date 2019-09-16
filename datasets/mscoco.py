@@ -213,9 +213,9 @@ class COCODetection(VisionDataset):
                 valid_objs.append([-1, -1, -1, -1, -1])
         return valid_objs
 
-    # def image_size(self, id):
-    #     entry = self.coco.loadImgs(id)[0]
-    #     return entry['width'], entry['height']
+    def image_size(self, id):
+        entry = self.coco.loadImgs(id)[0]
+        return entry['width'], entry['height']
 
     def stats(self):
         """

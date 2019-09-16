@@ -474,11 +474,11 @@ class ImageNetVidDetection(VisionDataset):
             x[enu, :] += row + 1
         return x
 
-    # def image_size(self, sample_id):
-    #     if len(self._im_shapes) == 0:
-    #         for idx in tqdm(range(len(self.sample_ids)), desc="populating im_shapes"):
-    #             self._load_label(idx)
-    #     return self._im_shapes[sample_id]
+    def image_size(self, sample_id):
+        if len(self._im_shapes) == 0:
+            for idx in tqdm(range(len(self.sample_ids)), desc="populating im_shapes"):
+                self._load_label(idx)
+        return self._im_shapes[sample_id]
 
     def stats(self):
         """

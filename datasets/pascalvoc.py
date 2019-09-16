@@ -208,8 +208,8 @@ class VOCDetection(VisionDataset):
         logging.info("Preloading labels into memory...")
         return [self._load_label(idx) for idx in range(len(self))]
 
-    # def image_size(self, id):
-    #     return self._im_shapes[self.image_ids.index(id)]
+    def image_size(self, id):
+        return self._im_shapes[self.image_ids.index(id)]
 
     def stats(self):
         """
