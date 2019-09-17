@@ -65,7 +65,7 @@ class VOCDetection(VisionDataset):
             list : a list of strings
 
         """
-        names_file = os.path.join('./datasets/names/pascalvoc.names')
+        names_file = os.path.join('datasets', 'names', 'pascalvoc.names')
         with open(names_file, 'r') as f:
             classes = [line.strip() for line in f.readlines()]
         return classes
@@ -79,7 +79,7 @@ class VOCDetection(VisionDataset):
             list : a list of strings
 
         """
-        names_file = os.path.join('./datasets/names/pascalvoc_wn.names')
+        names_file = os.path.join('datasets', 'names', 'pascalvoc_wn.names')
         with open(names_file, 'r') as f:
             wn_classes = [line.strip() for line in f.readlines()]
         return wn_classes
