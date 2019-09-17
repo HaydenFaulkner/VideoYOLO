@@ -1,10 +1,18 @@
+import platform
 import warnings
 from mxnet.gluon.nn import BatchNorm
 from gluoncv.model_zoo import get_model
-from gluoncv.model_zoo.yolo.yolo3 import get_yolov3
-from gluoncv.model_zoo.yolo.darknet import darknet53
-from gluoncv.model_zoo.mobilenet import get_mobilenet
 
+# only use custom modelling code on personal machines so as to not break everything
+if platform.node() == 'HUB-HOME' or platform.node() == 'HUB':
+    print("USING CUSTOM MODEL CODE")
+    from .yolo.yolo3 import get_yolov3
+    from .yolo.darknet import darknet53
+    from .yolo.mobilenet import get_mobilenet
+else:
+    from gluoncv.model_zoo.yolo.yolo3 import get_yolov3
+    from gluoncv.model_zoo.yolo.darknet import darknet53
+    from gluoncv.model_zoo.mobilenet import get_mobilenet
 
 
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,

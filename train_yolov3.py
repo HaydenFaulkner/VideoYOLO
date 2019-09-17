@@ -29,8 +29,8 @@ from datasets.imgnetvid import ImageNetVidDetection
 from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
 
-from models.definitions import yolo3_darknet53, yolo3_mobilenet1_0
-from models.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultInferenceTransform
+from models.definitions.yolo_wrappers import yolo3_darknet53, yolo3_mobilenet1_0
+from models.definitions.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultInferenceTransform
 
 from utils.general import as_numpy
 
@@ -77,8 +77,8 @@ flags.DEFINE_integer('lr_decay_period', 0,
                      'Interval for periodic learning rate decays.')
 flags.DEFINE_list('lr_decay_epoch', [160, 180],
                   'Epochs at which learning rate decays.')
-flags.DEFINE_float('warmup_lr', 0.0,
-                   'Starting warmup learning rate.')
+# flags.DEFINE_float('warmup_lr', 0.0,  # not used
+#                    'Starting warmup learning rate.')
 flags.DEFINE_integer('warmup_epochs', 0,
                      'Number of warmup epochs.')
 flags.DEFINE_float('momentum', 0.9,
@@ -486,11 +486,12 @@ def main(_argv):
         trained_on_dataset, _, _ = get_dataset(FLAGS.trained_on, os.path.join('models', FLAGS.save_prefix))
 
     # network
-    if os.path.exists(os.path.join('models', FLAGS.save_prefix)) and not bool(FLAGS.resume.strip()):
+    if os.path.exists(os.path.join('models', FLAGS.save_prefix)) and not bool(FLAGS.resume.strip()) \
+            and FLAGS.save_prefix != '0000':  # using 0000 for testing
         logging.error("{} exists so won't overwrite and restart training. You can resume training by using "
                       "--resume".format(os.path.join('models', FLAGS.save_prefix)))
         return
-    os.makedirs(os.path.join('models', FLAGS.save_prefix), exist_ok=bool(FLAGS.resume.strip()))
+    os.makedirs(os.path.join('models', FLAGS.save_prefix), exist_ok=True)
     net_name = '_'.join(('yolo3', FLAGS.network, FLAGS.dataset))
     save_prefix = os.path.join('models', FLAGS.save_prefix, net_name)
 
