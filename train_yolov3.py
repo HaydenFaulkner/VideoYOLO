@@ -495,7 +495,7 @@ def main(_argv):
     net_name = '_'.join(('yolo3', FLAGS.network, FLAGS.dataset))
     save_prefix = os.path.join('models', FLAGS.save_prefix, net_name)
 
-    net, async_net, start_epoch = get_net(trained_on_dataset, ctx, definition='gluon')  # use gluons defs, not ours for now
+    net, async_net, start_epoch = get_net(trained_on_dataset, ctx, definition='ours')  # 'gluon' or 'ours'
 
     if FLAGS.trained_on:
         net.reset_class(train_dataset.classes)

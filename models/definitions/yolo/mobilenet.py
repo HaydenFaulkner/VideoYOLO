@@ -265,14 +265,14 @@ def get_mobilenet(multiplier, pretrained=False, ctx=cpu(),
     """
     net = MobileNet(multiplier, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
     if pretrained:
-        from .model_store import get_model_file
+        from gluoncv.model_zoo.model_store import get_model_file
         version_suffix = '{0:.2f}'.format(multiplier)
         if version_suffix in ('1.00', '0.50'):
             version_suffix = version_suffix[:-1]
         net.load_parameters(get_model_file('mobilenet%s' % version_suffix,
                                            tag=pretrained,
                                            root=root), ctx=ctx)
-        from ..data import ImageNet1kAttr
+        from gluoncv.data import ImageNet1kAttr
         attrib = ImageNet1kAttr()
         net.synset = attrib.synset
         net.classes = attrib.classes
@@ -310,14 +310,14 @@ def get_mobilenet_v2(multiplier, pretrained=False, ctx=cpu(),
     net = MobileNetV2(multiplier, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
 
     if pretrained:
-        from .model_store import get_model_file
+        from gluoncv.model_zoo.model_store import get_model_file
         version_suffix = '{0:.2f}'.format(multiplier)
         if version_suffix in ('1.00', '0.50'):
             version_suffix = version_suffix[:-1]
         net.load_parameters(get_model_file('mobilenetv2_%s' % version_suffix,
                                            tag=pretrained,
                                            root=root), ctx=ctx)
-        from ..data import ImageNet1kAttr
+        from gluoncv.data import ImageNet1kAttr
         attrib = ImageNet1kAttr()
         net.synset = attrib.synset
         net.classes = attrib.classes
