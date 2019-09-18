@@ -29,8 +29,9 @@ from datasets.imgnetvid import ImageNetVidDetection
 from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
 
-from models.definitions.yolo_wrappers import yolo3_darknet53, yolo3_mobilenet1_0
-from models.definitions.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultInferenceTransform
+from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_mobilenet1_0
+from models.definitions.yolo.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultInferenceTransform, \
+    YOLO3VideoTrainTransform, YOLO3VideoInferenceTransform
 
 from utils.general import as_numpy
 
@@ -118,6 +119,8 @@ flags.DEFINE_float('frames', 0.04,
                    'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
                    'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
                    'If =1: Every sample used - full dataset')
+flags.DEFINE_list('window', '1, 1',
+                  'Temporal window size of frames and the frame gap of the windows samples')
 flags.DEFINE_integer('seed', 233,
                      'Random seed to be fixed.')
 
@@ -141,8 +144,9 @@ def get_dataset(dataset_name, save_prefix=''):
 
     elif dataset_name.lower() == 'vid':
         train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty,
-                                             frames=FLAGS.frames)
-        val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty, frames=FLAGS.frames)
+                                             frames=FLAGS.frames, window=FLAGS.window)
+        val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty,
+                                           frames=FLAGS.frames, window=FLAGS.window)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     else:
@@ -158,19 +162,26 @@ def get_dataset(dataset_name, save_prefix=''):
 def get_dataloader(net, train_dataset, val_dataset, batch_size):
     """Get dataloader."""
     width, height = FLAGS.data_shape, FLAGS.data_shape
-    batchify_fn = Tuple(*([Stack() for _ in range(6)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))  # stack image, all targets generated
+
+    # stack image, all targets generated
+    batchify_fn = Tuple(*([Stack() for _ in range(6)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
+
     if FLAGS.no_random_shape:
         train_loader = gluon.data.DataLoader(
             train_dataset.transform(YOLO3DefaultTrainTransform(width, height, 3, net, mixup=FLAGS.mixup)),
             batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
     else:
-        transform_fns = [YOLO3DefaultTrainTransform(x * 32, x * 32, 3, net, mixup=FLAGS.mixup) for x in range(10, 20)]
+        if FLAGS.window[0] > 1:
+            transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
+        else:
+            transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
         train_loader = RandomTransformDataLoader(
             transform_fns, train_dataset, batch_size=batch_size, interval=10, last_batch='rollover',
             shuffle=True, batchify_fn=batchify_fn, num_workers=FLAGS.num_workers)
+
     val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
     val_loader = gluon.data.DataLoader(
-        val_dataset.transform(YOLO3DefaultInferenceTransform(width, height, 3)),
+        val_dataset.transform(YOLO3VideoInferenceTransform(width, height)),
         batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
     # NOTE for val batch loader last_batch='keep' changed to last_batch='discard' so exception not thrown
     # when last batch size is smaller than the number of GPUS (which throws exception) this is fixed in gluon
@@ -465,7 +476,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
 
 
 def main(_argv):
-
+    FLAGS.window = [int(s) for s in FLAGS.window]
 
     if FLAGS.num_workers < 0:
         FLAGS.num_workers = multiprocessing.cpu_count()
