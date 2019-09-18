@@ -20,7 +20,7 @@ class ImageNetVidDetection(VisionDataset):
     def __init__(self, root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
                  splits=[(2017, 'train')], allow_empty=True, videos=False,
                  transform=None, index_map=None, frames=1, inference=False,
-                 window_size=1, window_step=1):
+                 window=[1, 1]):
 
         """
         Args:
@@ -48,11 +48,11 @@ class ImageNetVidDetection(VisionDataset):
         self._videos = videos
         self._frames = frames
         self._inference = inference
-        if videos or window_size > 1:
+        self._window_size = window[0]
+        self._window_step = window[1]
+        if videos or self._window_size > 1:
             allow_empty = True  # allow true if getting video volumes, prevent empties when doing framewise only
         self._allow_empty = allow_empty
-        self._window_size = window_size
-        self._window_step = window_step
         self._windows = None
         
         # setup a few paths
@@ -352,7 +352,7 @@ class ImageNetVidDetection(VisionDataset):
                 self._windows = dict()
 
                 for video in videos.values():  # lock to only getting frames from the same video
-                    frame_ids = video[4]  # get the list of frame ids
+                    frame_ids = video[3]  # get the list of frame ids
 
                     for i in range(len(frame_ids)):  # for each frame in this video
                         window = list()  # setup a new window (will hold the frame_ids)
