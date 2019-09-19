@@ -39,11 +39,7 @@ def random_expand(src, max_ratio=4, fill=0, keep_ratio=True):
     if max_ratio <= 1:
         return src, (0, 0, src.shape[1], src.shape[0])
 
-    k = 1
-    if len(src.shape) > 3:
-        k, h, w, c = src.shape
-    else:
-        h, w, c = src.shape
+    k, h, w, c = src.shape
 
     ratio_x = random.uniform(1, max_ratio)
     if keep_ratio:
@@ -66,6 +62,4 @@ def random_expand(src, max_ratio=4, fill=0, keep_ratio=True):
 
     dst[:, off_y:off_y+h, off_x:off_x+w, :] = src
 
-    if k == 1:
-        dst = dst.squeeze()
     return dst, (off_x, off_y, ow, oh)
