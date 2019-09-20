@@ -274,9 +274,9 @@ class YOLO3VideoInferenceTransform(object):
             
         # resize
         k, h, w, c = src.shape
-        tmp = mx.nd.ones((k, self._height, self._width, c), ctx=img.context)
+        tmp = mx.nd.ones((k, self._height, self._width, c), ctx=src.context)
         for i in range(k):
-            tmp[i] = timage.imresize(img[i], self._width, self._height, interp=9)
+            tmp[i] = timage.imresize(src[i], self._width, self._height, interp=9)
         img = tmp
         bbox = tbbox.resize(label, in_size=(w, h), out_size=(self._width, self._height))
 
