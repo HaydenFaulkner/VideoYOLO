@@ -16,7 +16,7 @@ else:
 
 
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
-                    norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+                    norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -49,12 +49,16 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         base_net = darknet53(
             pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
 
-        if input_channels != 3:
-            assert input_channels % 3 == 0
-            base_net.collect_params()['darknetv30_conv0_weight']._data = \
-                [mx.nd.repeat(base_net.collect_params()['darknetv30_conv0_weight'].data(), int(input_channels/3.0), axis=1)]
-            base_net.collect_params()['darknetv30_conv0_weight']._shape = (32, input_channels, 3, 3)
-            base_net.collect_params()['darknetv30_conv0_weight'].shape = (32, input_channels, 3, 3)
+        if freeze_base:
+            for param in base_net.collect_params().values():
+                param.grad_req = 'null'
+
+        # if input_channels != 3:
+        #     assert input_channels % 3 == 0
+        #     base_net.collect_params()['darknetv30_conv0_weight']._data = \
+        #         [mx.nd.repeat(base_net.collect_params()['darknetv30_conv0_weight'].data(), int(input_channels/3.0), axis=1)]
+        #     base_net.collect_params()['darknetv30_conv0_weight']._shape = (32, input_channels, 3, 3)
+        #     base_net.collect_params()['darknetv30_conv0_weight'].shape = (32, input_channels, 3, 3)
 
         stages = [base_net.features[:15], base_net.features[15:24], base_net.features[24:]]
         anchors = [
@@ -73,7 +77,7 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
 
 
 def yolo3_mobilenet1_0(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
-                       norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+                       norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False, **kwargs):
     """YOLO3 multi-scale with mobilenet base network on custom dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -106,6 +110,11 @@ def yolo3_mobilenet1_0(classes, dataset_name, transfer=None, pretrained_base=Tru
                                  pretrained=pretrained_base,
                                  norm_layer=norm_layer, norm_kwargs=norm_kwargs,
                                  **kwargs)
+
+        if freeze_base:
+            for param in base_net.collect_params().values():
+                param.grad_req = 'null'
+
         stages = [base_net.features[:33],
                   base_net.features[33:69],
                   base_net.features[69:-2]]
