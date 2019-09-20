@@ -64,12 +64,12 @@ def get_dataset(dataset_name):
         dataset = COCODetection(splits=['instances_train2017'], use_crowd=False, inference=True)
 
     elif dataset_name.lower() == 'det':
-        # dataset = ImageNetDetection(splits=['val'], allow_empty=False, inference=True)
-        dataset = ImageNetDetection(splits=['train'], allow_empty=FLAGS.allow_empty, inference=True)
+        # dataset = ImageNetDetection(splits=['val'], allow_empty=True, inference=True)
+        dataset = ImageNetDetection(splits=['train'], allow_empty=True, inference=True)
 
     elif dataset_name.lower() == 'vid':
         # dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, frames=FLAGS.frames, inference=True)
-        dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty, frames=FLAGS.frames,
+        dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=True, frames=FLAGS.frames,
                                        inference=True)
 
     elif dataset_name[-4:] == '.txt':  # list of images or list of videos
@@ -122,6 +122,10 @@ def extract(save_dir, net, dataset, loader, ctx, net_name='darknet53'):
             label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
             idxs = gluon.utils.split_and_load(batch[2], ctx_list=ctx, batch_axis=0, even_split=False)
 
+            f1s = []
+            f2s = []
+            f3s = []
+            sidxs = []
             for x, y, sidx in zip(data, label, idxs):
                 if net_name == 'darknet53':  # darknet
                     f1 = net.features[:15](x)
@@ -131,19 +135,26 @@ def extract(save_dir, net, dataset, loader, ctx, net_name='darknet53'):
                     f1 = net.features[:33](x)
                     f2 = net.features[33:69](f1)
                     f3 = net.features[69:-2](f2)
+                f1s.append(f1.asnumpy())
+                f2s.append(f2.asnumpy())
+                f3s.append(f3.asnumpy())
+                sidxs.append(sidx.asnumpy())
 
-                img_path = dataset.sample_path(int(as_numpy(sidx)))
+            for f1, f2, f3, sidx in zip(f1s, f2s, f3s, sidxs):
 
-                file_id = img_path.split(os.sep)[-1][:-4]
-                if FLAGS.dataset == 'vid':
-                    file_id = os.path.join(img_path.split(os.sep)[-2], img_path.split(os.sep)[-1][:-5])
-                    os.makedirs(os.path.join(save_dir, img_path.split(os.sep)[-2]), exist_ok=True)
+                for i, idx in enumerate(sidx):
+                    img_path = dataset.sample_path(int(idx))
 
-                np.save(os.path.join(save_dir, file_id + '_F1.npy'), f1.asnumpy())
-                np.save(os.path.join(save_dir, file_id + '_F2.npy'), f2.asnumpy())
-                np.save(os.path.join(save_dir, file_id + '_F3.npy'), f3.asnumpy())
+                    file_id = img_path.split(os.sep)[-1][:-4]
+                    if FLAGS.dataset == 'vid':
+                        file_id = os.path.join(img_path.split(os.sep)[-2], img_path.split(os.sep)[-1][:-5])
+                        os.makedirs(os.path.join(save_dir, img_path.split(os.sep)[-2]), exist_ok=True)
 
-                pbar.update(batch[0].shape[0])
+                    np.save(os.path.join(save_dir, file_id + '_F1.npy'), f1[i])
+                    np.save(os.path.join(save_dir, file_id + '_F2.npy'), f2[i])
+                    np.save(os.path.join(save_dir, file_id + '_F3.npy'), f3[i])
+
+            pbar.update(batch[0].shape[0])
 
     return None
 
