@@ -102,6 +102,8 @@ flags.DEFINE_integer('no_mixup_epochs', 20,
                      'Disable mixup training if enabled in the last N epochs.')
 flags.DEFINE_boolean('label_smooth', False,
                      'Use label smoothing?')
+flags.DEFINE_boolean('freeze_base', False,
+                     'Freeze the base network?')
 flags.DEFINE_boolean('allow_empty', True,
                      'Allow samples that contain 0 boxes as [-1s * 6]?')
 
@@ -242,14 +244,17 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                       root='models',
                                       pretrained_base=FLAGS.pretrained_cnn,
                                       norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                      freeze_base=bool(FLAGS.freeze_base),
                                       norm_kwargs={'num_devices': len(ctx)})
                 async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                                             root='models',
-                                            pretrained_base=False)  # used by cpu worker
+                                            pretrained_base=False,
+                                            freeze_base=bool(FLAGS.freeze_base))  # used by cpu worker
             else:
                 net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                                       root='models',
-                                      pretrained_base=FLAGS.pretrained_cnn)
+                                      pretrained_base=FLAGS.pretrained_cnn,
+                                      freeze_base=bool(FLAGS.freeze_base))
                 async_net = net
 
         elif FLAGS.network == 'mobilenet1.0':
@@ -258,14 +263,17 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                          root='models',
                                          pretrained_base=FLAGS.pretrained_cnn,
                                          norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                         freeze_base=bool(FLAGS.freeze_base),
                                          norm_kwargs={'num_devices': len(ctx)})
                 async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                                root='models',
-                                               pretrained_base=False)  # used by cpu worker
+                                               pretrained_base=False,
+                                               freeze_base=bool(FLAGS.freeze_base))  # used by cpu worker
             else:
                 net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                          root='models',
-                                         pretrained_base=FLAGS.pretrained_cnn)
+                                         pretrained_base=FLAGS.pretrained_cnn,
+                                         freeze_base=bool(FLAGS.freeze_base))
                 async_net = net
         else:
             raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
@@ -403,6 +411,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
     # Training loop
     num_batches = int(len(train_dataset)/FLAGS.batch_size)
     for epoch in range(start_epoch, FLAGS.epochs+1):
+        st = time.time()
         if FLAGS.mixup:
             # TODO(zhreshold): more elegant way to control mixup during runtime
             try:
@@ -448,8 +457,10 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
                 name2, loss2 = center_metrics.get()
                 name3, loss3 = scale_metrics.get()
                 name4, loss4 = cls_metrics.get()
-                logger.info('[Epoch {}][Batch {}/{}], LR: {:.2E}, Speed: {:.3f} samples/sec, {}={:.3f}, {}={:.3f}, {}={:.3f}, {}={:.3f}'.format(
-                    epoch, i, num_batches, trainer.learning_rate, batch_size/(time.time()-btic), name1, loss1, name2, loss2, name3, loss3, name4, loss4))
+                logger.info('[Epoch {}][Batch {}/{}], LR: {:.2E}, Speed: {:.3f} samples/sec, {}={:.3f}, {}={:.3f}, '
+                            '{}={:.3f}, {}={:.3f}'.format(epoch, i, num_batches, trainer.learning_rate,
+                                                          batch_size/(time.time()-btic),
+                                                          name1, loss1, name2, loss2, name3, loss3, name4, loss4))
                 tb_sw.add_scalar(tag='Training_' + name1, scalar_value=loss1, global_step=(epoch * len(train_data) + i))
                 tb_sw.add_scalar(tag='Training_' + name2, scalar_value=loss2, global_step=(epoch * len(train_data) + i))
                 tb_sw.add_scalar(tag='Training_' + name3, scalar_value=loss3, global_step=(epoch * len(train_data) + i))
@@ -464,7 +475,14 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
             epoch, (time.time()-tic), name1, loss1, name2, loss2, name3, loss3, name4, loss4))
         if not (epoch + 1) % FLAGS.val_interval:
             # consider reduce the frequency of validation to save time
+
+            logger.info('End Epoch {}: # samples: {}, seconds: {}, samples/sec: {:.2f}'.format(
+                epoch, len(train_data)*batch_size, time.time() - st, (len(train_data)*batch_size)/(time.time() - st)))
+            st = time.time()
             map_name, mean_ap = validate(net, val_data, ctx, eval_metric)
+            logger.info('End Val: # samples: {}, seconds: {}, samples/sec: {:.2f}'.format(
+                len(val_data)*batch_size, time.time() - st, (len(val_data) * batch_size)/(time.time() - st)))
+
             val_msg = '\n'.join(['{}={}'.format(k, v) for k, v in zip(map_name, mean_ap)])
             tb_sw.add_scalar(tag='Validation_mAP', scalar_value=float(mean_ap[-1]),
                              global_step=(epoch * len(train_data) + i))
