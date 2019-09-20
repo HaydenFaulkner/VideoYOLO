@@ -25,7 +25,7 @@ from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
 from metrics.imgnetvid import VIDDetectionMetric
 
-from models.transforms import YOLO3DefaultInferenceTransform
+from models.definitions.yolo.transforms import YOLO3VideoInferenceTransform
 
 from utils.general import as_numpy
 from utils.image import cv_plot_bbox
@@ -123,7 +123,7 @@ def get_dataset(dataset_name):
 def get_dataloader(dataset, batch_size):
     width, height = FLAGS.data_shape, FLAGS.data_shape
     batchify_fn = Tuple(Stack(), Pad(pad_val=-1), Stack())
-    loader = gluon.data.DataLoader(dataset.transform(YOLO3DefaultInferenceTransform(width, height, 3)),
+    loader = gluon.data.DataLoader(dataset.transform(YOLO3VideoInferenceTransform(width, height, 3)),
                                    batch_size, False, last_batch='keep', num_workers=FLAGS.num_workers,
                                    batchify_fn=batchify_fn)
     return loader
