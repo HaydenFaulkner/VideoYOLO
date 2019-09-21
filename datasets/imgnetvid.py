@@ -136,14 +136,45 @@ class ImageNetVidDetection(VisionDataset):
         if self._features_dir is not None:
             img_path = self.sample_path(idx)
             label = self._load_label(idx)[:, :-1]  # remove track id
+            if self._window_size > 1:  # lets load the temporal window
+                imgs = None
+                window_sample_ids = self._windows[self.sample_ids[idx]]
 
-            img = mx.image.imread(img_path, 1)
+                # go through the sample ids for the window
+                for sid in window_sample_ids:
+                    img_path = self._image_path.format(*self.samples[sid])
+                    img = mx.image.imread(img_path)
+                    file_id = os.path.join(img_path.split(os.sep)[-2], img_path.split(os.sep)[-1][:-5])
+                    f1 = mx.nd.array(np.load(os.path.join(self._features_dir, file_id + '_F1.npy')))
+                    f2 = mx.nd.array(np.load(os.path.join(self._features_dir, file_id + '_F2.npy')))
+                    f3 = mx.nd.array(np.load(os.path.join(self._features_dir, file_id + '_F3.npy')))
 
-            file_id = os.path.join(img_path.split(os.sep)[-2], img_path.split(os.sep)[-1][:-5])
+                    if imgs is None:
+                        # imgs = img  # is the first frame in the window
+                        imgs = mx.ndarray.expand_dims(img, axis=0)  # is the first frame in the window
 
-            f1 = np.load(os.path.join(self._features_dir, file_id + '_F1.npy'))
-            f2 = np.load(os.path.join(self._features_dir, file_id + '_F2.npy'))
-            f3 = np.load(os.path.join(self._features_dir, file_id + '_F3.npy'))
+                        f1s = mx.ndarray.expand_dims(f1, axis=0)
+                        f2s = mx.ndarray.expand_dims(f2, axis=0)
+                        f3s = mx.ndarray.expand_dims(f3, axis=0)
+                    else:
+                        imgs = mx.ndarray.concatenate([imgs, mx.ndarray.expand_dims(img, axis=0)], axis=0)
+                        f1s = mx.ndarray.concatenate([f1s, mx.ndarray.expand_dims(f1, axis=0)], axis=0)
+                        f2s = mx.ndarray.concatenate([f2s, mx.ndarray.expand_dims(f2, axis=0)], axis=0)
+                        f3s = mx.ndarray.concatenate([f3s, mx.ndarray.expand_dims(f3, axis=0)], axis=0)
+                img = imgs
+                f1 = f1s
+                f2 = f2s
+                f3 = f3s
+
+            else:  # window size is 1, so just load one image
+
+                img = mx.image.imread(img_path, 1)
+
+                file_id = os.path.join(img_path.split(os.sep)[-2], img_path.split(os.sep)[-1][:-5])
+
+                f1 = np.load(os.path.join(self._features_dir, file_id + '_F1.npy'))
+                f2 = np.load(os.path.join(self._features_dir, file_id + '_F2.npy'))
+                f3 = np.load(os.path.join(self._features_dir, file_id + '_F3.npy'))
 
             if self._inference:  # in inference we want to return the idx also
                 return img, f1, f2, f3, label, idx
@@ -164,8 +195,8 @@ class ImageNetVidDetection(VisionDataset):
                     img = mx.image.imread(img_path)
 
                     if self._transform is not None:  # transform each image in the window
-                        img, _ = self._transform(img, label)  # todo check we transform the same (NOT rand acr win)
-                        # todo i think we should change the transforms to handle video volumes instead of per img here
+                        img, _ = self._transform(img, label)
+
                     if imgs is None:
                         # imgs = img  # is the first frame in the window
                         imgs = mx.ndarray.expand_dims(img, axis=0)  # is the first frame in the window
