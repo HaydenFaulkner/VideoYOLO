@@ -106,7 +106,7 @@ def get_dataset(dataset_name):
 def get_dataloader(dataset, batch_size):
     width, height = FLAGS.data_shape, FLAGS.data_shape
     batchify_fn = Tuple(Stack(), Pad(pad_val=-1), Stack())
-    loader = gluon.data.DataLoader(dataset.transform(YOLO3VideoInferenceTransform(width, height, 3)),
+    loader = gluon.data.DataLoader(dataset.transform(YOLO3VideoInferenceTransform(width, height)),
                                    batch_size, False, last_batch='keep', num_workers=FLAGS.num_workers,
                                    batchify_fn=batchify_fn)
     return loader
