@@ -6,7 +6,7 @@ from gluoncv.model_zoo import get_model
 # only use custom modelling code on personal machines so as to not break everything
 if platform.node() == 'HUB-HOME' or platform.node() == 'HUB':
     print("USING CUSTOM MODEL CODE")
-    from .yolo3 import get_yolov3
+    from .yolo3 import get_yolov3, YOLOV3_noback
     from .darknet import darknet53
     from .mobilenet import get_mobilenet
 else:
@@ -73,6 +73,37 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         net = get_model('yolo3_darknet53_' + str(transfer), pretrained=True, **kwargs)
         reuse_classes = [x for x in classes if x in net.classes]
         net.reset_class(classes, reuse_weights=reuse_classes)
+    return net
+
+
+def yolo3_no_backbone(classes, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+    """YOLO3 multi-scale without the backbone network. Modified from:
+    https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
+
+    Parameters
+    ----------
+    classes : iterable of str
+        Names of custom foreground classes. `len(classes)` is the number of foreground classes.
+    norm_layer : object
+        Normalization layer used (default: :class:`mxnet.gluon.nn.BatchNorm`)
+        Can be :class:`mxnet.gluon.nn.BatchNorm` or :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    norm_kwargs : dict
+        Additional `norm_layer` arguments, for example `num_devices=4`
+        for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    Returns
+    -------
+    mxnet.gluon.HybridBlock
+        Fully hybrid yolo3 network without the backbone.
+    """
+    
+    anchors = [
+        [10, 13, 16, 30, 33, 23],
+        [30, 61, 62, 45, 59, 119],
+        [116, 90, 156, 198, 373, 326]]
+    strides = [8, 16, 32]
+    net = YOLOV3_noback([512, 256, 128], anchors, strides, classes=classes,
+                        norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+    
     return net
 
 

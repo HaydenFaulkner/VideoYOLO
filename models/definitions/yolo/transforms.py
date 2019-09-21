@@ -291,3 +291,110 @@ class YOLO3VideoInferenceTransform(object):
         if idx is not None:
             return img, bbox.astype(img.dtype), idx
         return img, bbox.astype(img.dtype)
+
+
+class YOLO3NBVideoTrainTransform(object):
+    """Video YOLO training transform which includes tons of image augmentations.
+
+    Parameters
+    ----------
+    width : int
+        Image width.
+    height : int
+        Image height.
+    net : mxnet.gluon.HybridBlock, optional
+        The yolo network.
+        .. hint::
+            If net is ``None``, the transformation will not generate training targets.
+            Otherwise it will generate training targets to accelerate the training phase
+            since we push some workload to CPU workers instead of GPUs.
+    mean : array-like of size 3
+        Mean pixel values to be subtracted from image tensor. Default is [0.485, 0.456, 0.406].
+    std : array-like of size 3
+        Standard deviation to be divided from image. Default is [0.229, 0.224, 0.225].
+    iou_thresh : float
+        IOU overlap threshold for maximum matching, default is 0.5.
+    box_norm : array-like of size 4, default is (0.1, 0.1, 0.2, 0.2)
+        Std value to be divided from encoded values.
+    """
+    def __init__(self, k, width, height, net=None, mean=(0.485, 0.456, 0.406),
+                 std=(0.229, 0.224, 0.225), mixup=False, **kwargs):
+        self._k = k
+        self._width = width
+        self._height = height
+        self._mean = mean
+        self._std = std
+        self._mixup = mixup
+        self._target_generator = None
+        if net is None:
+            return
+
+        # in case network has reset_ctx to gpu
+        self._fake_x = (mx.nd.zeros((1, 256, int(height / 8), int(width / 8))),
+                        mx.nd.zeros((1, 512, int(height / 16), int(width / 16))),
+                        mx.nd.zeros((1, 1024, int(height / 32), int(width / 32))))
+        net = copy.deepcopy(net)
+        net.collect_params().reset_ctx(None)
+        with autograd.train_mode():
+            _, self._anchors, self._offsets, self._feat_maps, _, _, _, _ = net(*self._fake_x)
+        from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
+        self._target_generator = YOLOV3PrefetchTargetGenerator(num_class=len(net.classes), **kwargs)
+
+    def __call__(self, img, f1, f2, f3, bbox):
+        """Apply transform to training image/label."""
+
+        if len(img.shape) == 3:
+            img = mx.nd.expand_dims(img, axis=0)
+
+        k, h, w, c = img.shape
+        bbox = tbbox.resize(bbox, (w, h), (self._width, self._height))
+        
+        if self._target_generator is None:
+            return f1, f2, f3, bbox.astype(img.dtype)
+
+        # generate training target so cpu workers can help reduce the workload on gpu
+        gt_bboxes = mx.nd.array(bbox[np.newaxis, :, :4])
+        gt_ids = mx.nd.array(bbox[np.newaxis, :, 4:5])
+        if self._mixup:
+            gt_mixratio = mx.nd.array(bbox[np.newaxis, :, -1:])
+        else:
+            gt_mixratio = None
+        objectness, center_targets, scale_targets, weights, class_targets = self._target_generator(
+            mx.nd.zeros((1, 3, self._height, self._width)), self._feat_maps, self._anchors, self._offsets,
+            gt_bboxes, gt_ids, gt_mixratio)
+        return (f1, f2, f3, objectness[0], center_targets[0], scale_targets[0], weights[0],
+                class_targets[0], gt_bboxes[0])
+
+
+class YOLO3NBVideoInferenceTransform(object):
+    """Default YOLO validation transform.
+    Parameters
+    ----------
+    width : int
+        Image width.
+    height : int
+        Image height.
+    mean : array-like of size 3
+        Mean pixel values to be subtracted from image tensor. Default is [0.485, 0.456, 0.406].
+    std : array-like of size 3
+        Standard deviation to be divided from image. Default is [0.229, 0.224, 0.225].
+    """
+    def __init__(self, width, height, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        self._width = width
+        self._height = height
+        self._mean = mean
+        self._std = std
+
+    def __call__(self, img, f1, f2, f3, bbox, idx=None):
+        """Apply transform to validation image/label."""
+
+        if len(img.shape) == 3:
+            img = mx.nd.expand_dims(img, axis=0)
+
+        # resize box
+        k, h, w, c = img.shape
+        bbox = tbbox.resize(bbox, (w, h), (self._width, self._height))
+            
+        if idx is not None:
+            return f1, f2, f3, bbox.astype(img.dtype), idx
+        return f1, f2, f3, bbox.astype(img.dtype)

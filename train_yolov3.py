@@ -29,9 +29,9 @@ from datasets.imgnetvid import ImageNetVidDetection
 from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
 
-from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_mobilenet1_0
+from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_mobilenet1_0, yolo3_no_backbone
 from models.definitions.yolo.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultInferenceTransform, \
-    YOLO3VideoTrainTransform, YOLO3VideoInferenceTransform
+    YOLO3VideoTrainTransform, YOLO3VideoInferenceTransform, YOLO3NBVideoTrainTransform, YOLO3NBVideoInferenceTransform
 
 from utils.general import as_numpy
 
@@ -125,6 +125,9 @@ flags.DEFINE_list('window', '1, 1',
                   'Temporal window size of frames and the frame gap of the windows samples')
 flags.DEFINE_integer('seed', 233,
                      'Random seed to be fixed.')
+flags.DEFINE_string('features_dir', None,
+                    'If specified will use pre-saved DarkNet-53 features as input to YOLO backend, rather than images'
+                    'into a full YOLO network. Useful for memory saving.')
 
 
 def get_dataset(dataset_name, save_prefix=''):
@@ -146,9 +149,9 @@ def get_dataset(dataset_name, save_prefix=''):
 
     elif dataset_name.lower() == 'vid':
         train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty,
-                                             frames=FLAGS.frames, window=FLAGS.window)
+                                             frames=FLAGS.frames, window=FLAGS.window, features_dir=FLAGS.features_dir)
         val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty,
-                                           frames=FLAGS.frames, window=FLAGS.window)
+                                           frames=FLAGS.frames, window=FLAGS.window, features_dir=FLAGS.features_dir)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     else:
@@ -165,18 +168,29 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
     """Get dataloader."""
     width, height = FLAGS.data_shape, FLAGS.data_shape
 
+    if FLAGS.features_dir is not None:  # the input is pre-saved features
+        batchify_fn = Tuple(*([Stack() for _ in range(8)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
+        train_loader = gluon.data.DataLoader(
+            train_dataset.transform(YOLO3NBVideoTrainTransform(FLAGS.window[0], width, height, net, mixup=FLAGS.mixup)),
+            batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
+
+        val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
+        val_loader = gluon.data.DataLoader(
+            val_dataset.transform(YOLO3NBVideoInferenceTransform(width, height)),
+            batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
+
+        return train_loader, val_loader
+
+
     # stack image, all targets generated
     batchify_fn = Tuple(*([Stack() for _ in range(6)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
 
     if FLAGS.no_random_shape:
         train_loader = gluon.data.DataLoader(
-            train_dataset.transform(YOLO3DefaultTrainTransform(width, height, 3, net, mixup=FLAGS.mixup)),
+            train_dataset.transform(YOLO3VideoTrainTransform(FLAGS.window[0], width, height, net, mixup=FLAGS.mixup)),
             batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
     else:
-        if FLAGS.window[0] > 1:
-            transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
-        else:
-            transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
+        transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
         train_loader = RandomTransformDataLoader(
             transform_fns, train_dataset, batch_size=batch_size, interval=10, last_batch='rollover',
             shuffle=True, batchify_fn=batchify_fn, num_workers=FLAGS.num_workers)
@@ -237,7 +251,16 @@ def resume(net, async_net, resume, start_epoch):
 
 
 def get_net(trained_on_dataset, ctx, definition='ours'):
-    if definition == 'ours':  # our model definition from definitions.py, atm equiv to defaults, but might be useful in future
+    if FLAGS.features_dir is not None:
+        if FLAGS.syncbn and len(ctx) > 1:
+            net = yolo3_no_backbone(trained_on_dataset.classes,
+                                    norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                    norm_kwargs={'num_devices': len(ctx)})
+            async_net = yolo3_no_backbone(trained_on_dataset.classes)  # used by cpu worker
+        else:
+            net = yolo3_no_backbone(trained_on_dataset.classes)
+            async_net = net
+    elif definition == 'ours':  # our model definition from definitions.py, atm equiv to defaults, but might be useful in future
         if FLAGS.network == 'darknet53':
             if FLAGS.syncbn and len(ctx) > 1:
                 net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
@@ -314,7 +337,12 @@ def validate(net, val_data, ctx, eval_metric):
     mx.nd.waitall()
     net.hybridize()
     for batch in val_data:
-        data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
+        if FLAGS.features_dir is not None:
+            f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
+            f2 = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
+            f3 = gluon.utils.split_and_load(batch[2], ctx_list=ctx, batch_axis=0, even_split=False)
+        else:
+            data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
         label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
         det_bboxes = []
         det_ids = []
@@ -322,17 +350,30 @@ def validate(net, val_data, ctx, eval_metric):
         gt_bboxes = []
         gt_ids = []
         gt_difficults = []
-        for x, y in zip(data, label):
-            # get prediction results
-            ids, scores, bboxes = net(x)
-            det_ids.append(ids)
-            det_scores.append(scores)
-            # clip to image size
-            det_bboxes.append(bboxes.clip(0, batch[0].shape[2]))
-            # split ground truths
-            gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
-            gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
-            gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
+        if FLAGS.features_dir is not None:
+            for x1, x2, x3, y in zip(f1, f2, f3, label):
+                # get prediction results
+                ids, scores, bboxes = net(x1, x2, x3)
+                det_ids.append(ids)
+                det_scores.append(scores)
+                # clip to image size
+                det_bboxes.append(bboxes.clip(0, batch[0].shape[2]))
+                # split ground truths
+                gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
+                gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
+                gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
+        else:
+            for x, y in zip(data, label):
+                # get prediction results
+                ids, scores, bboxes = net(x)
+                det_ids.append(ids)
+                det_scores.append(scores)
+                # clip to image size
+                det_bboxes.append(bboxes.clip(0, batch[0].shape[2]))
+                # split ground truths
+                gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
+                gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
+                gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
 
         # lists with results ran on each gpu (ie len of list is = num gpus) in each list is (BatchSize, Data
         # update metric
@@ -429,24 +470,43 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
         net.hybridize()
         for i, batch in enumerate(train_data):
             batch_size = batch[0].shape[0]
-            data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
-            # objectness, center_targets, scale_targets, weights, class_targets
-            fixed_targets = [gluon.utils.split_and_load(batch[it], ctx_list=ctx, batch_axis=0) for it in range(1, 6)]
-            gt_boxes = gluon.utils.split_and_load(batch[6], ctx_list=ctx, batch_axis=0)
+            if FLAGS.features_dir is not None:
+                f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
+                f2 = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0)
+                f3 = gluon.utils.split_and_load(batch[2], ctx_list=ctx, batch_axis=0)
+                # objectness, center_targets, scale_targets, weights, class_targets
+                fixed_targets = [gluon.utils.split_and_load(batch[it], ctx_list=ctx, batch_axis=0) for it in range(3, 8)]
+                gt_boxes = gluon.utils.split_and_load(batch[8], ctx_list=ctx, batch_axis=0)
+            else:
+                data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
+                # objectness, center_targets, scale_targets, weights, class_targets
+                fixed_targets = [gluon.utils.split_and_load(batch[it], ctx_list=ctx, batch_axis=0) for it in range(1, 6)]
+                gt_boxes = gluon.utils.split_and_load(batch[6], ctx_list=ctx, batch_axis=0)
             sum_losses = []
             obj_losses = []
             center_losses = []
             scale_losses = []
             cls_losses = []
-            with autograd.record():
-                for ix, x in enumerate(data):
-                    obj_loss, center_loss, scale_loss, cls_loss = net(x, gt_boxes[ix], *[ft[ix] for ft in fixed_targets])
-                    sum_losses.append(obj_loss + center_loss + scale_loss + cls_loss)
-                    obj_losses.append(obj_loss)
-                    center_losses.append(center_loss)
-                    scale_losses.append(scale_loss)
-                    cls_losses.append(cls_loss)
-                autograd.backward(sum_losses)
+            if FLAGS.features_dir is not None:
+                with autograd.record():
+                    for ix, (x1, x2, x3) in enumerate(zip(f1, f2, f3)):
+                        obj_loss, center_loss, scale_loss, cls_loss = net(x1, x2, x3, gt_boxes[ix], *[ft[ix] for ft in fixed_targets])
+                        sum_losses.append(obj_loss + center_loss + scale_loss + cls_loss)
+                        obj_losses.append(obj_loss)
+                        center_losses.append(center_loss)
+                        scale_losses.append(scale_loss)
+                        cls_losses.append(cls_loss)
+                    autograd.backward(sum_losses)
+            else:
+                with autograd.record():
+                    for ix, x in enumerate(data):
+                        obj_loss, center_loss, scale_loss, cls_loss = net(x, gt_boxes[ix], *[ft[ix] for ft in fixed_targets])
+                        sum_losses.append(obj_loss + center_loss + scale_loss + cls_loss)
+                        obj_losses.append(obj_loss)
+                        center_losses.append(center_loss)
+                        scale_losses.append(scale_loss)
+                        cls_losses.append(cls_loss)
+                    autograd.backward(sum_losses)
             trainer.step(batch_size)
             obj_metrics.update(0, obj_losses)
             center_metrics.update(0, center_losses)
@@ -530,7 +590,15 @@ def main(_argv):
         net.reset_class(train_dataset.classes)
 
     # log a summary of the network
-    logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 3, FLAGS.data_shape, FLAGS.data_shape))))
+    if FLAGS.features_dir is not None:
+        logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 256,
+                                                           int(FLAGS.data_shape / 8), int(FLAGS.data_shape / 8))),
+                                 mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 512,
+                                                           int(FLAGS.data_shape / 16), int(FLAGS.data_shape / 16))),
+                                 mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 1024,
+                                                           int(FLAGS.data_shape / 32), int(FLAGS.data_shape / 32)))))
+    else:
+        logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 3, FLAGS.data_shape, FLAGS.data_shape))))
 
     # load the dataloader
     train_data, val_data = get_dataloader(async_net, train_dataset, val_dataset, FLAGS.batch_size)

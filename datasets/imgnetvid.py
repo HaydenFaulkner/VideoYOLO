@@ -20,7 +20,7 @@ class ImageNetVidDetection(VisionDataset):
     def __init__(self, root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
                  splits=[(2017, 'train')], allow_empty=True, videos=False,
                  transform=None, index_map=None, frames=1, inference=False,
-                 window=[1, 1]):
+                 window=[1, 1], features_dir=None):
 
         """
         Args:
@@ -54,7 +54,8 @@ class ImageNetVidDetection(VisionDataset):
             allow_empty = True  # allow true if getting video volumes, prevent empties when doing framewise only
         self._allow_empty = allow_empty
         self._windows = None
-        
+        self._features_dir = features_dir  # if specified load in features rather than images
+
         # setup a few paths
         self._coco_path = os.path.join(self.root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
         self._annotations_path = os.path.join(self.root, 'Annotations', 'VID', '{}', '{}', '{}.xml')
@@ -132,6 +133,23 @@ class ImageNetVidDetection(VisionDataset):
             numpy.ndarray: label
             int: idx (if inference=True)
         """
+        if self._features_dir is not None:
+            img_path = self.sample_path(idx)
+            label = self._load_label(idx)[:, :-1]  # remove track id
+
+            img = mx.image.imread(img_path, 1)
+
+            file_id = os.path.join(img_path.split(os.sep)[-2], img_path.split(os.sep)[-1][:-5])
+
+            f1 = np.load(os.path.join(self._features_dir, file_id + '_F1.npy'))
+            f2 = np.load(os.path.join(self._features_dir, file_id + '_F2.npy'))
+            f3 = np.load(os.path.join(self._features_dir, file_id + '_F3.npy'))
+
+            if self._inference:  # in inference we want to return the idx also
+                return img, f1, f2, f3, label, idx
+            else:
+                return img, f1, f2, f3, label
+
         if not self._videos:  # frames are samples
             img_path = self.sample_path(idx)
             label = self._load_label(idx)[:, :-1]  # remove track id
@@ -167,6 +185,11 @@ class ImageNetVidDetection(VisionDataset):
 
             # necessary to prevent asynchronous operation overload and memory issue
             # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
+
+            # this actually doesn't seem to work may be a deeper python bug related to:
+            # https://github.com/apache/incubator-mxnet/issues/13521
+            # and
+            # https://bugs.python.org/issue34172
             mx.nd.waitall()
 
             if self._inference:  # in inference we want to return the idx also
