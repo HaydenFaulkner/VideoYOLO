@@ -175,6 +175,7 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
             batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
 
         val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
+        val_batchify_fn = Tuple(*([Stack() for _ in range(3)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
         val_loader = gluon.data.DataLoader(
             val_dataset.transform(YOLO3NBVideoInferenceTransform(width, height)),
             batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
@@ -341,9 +342,10 @@ def validate(net, val_data, ctx, eval_metric):
             f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
             f2 = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
             f3 = gluon.utils.split_and_load(batch[2], ctx_list=ctx, batch_axis=0, even_split=False)
+            label = gluon.utils.split_and_load(batch[3], ctx_list=ctx, batch_axis=0, even_split=False)
         else:
             data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
-        label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
+            label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
         det_bboxes = []
         det_ids = []
         det_scores = []
