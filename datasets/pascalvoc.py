@@ -17,7 +17,8 @@ class VOCDetection(VisionDataset):
 
     def __init__(self, root=os.path.join('datasets', 'PascalVOC', 'VOCdevkit'),
                  splits=[(2007, 'trainval'), (2012, 'trainval')],
-                 transform=None, index_map=None, preload_label=True, difficult=True, inference=False):
+                 transform=None, index_map=None, preload_label=True,
+                 difficult=True, inference=False, features_dir=None):
         """
         Args:
             root (str): root file path of the dataset (default is 'datasets/PascalVOC/VOCdevkit')
@@ -27,6 +28,7 @@ class VOCDetection(VisionDataset):
             preload_label (bool): load and store all labels in system memory (default is True)
             difficult (bool): include difficult samples (default is True) 
             inference (bool): are we doing inference? (default is False)
+            features_dir (str): dir to load backbone features from (default is None)
         """
         super(VOCDetection, self).__init__(root)
         self._im_shapes = {}
@@ -35,6 +37,7 @@ class VOCDetection(VisionDataset):
         self._splits = splits
         self._difficult = difficult
         self._inference = inference
+        self._features_dir = features_dir
 
         # setup a few paths
         self._coco_path = os.path.join(self.root, 'jsons', '_'.join([str(s[0]) + s[1] for s in self._splits])+'.json')
@@ -102,6 +105,17 @@ class VOCDetection(VisionDataset):
         img_path = self.sample_path(idx)
         label = self._labels[idx] if self._labels else self._load_label(idx)
         img = mx.image.imread(img_path, 1)
+
+        if self._features_dir is not None:
+            file_id = self.samples[self.sample_ids[idx]][1]
+            f1 = np.load(os.path.join(self._features_dir, file_id + '_F1.npy'))
+            f2 = np.load(os.path.join(self._features_dir, file_id + '_F2.npy'))
+            f3 = np.load(os.path.join(self._features_dir, file_id + '_F3.npy'))
+
+            if self._inference:  # in inference we want to return the idx also
+                return img, f1, f2, f3, label, idx
+            else:
+                return img, f1, f2, f3, label
 
         if self._transform is not None:
             img, label = self._transform(img, label)

@@ -132,8 +132,8 @@ flags.DEFINE_string('features_dir', None,
 
 def get_dataset(dataset_name, save_prefix=''):
     if dataset_name.lower() == 'voc':
-        train_dataset = VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')])
-        val_dataset = VOCDetection(splits=[(2007, 'test')])
+        train_dataset = VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')], features_dir=FLAGS.features_dir)
+        val_dataset = VOCDetection(splits=[(2007, 'test')], features_dir=FLAGS.features_dir)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     elif dataset_name.lower() == 'coco':
