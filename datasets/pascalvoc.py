@@ -88,7 +88,7 @@ class VOCDetection(VisionDataset):
         return wn_classes
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.sample_ids)
 
     def __getitem__(self, idx):
         """
