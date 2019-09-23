@@ -128,6 +128,10 @@ flags.DEFINE_integer('seed', 233,
 flags.DEFINE_string('features_dir', None,
                     'If specified will use pre-saved DarkNet-53 features as input to YOLO backend, rather than images'
                     'into a full YOLO network. Useful for memory saving.')
+flags.DEFINE_string('pooling_type', None,
+                    'pooling type, either max or mean.')
+flags.DEFINE_string('pooling_position', None,
+                    'pooling position, either early or late.')
 
 
 def get_dataset(dataset_name, save_prefix=''):
@@ -265,37 +269,34 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
         if FLAGS.network == 'darknet53':
             if FLAGS.syncbn and len(ctx) > 1:
                 net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                      root='models',
                                       pretrained_base=FLAGS.pretrained_cnn,
                                       norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                       freeze_base=bool(FLAGS.freeze_base),
-                                      norm_kwargs={'num_devices': len(ctx)})
+                                      norm_kwargs={'num_devices': len(ctx)},
+                                      pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)
                 async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                            root='models',
                                             pretrained_base=False,
-                                            freeze_base=bool(FLAGS.freeze_base))  # used by cpu worker
+                                            freeze_base=bool(FLAGS.freeze_base),
+                                            pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)  # used by cpu worker
             else:
                 net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                      root='models',
                                       pretrained_base=FLAGS.pretrained_cnn,
-                                      freeze_base=bool(FLAGS.freeze_base))
+                                      freeze_base=bool(FLAGS.freeze_base),
+                                      pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)
                 async_net = net
 
         elif FLAGS.network == 'mobilenet1.0':
             if FLAGS.syncbn and len(ctx) > 1:
                 net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                         root='models',
                                          pretrained_base=FLAGS.pretrained_cnn,
                                          norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                          freeze_base=bool(FLAGS.freeze_base),
                                          norm_kwargs={'num_devices': len(ctx)})
                 async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                               root='models',
                                                pretrained_base=False,
                                                freeze_base=bool(FLAGS.freeze_base))  # used by cpu worker
             else:
                 net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                         root='models',
                                          pretrained_base=FLAGS.pretrained_cnn,
                                          freeze_base=bool(FLAGS.freeze_base))
                 async_net = net
@@ -336,7 +337,8 @@ def validate(net, val_data, ctx, eval_metric):
     # set nms threshold and topk constraint
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     mx.nd.waitall()
-    net.hybridize()
+    if FLAGS.window[0] == 1:
+        net.hybridize()  # can't hybridize temporal net, backend error
     for batch in val_data:
         if FLAGS.features_dir is not None:
             f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
@@ -469,7 +471,8 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
 
         tic = time.time()
         btic = time.time()
-        net.hybridize()
+        if FLAGS.window[0] == 1:
+            net.hybridize()  # can't hybridize temporal net, backend error
         for i, batch in enumerate(train_data):
             batch_size = batch[0].shape[0]
             if FLAGS.features_dir is not None:
@@ -558,6 +561,12 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
 def main(_argv):
     FLAGS.window = [int(s) for s in FLAGS.window]
 
+    if FLAGS.window[0] > 1:
+        assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'
+    else:
+        FLAGS.pooling_type = None  # can't pool 1 frame..
+        FLAGS.pooling_postion = None
+
     if FLAGS.num_workers < 0:
         FLAGS.num_workers = multiprocessing.cpu_count()
 
@@ -593,14 +602,25 @@ def main(_argv):
 
     # log a summary of the network
     if FLAGS.features_dir is not None:
-        logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 256,
-                                                           int(FLAGS.data_shape / 8), int(FLAGS.data_shape / 8))),
-                                 mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 512,
-                                                           int(FLAGS.data_shape / 16), int(FLAGS.data_shape / 16))),
-                                 mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 1024,
-                                                           int(FLAGS.data_shape / 32), int(FLAGS.data_shape / 32)))))
+        if FLAGS.window[0] > 1:
+            logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, FLAGS.window[0], 256,
+                                                               int(FLAGS.data_shape / 8), int(FLAGS.data_shape / 8))),
+                                     mx.nd.ndarray.ones(shape=(FLAGS.batch_size, FLAGS.window[0], 512,
+                                                               int(FLAGS.data_shape / 16), int(FLAGS.data_shape / 16))),
+                                     mx.nd.ndarray.ones(shape=(FLAGS.batch_size, FLAGS.window[0], 1024,
+                                                               int(FLAGS.data_shape / 32), int(FLAGS.data_shape / 32)))))
+        else:
+            logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 256,
+                                                               int(FLAGS.data_shape / 8), int(FLAGS.data_shape / 8))),
+                                     mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 512,
+                                                               int(FLAGS.data_shape / 16), int(FLAGS.data_shape / 16))),
+                                     mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 1024,
+                                                               int(FLAGS.data_shape / 32), int(FLAGS.data_shape / 32)))))
     else:
-        logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 3, FLAGS.data_shape, FLAGS.data_shape))))
+        if FLAGS.window[0] > 1:
+            logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, FLAGS.window[0], 3, FLAGS.data_shape, FLAGS.data_shape))))
+        else:
+            logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 3, FLAGS.data_shape, FLAGS.data_shape))))
 
     # load the dataloader
     train_data, val_data = get_dataloader(async_net, train_dataset, val_dataset, FLAGS.batch_size)

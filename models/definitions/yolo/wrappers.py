@@ -6,7 +6,7 @@ from gluoncv.model_zoo import get_model
 # only use custom modelling code on personal machines so as to not break everything
 if platform.node() == 'HUB-HOME' or platform.node() == 'HUB':
     print("USING CUSTOM MODEL CODE")
-    from .yolo3 import get_yolov3, YOLOV3_noback
+    from .yolo3 import get_yolov3, YOLOV3_noback, YOLOV3T, TimeDistributed
     from .darknet import darknet53
     from .mobilenet import get_mobilenet
 else:
@@ -16,7 +16,8 @@ else:
 
 
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
-                    norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False, **kwargs):
+                    norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False, pooling_type=None, pooling_position=None,
+                    **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -42,7 +43,6 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
     mxnet.gluon.HybridBlock
         Fully hybrid yolo3 network.
     """
-    input_channels = 3  # todo fix hardcode
     if pretrained:
         warnings.warn("Custom models don't provide `pretrained` weights, ignored.")
     if transfer is None:
@@ -66,9 +66,12 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
             [30, 61, 62, 45, 59, 119],
             [116, 90, 156, 198, 373, 326]]
         strides = [8, 16, 32]
-        net = get_yolov3(
-            'darknet53', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
-            norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+        # net = get_yolov3(
+        #     'darknet53', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
+        #     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)  # don't need get_yolov3 as won't use gluon pretrained
+        # net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
+        net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, pooling_type=pooling_type,
+                      pooling_position=pooling_position, **kwargs)
     else:
         net = get_model('yolo3_darknet53_' + str(transfer), pretrained=True, **kwargs)
         reuse_classes = [x for x in classes if x in net.classes]
