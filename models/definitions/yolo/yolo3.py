@@ -702,7 +702,7 @@ class YOLOV3T(gluon.HybridBlock):
                     self.stages.add(stage)
 
                 block = YOLODetectionBlockV3(channel, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
-                if self._k_join_pos == 'late':
+                if self._k > 1 and self._k_join_pos == 'late':
                     self.yolo_blocks.add(TimeDistributed(block))
                 else:
                     self.yolo_blocks.add(block)
@@ -711,7 +711,7 @@ class YOLOV3T(gluon.HybridBlock):
                 self.yolo_outputs.add(output)
 
                 if i > 0:
-                    if self._k_join_pos == 'late':
+                    if self._k > 1 and self._k_join_pos == 'late':
                         self.transitions.add(TimeDistributed(_conv2d(channel, 1, 0, 1,
                                                              norm_layer=norm_layer, norm_kwargs=norm_kwargs)))
                     else:
@@ -768,7 +768,7 @@ class YOLOV3T(gluon.HybridBlock):
         routes = []
         for stage, block, output in zip(self.stages, self.yolo_blocks, self.yolo_outputs):
             x = stage(x)
-            if self._k_join_pos == 'early':
+            if self._k > 1 and self._k_join_pos == 'early':
                 if self._k_join_type == 'cat':
                     routes.append(F.reshape(x,(0,-3,-2)))  # B,K,C,H,W -> B,K*C,H,W
                 elif self._k_join_type in ['max', 'mean']:
@@ -776,7 +776,7 @@ class YOLOV3T(gluon.HybridBlock):
             else:
                 routes.append(x)
 
-        if self._k_join_pos == 'early':
+        if self._k > 1 and self._k_join_pos == 'early':
             if self._k_join_type == 'cat':
                 x = F.reshape(x,(0,-3,-2))  # B,K,C,H,W -> B,K*C,H,W
             elif self._k_join_type in ['max', 'mean']:
@@ -785,7 +785,7 @@ class YOLOV3T(gluon.HybridBlock):
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
         for i, block, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs):
             x, tip = block(x)
-            if self._k_join_pos == 'late':
+            if self._k > 1 and self._k_join_pos == 'late':
                 if self._k_join_type == 'cat':
                     tip = F.reshape(tip, (0, -3, -2))  # B,K,C,H,W -> B,K*C,H,W
                 elif self._k_join_type in ['max', 'mean']:
@@ -819,7 +819,7 @@ class YOLOV3T(gluon.HybridBlock):
             route_now = routes[::-1][i + 1]
 
             # concat
-            if self._k_join_pos == 'late':
+            if self._k > 1 and self._k_join_pos == 'late':
                 x = F.concat(F.slice_like(upsample, route_now * 0, axes=(3, 4)), route_now, dim=2)
             else:
                 x = F.concat(F.slice_like(upsample, route_now * 0, axes=(2, 3)), route_now, dim=1)
