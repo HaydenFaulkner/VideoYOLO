@@ -128,10 +128,10 @@ flags.DEFINE_integer('seed', 233,
 flags.DEFINE_string('features_dir', None,
                     'If specified will use pre-saved DarkNet-53 features as input to YOLO backend, rather than images'
                     'into a full YOLO network. Useful for memory saving.')
-flags.DEFINE_string('pooling_type', None,
-                    'pooling type, either max or mean.')
-flags.DEFINE_string('pooling_position', None,
-                    'pooling position, either early or late.')
+flags.DEFINE_string('k_join_type', None,
+                    'way to fuse k type, either max, mean, cat.')
+flags.DEFINE_string('k_join_pos', None,
+                    'position of k fuse, either early or late.')
 
 
 def get_dataset(dataset_name, save_prefix=''):
@@ -273,16 +273,16 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                       norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                       freeze_base=bool(FLAGS.freeze_base),
                                       norm_kwargs={'num_devices': len(ctx)},
-                                      pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)
+                                      k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos)
                 async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                                             pretrained_base=False,
                                             freeze_base=bool(FLAGS.freeze_base),
-                                            pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)  # used by cpu worker
+                                            k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos)  # used by cpu worker
             else:
                 net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                                       pretrained_base=FLAGS.pretrained_cnn,
                                       freeze_base=bool(FLAGS.freeze_base),
-                                      pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)
+                                      k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos)
                 async_net = net
 
         elif FLAGS.network == 'mobilenet1.0':
@@ -292,16 +292,16 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                          norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                          freeze_base=bool(FLAGS.freeze_base),
                                          norm_kwargs={'num_devices': len(ctx)},
-                                         pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)
+                                         k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos)
                 async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                                pretrained_base=False,
                                                freeze_base=bool(FLAGS.freeze_base),
-                                               pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)  # used by cpu worker
+                                               k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos)  # used by cpu worker
             else:
                 net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                          pretrained_base=FLAGS.pretrained_cnn,
                                          freeze_base=bool(FLAGS.freeze_base),
-                                         pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)
+                                         k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos)
                 async_net = net
         else:
             raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))

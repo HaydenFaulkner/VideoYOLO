@@ -99,7 +99,52 @@ def _upsample(x, stride=2):
     """
     return x.repeat(axis=-1, repeats=stride).repeat(axis=-2, repeats=stride)
 
-# class TemporalPooling(gluon.HybridBlock):
+class TemporalPooling(gluon.HybridBlock):
+    def __init__(self, k, type='max', pool_size=None, strides=None, padding=0, style='direct', **kwargs):
+        """
+        A Temporal Pooling Layer
+        """
+        super(TemporalPooling, self).__init__(**kwargs)
+
+        assert type in ['max', 'mean']
+        assert style in ['direct', 'layer']
+
+        self._type = type
+        self._style = style
+
+        if pool_size is None:
+            pool_size = k
+        else:
+            print("Particular pool size specified, so need to use 'layer' style")
+            style = 'layer'
+
+        if style == 'layer':
+            with self.name_scope():
+                if type == 'max':
+                    self.pool = gluon.nn.MaxPool1D(pool_size=pool_size,
+                                                   strides=strides,
+                                                   padding=padding,
+                                                   layout='NWC')
+                else:
+                    self.pool = gluon.nn.AvgPool1D(pool_size=pool_size,
+                                                   strides=strides,
+                                                   padding=padding,
+                                                   layout='NWC')
+
+
+    def hybrid_forward(self, F, x):
+        if self._style == 'layer':
+            shp = x
+            x = F.reshape(x, (0, 0, -1))
+            x = self.pool(x)
+            x = F.reshape_like(x, shp, lhs_begin=2, rhs_begin=2)
+            x = F.squeeze(x, axis=1)
+            return x
+        else:
+            if self._type == 'max':
+                return F.squeeze(F.max(x, axis=1, keepdims=True), axis=1)
+            else:
+                return F.squeeze(F.mean(x, axis=1, keepdims=True), axis=1)
 
 
 
@@ -621,7 +666,7 @@ class YOLOV3T(gluon.HybridBlock):
     def __init__(self, stages, channels, anchors, strides, classes, alloc_size=(128, 128),
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
                  ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None,
-                 pooling_type=None, pooling_position=None, **kwargs):
+                 k=None, k_join_type=None, k_join_pos=None, **kwargs):
         super(YOLOV3T, self).__init__(**kwargs)
         self._classes = classes
         self.nms_thresh = nms_thresh
@@ -629,10 +674,11 @@ class YOLOV3T(gluon.HybridBlock):
         self.post_nms = post_nms
         self._pos_iou_thresh = pos_iou_thresh
         self._ignore_iou_thresh = ignore_iou_thresh
-        self._pooling_type = pooling_type
-        self._pooling_position = pooling_position
-        assert pooling_type in [None, 'max', 'mean', 'cat']
-        assert pooling_position in [None, 'early', 'late']
+        self._k = k
+        self._k_join_type = k_join_type
+        self._k_join_pos = k_join_pos
+        assert k_join_type in [None, 'max', 'mean', 'cat']
+        assert k_join_pos in [None, 'early', 'late']
         if pos_iou_thresh >= 1:
             self._target_generator = YOLOV3TargetMerger(len(classes), ignore_iou_thresh)
         else:
@@ -640,6 +686,8 @@ class YOLOV3T(gluon.HybridBlock):
                 "pos_iou_thresh({}) < 1.0 is not implemented!".format(pos_iou_thresh))
         self._loss = YOLOV3Loss()
         with self.name_scope():
+            if k > 1 and k_join_type in ['max', 'mean']:
+                self.pool = TemporalPooling(k=k, type=k_join_type)
             self.stages = nn.HybridSequential()
             self.transitions = nn.HybridSequential()
             self.yolo_blocks = nn.HybridSequential()
@@ -647,13 +695,14 @@ class YOLOV3T(gluon.HybridBlock):
             # note that anchors and strides should be used in reverse order
             for i, stage, channel, anchor, stride in zip(
                     range(len(stages)), stages, channels, anchors[::-1], strides[::-1]):
-                if self._pooling_type is not None:
-                    self.stages.add(TimeDistributed(stage))  # todo might move this out for late pooling?
+
+                if self._k > 1:
+                    self.stages.add(TimeDistributed(stage))
                 else:
                     self.stages.add(stage)
 
                 block = YOLODetectionBlockV3(channel, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
-                if self._pooling_position == 'late':
+                if self._k_join_pos == 'late':
                     self.yolo_blocks.add(TimeDistributed(block))
                 else:
                     self.yolo_blocks.add(block)
@@ -662,7 +711,7 @@ class YOLOV3T(gluon.HybridBlock):
                 self.yolo_outputs.add(output)
 
                 if i > 0:
-                    if self._pooling_position == 'late':
+                    if self._k_join_pos == 'late':
                         self.transitions.add(TimeDistributed(_conv2d(channel, 1, 0, 1,
                                                              norm_layer=norm_layer, norm_kwargs=norm_kwargs)))
                     else:
@@ -719,33 +768,28 @@ class YOLOV3T(gluon.HybridBlock):
         routes = []
         for stage, block, output in zip(self.stages, self.yolo_blocks, self.yolo_outputs):
             x = stage(x)
-            if self._pooling_position == 'early':
-                if self._pooling_type == 'cat':
+            if self._k_join_pos == 'early':
+                if self._k_join_type == 'cat':
                     routes.append(F.reshape(x,(0,-3,-2)))  # B,K,C,H,W -> B,K*C,H,W
-                elif self._pooling_type == 'mean':
-                    routes.append(F.squeeze(F.mean(x, axis=1, keepdims=True), axis=1))
-                else:
-                    routes.append(F.squeeze(F.max(x, axis=1, keepdims=True), axis=1))
+                elif self._k_join_type in ['max', 'mean']:
+                    routes.append(self.pool(x))
             else:
                 routes.append(x)
 
-        if self._pooling_position == 'early':
-            if self._pooling_type == 'cat':
+        if self._k_join_pos == 'early':
+            if self._k_join_type == 'cat':
                 x = F.reshape(x,(0,-3,-2))  # B,K,C,H,W -> B,K*C,H,W
-            elif self._pooling_type == 'mean':
-                x = F.squeeze(F.mean(x, axis=1, keepdims=True), axis=1)
-            else:
-                x = F.squeeze(F.max(x, axis=1, keepdims=True), axis=1)
+            elif self._k_join_type in ['max', 'mean']:
+                x = self.pool(x)
+
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
         for i, block, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs):
             x, tip = block(x)
-            if self._pooling_position == 'late':
-                if self._pooling_type == 'cat':
+            if self._k_join_pos == 'late':
+                if self._k_join_type == 'cat':
                     tip = F.reshape(tip, (0, -3, -2))  # B,K,C,H,W -> B,K*C,H,W
-                elif self._pooling_type == 'mean':
-                    tip = F.squeeze(F.mean(tip, axis=1, keepdims=True), axis=1)
-                else:
-                    tip = F.squeeze(F.max(tip, axis=1, keepdims=True), axis=1)
+                elif self._k_join_type in ['max', 'mean']:
+                    tip = self.pool(tip)
 
             if autograd.is_training():
                 dets, box_centers, box_scales, objness, class_pred, anchors, offsets = output(tip)
@@ -761,15 +805,21 @@ class YOLOV3T(gluon.HybridBlock):
                 all_feat_maps.append(fake_featmap)
             else:
                 dets = output(tip)
+
             all_detections.append(dets)
-            if i >= len(routes) - 1:
+
+            if i >= len(routes) - 1: # last output layer scale
                 break
+
             # add transition layers
             x = self.transitions[i](x)
+
             # upsample feature map reverse to shallow layers
             upsample = _upsample(x, stride=2)
             route_now = routes[::-1][i + 1]
-            if self._pooling_position == 'late':
+
+            # concat
+            if self._k_join_pos == 'late':
                 x = F.concat(F.slice_like(upsample, route_now * 0, axes=(3, 4)), route_now, dim=2)
             else:
                 x = F.concat(F.slice_like(upsample, route_now * 0, axes=(2, 3)), route_now, dim=1)
