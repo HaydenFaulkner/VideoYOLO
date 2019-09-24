@@ -291,14 +291,17 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                          pretrained_base=FLAGS.pretrained_cnn,
                                          norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                          freeze_base=bool(FLAGS.freeze_base),
-                                         norm_kwargs={'num_devices': len(ctx)})
+                                         norm_kwargs={'num_devices': len(ctx)},
+                                         pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)
                 async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                                pretrained_base=False,
-                                               freeze_base=bool(FLAGS.freeze_base))  # used by cpu worker
+                                               freeze_base=bool(FLAGS.freeze_base),
+                                               pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)  # used by cpu worker
             else:
                 net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                          pretrained_base=FLAGS.pretrained_cnn,
-                                         freeze_base=bool(FLAGS.freeze_base))
+                                         freeze_base=bool(FLAGS.freeze_base),
+                                         pooling_type=FLAGS.pooling_type, pooling_position=FLAGS.pooling_position)
                 async_net = net
         else:
             raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))

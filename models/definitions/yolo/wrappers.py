@@ -111,7 +111,8 @@ def yolo3_no_backbone(classes, norm_layer=BatchNorm, norm_kwargs=None, **kwargs)
 
 
 def yolo3_mobilenet1_0(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
-                       norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False, **kwargs):
+                       norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False, pooling_type=None, pooling_position=None,
+                       **kwargs):
     """YOLO3 multi-scale with mobilenet base network on custom dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -157,9 +158,12 @@ def yolo3_mobilenet1_0(classes, dataset_name, transfer=None, pretrained_base=Tru
             [30, 61, 62, 45, 59, 119],
             [116, 90, 156, 198, 373, 326]]
         strides = [8, 16, 32]
-        net = get_yolov3(
-            'mobilenet1.0', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
-            norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+        # net = get_yolov3(
+        #     'mobilenet1.0', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
+        #     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)  # don't need get_yolov3 as won't use gluon pretrained
+        # net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
+        net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, pooling_type=pooling_type,
+                      pooling_position=pooling_position, **kwargs)
     else:
         net = get_model('yolo3_mobilenet1.0_' + str(transfer), pretrained=True, **kwargs)
         reuse_classes = [x for x in classes if x in net.classes]
