@@ -99,6 +99,23 @@ def _upsample(x, stride=2):
     """
     return x.repeat(axis=-1, repeats=stride).repeat(axis=-2, repeats=stride)
 
+def _conv3d(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
+    """A common conv-bn-leakyrelu cell"""
+    cell = nn.HybridSequential(prefix='')
+    cell.add(nn.Conv3D(channel, kernel_size=kernel, strides=stride, padding=padding, use_bias=False))
+    cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
+    cell.add(nn.LeakyReLU(0.1))
+    return cell
+
+def _conv21d(channel, t, d, m, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
+    """A common conv-bn-leakyrelu cell"""
+    cell = nn.HybridSequential(prefix='')
+
+    cell.add(_conv3d(m, (1, d, d), (0, padding, padding), stride, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+    cell.add(_conv3d(channel, (t, 1, 1), (1, 0, 0), stride, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+
+    return cell
+
 class TemporalPooling(gluon.HybridBlock):
     def __init__(self, k, type='max', pool_size=None, strides=None, padding=0, style='direct', **kwargs):
         """
@@ -146,6 +163,31 @@ class TemporalPooling(gluon.HybridBlock):
             else:
                 return F.squeeze(F.mean(x, axis=1, keepdims=True), axis=1)
 
+
+class Conv(gluon.HybridBlock):
+    def __init__(self, type, channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+        """
+        A Temporal Pooling Layer
+        """
+        super(Conv, self).__init__(**kwargs)
+
+        assert type in ['2', '3', '21']
+
+        self._type = type
+
+        with self.name_scope():
+            if type == '2':
+                self.conv = _conv2d(channel=channel, kernel=kernel, padding=padding, stride=stride,
+                                    norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+            elif type == '3':
+                self.conv = _conv3d(channel=channel, kernel=kernel, padding=padding, stride=stride,
+                                    norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+            else:
+                self.conv = _conv21d(channel=channel, t=kernel, d=kernel, m=channel, padding=padding, stride=stride,
+                                     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+
+    def hybrid_forward(self, F, x):
+            return self.conv(x)
 
 
 class YOLOOutputV3(gluon.HybridBlock):
@@ -313,26 +355,42 @@ class YOLODetectionBlockV3(gluon.HybridBlock):
         Additional `norm_layer` arguments, for example `num_devices=4`
         for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
     """
-    def __init__(self, channel, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+    def __init__(self, channel, conv_type='2', norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
         super(YOLODetectionBlockV3, self).__init__(**kwargs)
+
+        self._conv_type = conv_type
+
         assert channel % 2 == 0, "channel {} cannot be divided by 2".format(channel)
         with self.name_scope():
             self.body = nn.HybridSequential(prefix='')
             for _ in range(2):
                 # 1x1 reduce
-                self.body.add(_conv2d(channel, 1, 0, 1,
-                                      norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                # self.body.add(_conv2d(channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                if conv_type in ['3', '21']:  # keep the expand as a normal 1x1x1 3d conv
+                    self.body.add(Conv('3', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                else:
+                    self.body.add(Conv('2', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
                 # 3x3 expand
-                self.body.add(_conv2d(channel * 2, 3, 1, 1,
-                                      norm_layer=norm_layer, norm_kwargs=norm_kwargs))
-            self.body.add(_conv2d(channel, 1, 0, 1,
-                                  norm_layer=norm_layer, norm_kwargs=norm_kwargs))
-            self.tip = _conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+                # self.body.add(_conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                self.body.add(Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
 
-    # pylint: disable=unused-argument
+            # self.body.add(_conv2d(channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+            if conv_type in ['3', '21']:
+                self.body.add(Conv('3', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+            else:
+                self.body.add(Conv('2', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+
+            # self.tip = _conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+            self.tip = Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+
     def hybrid_forward(self, F, x):
+        if self._conv_type in ['3', '21']:
+            x = F.swapaxes(x, 1, 2)
         route = self.body(x)
         tip = self.tip(route)
+        if self._conv_type in ['3', '21']:
+            route = F.swapaxes(route, 1, 2)
+            tip = F.swapaxes(tip, 1, 2)
         return route, tip
 
 
@@ -666,7 +724,7 @@ class YOLOV3T(gluon.HybridBlock):
     def __init__(self, stages, channels, anchors, strides, classes, alloc_size=(128, 128),
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
                  ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None,
-                 k=None, k_join_type=None, k_join_pos=None, **kwargs):
+                 k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', **kwargs):
         super(YOLOV3T, self).__init__(**kwargs)
         self._classes = classes
         self.nms_thresh = nms_thresh
@@ -677,6 +735,11 @@ class YOLOV3T(gluon.HybridBlock):
         self._k = k
         self._k_join_type = k_join_type
         self._k_join_pos = k_join_pos
+        self._block_conv_type = block_conv_type
+        if block_conv_type in ['3', '21']:
+            assert k > 1, "k must be greater than 1 to use 3D or 2+1D convolutions"
+            assert k_join_pos == 'late', "only 'late' pooling can be used when using 3D or 2+1D convolutions"
+            assert k_join_type is not None, "please specify a k_join_type: max, mean, or cat"
         assert k_join_type in [None, 'max', 'mean', 'cat']
         assert k_join_pos in [None, 'early', 'late']
         if pos_iou_thresh >= 1:
@@ -701,8 +764,8 @@ class YOLOV3T(gluon.HybridBlock):
                 else:
                     self.stages.add(stage)
 
-                block = YOLODetectionBlockV3(channel, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
-                if self._k > 1 and self._k_join_pos == 'late':
+                block = YOLODetectionBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+                if self._k > 1 and self._k_join_pos == 'late' and block_conv_type == '2':
                     self.yolo_blocks.add(TimeDistributed(block))
                 else:
                     self.yolo_blocks.add(block)
