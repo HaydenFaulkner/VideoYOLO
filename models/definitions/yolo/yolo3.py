@@ -613,7 +613,7 @@ class YOLOV3T(gluon.HybridBlock):
         self._ignore_iou_thresh = ignore_iou_thresh
         self._pooling_type = pooling_type
         self._pooling_position = pooling_position
-        assert pooling_type in [None, 'max', 'mean']
+        assert pooling_type in [None, 'max', 'mean', 'cat']
         assert pooling_position in [None, 'early', 'late']
         if pos_iou_thresh >= 1:
             self._target_generator = YOLOV3TargetMerger(len(classes), ignore_iou_thresh)
@@ -702,7 +702,9 @@ class YOLOV3T(gluon.HybridBlock):
         for stage, block, output in zip(self.stages, self.yolo_blocks, self.yolo_outputs):
             x = stage(x)
             if self._pooling_position == 'early':
-                if self._pooling_type == 'mean':
+                if self._pooling_type == 'cat':
+                    routes.append(F.reshape(x,(0,-3,-2)))  # B,K,C,H,W -> B,K*C,H,W
+                elif self._pooling_type == 'mean':
                     routes.append(F.squeeze(F.mean(x, axis=1, keepdims=True), axis=1))
                 else:
                     routes.append(F.squeeze(F.max(x, axis=1, keepdims=True), axis=1))
@@ -710,7 +712,9 @@ class YOLOV3T(gluon.HybridBlock):
                 routes.append(x)
 
         if self._pooling_position == 'early':
-            if self._pooling_type == 'mean':
+            if self._pooling_type == 'cat':
+                x = F.reshape(x,(0,-3,-2))  # B,K,C,H,W -> B,K*C,H,W
+            elif self._pooling_type == 'mean':
                 x = F.squeeze(F.mean(x, axis=1, keepdims=True), axis=1)
             else:
                 x = F.squeeze(F.max(x, axis=1, keepdims=True), axis=1)
@@ -718,7 +722,9 @@ class YOLOV3T(gluon.HybridBlock):
         for i, block, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs):
             x, tip = block(x)
             if self._pooling_position == 'late':
-                if self._pooling_type == 'mean':
+                if self._pooling_type == 'cat':
+                    tip = F.reshape(tip, (0, -3, -2))  # B,K,C,H,W -> B,K*C,H,W
+                elif self._pooling_type == 'mean':
                     tip = F.squeeze(F.mean(tip, axis=1, keepdims=True), axis=1)
                 else:
                     tip = F.squeeze(F.max(tip, axis=1, keepdims=True), axis=1)
