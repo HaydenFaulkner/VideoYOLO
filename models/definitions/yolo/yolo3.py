@@ -31,15 +31,20 @@ __all__ = ['YOLOV3',
            ]
 
 class TimeDistributed(gluon.HybridBlock):
-    def __init__(self, model, style='reshape', **kwargs):
+    def __init__(self, model, style='reshape1', **kwargs):
         """
         A time distributed layer like that seen in Keras
         Args:
             model: the backbone model that will be repeated over time
-            style (str): either 'reshape' or 'for' for the implementation to use (default is reshape)
+            style (str): either 'reshape1', 'reshape2' or 'for' for the implementation to use (default is reshape1)
+                         NOTE!!: Only reshape1 works with hybrid models
         """
         super(TimeDistributed, self).__init__(**kwargs)
-        assert style in ['reshape', 'for']
+        assert style in ['reshape1', 'reshape2', 'for']
+
+        if style != 'reshape1':
+            print("WARNING: net can't be hybridized if {} is used for the TimeDistributed layer style".format(style))
+
         self._style = style
         with self.name_scope():
             self.model = model
@@ -58,11 +63,21 @@ class TimeDistributed(gluon.HybridBlock):
                 x = [F.swapaxes(xi, 0, 1) for xi in x]
             else:
                 x = F.swapaxes(x, 0, 1)  # swap seqlen and batch channels
+        elif self._style == 'reshape1':
+            shp = x  # can use this to keep shapes for reshape back to (batch, timesteps, ...)
+            x = F.reshape(x, (-3, -2))  # combines batch and timesteps dims
+            x = self.model(x)
+            if isinstance(x, tuple):  # for handling multiple outputs
+                x = (F.reshape_like(xi, shp, lhs_end=1, rhs_end=2) for xi in x)
+            elif isinstance(x, list):
+                x = [F.reshape_like(xi, shp, lhs_end=1, rhs_end=2) for xi in x]
+            else:
+                x = F.reshape_like(x, shp, lhs_end=1, rhs_end=2)  # (num_samples, timesteps, ...)
         else:
             # Reshape style, doesn't work with symbols cause no shape
             batch_size = x.shape[0]
             input_length = x.shape[1]
-            x = F.reshape(x, (batch_size * input_length,) + x.shape[2:])  # (num_samples * timesteps, ...)
+            x = F.reshape(x, (-3, -2))  # combines batch and timesteps dims
             x = self.model(x)
             if isinstance(x, tuple):  # for handling multiple outputs
                 x = (F.reshape(xi, (batch_size, input_length,) + xi.shape[1:]) for xi in x)
@@ -83,6 +98,9 @@ def _upsample(x, stride=2):
         Upsampling stride
     """
     return x.repeat(axis=-1, repeats=stride).repeat(axis=-2, repeats=stride)
+
+# class TemporalPooling(gluon.HybridBlock):
+
 
 
 class YOLOOutputV3(gluon.HybridBlock):

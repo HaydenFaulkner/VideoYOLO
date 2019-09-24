@@ -340,8 +340,7 @@ def validate(net, val_data, ctx, eval_metric):
     # set nms threshold and topk constraint
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     mx.nd.waitall()
-    if FLAGS.window[0] == 1:
-        net.hybridize()  # can't hybridize temporal net, backend error
+    net.hybridize()  # can't hybridize temporal net, backend error
     for batch in val_data:
         if FLAGS.features_dir is not None:
             f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
@@ -474,8 +473,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
 
         tic = time.time()
         btic = time.time()
-        if FLAGS.window[0] == 1:
-            net.hybridize()  # can't hybridize temporal net, backend error
+        net.hybridize()
         for i, batch in enumerate(train_data):
             batch_size = batch[0].shape[0]
             if FLAGS.features_dir is not None:
