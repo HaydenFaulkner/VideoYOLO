@@ -134,6 +134,8 @@ flags.DEFINE_string('k_join_pos', None,
                     'position of k fuse, either early or late.')
 flags.DEFINE_string('block_conv_type', '2',
                     "convolution type for the YOLO blocks: '2'2D, '3':3D or '21':2+1D, must be used with 'late' joining")
+flags.DEFINE_string('rnn_pos', None,
+                    "position of RNN, currently only supports 'late' or 'out")
 
 
 def get_dataset(dataset_name, save_prefix=''):
@@ -276,18 +278,18 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                       freeze_base=bool(FLAGS.freeze_base),
                                       norm_kwargs={'num_devices': len(ctx)},
                                       k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                      block_conv_type=FLAGS.block_conv_type)
+                                      block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)
                 async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                                             pretrained_base=False,
                                             freeze_base=bool(FLAGS.freeze_base),
                                             k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                            block_conv_type=FLAGS.block_conv_type)  # used by cpu worker
+                                            block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)  # used by cpu worker
             else:
                 net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                                       pretrained_base=FLAGS.pretrained_cnn,
                                       freeze_base=bool(FLAGS.freeze_base),
                                       k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                      block_conv_type=FLAGS.block_conv_type)
+                                      block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)
                 async_net = net
 
         elif FLAGS.network == 'mobilenet1.0':
@@ -298,18 +300,18 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                          freeze_base=bool(FLAGS.freeze_base),
                                          norm_kwargs={'num_devices': len(ctx)},
                                          k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                         block_conv_type=FLAGS.block_conv_type)
+                                         block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)
                 async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                                pretrained_base=False,
                                                freeze_base=bool(FLAGS.freeze_base),
                                                k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                               block_conv_type=FLAGS.block_conv_type)  # used by cpu worker
+                                               block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)  # used by cpu worker
             else:
                 net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                          pretrained_base=FLAGS.pretrained_cnn,
                                          freeze_base=bool(FLAGS.freeze_base),
                                          k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                         block_conv_type=FLAGS.block_conv_type)
+                                         block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)
                 async_net = net
         else:
             raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))

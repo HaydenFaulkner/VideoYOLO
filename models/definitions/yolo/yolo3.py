@@ -167,7 +167,7 @@ class TemporalPooling(gluon.HybridBlock):
 class Conv(gluon.HybridBlock):
     def __init__(self, type, channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
         """
-        A Temporal Pooling Layer
+        Convolution helper layer, can perform 2d, 3d and 2+1d
         """
         super(Conv, self).__init__(**kwargs)
 
@@ -190,6 +190,48 @@ class Conv(gluon.HybridBlock):
             return self.conv(x)
 
 
+class RNN(gluon.HybridBlock):
+    def __init__(self, k, input_shape, type='gru', channels=None, kernel=(3,3), bi=True, **kwargs):
+        """
+        An RNN Layer
+        """
+        super(RNN, self).__init__(**kwargs)
+
+        assert type in ['gru', 'lstm']
+
+        self._k = k
+        self._bi = bi
+
+        with self.name_scope():
+            pad = (0,0)
+            if kernel[0] == 3:
+                pad = (1,1)
+            if type == 'gru':
+                a = gluon.contrib.rnn.Conv2DGRUCell(input_shape=input_shape, hidden_channels=channels,
+                                                    i2h_kernel=kernel, h2h_kernel=kernel, i2h_pad=pad)
+                if bi:
+                    b = gluon.contrib.rnn.Conv2DGRUCell(input_shape=input_shape, hidden_channels=channels,
+                                                        i2h_kernel=kernel, h2h_kernel=kernel, i2h_pad=pad)
+            else:
+                a = gluon.contrib.rnn.Conv2DLSTMCell(input_shape=input_shape, hidden_channels=channels,
+                                                     i2h_kernel=kernel, h2h_kernel=kernel, i2h_pad=pad)
+                if bi:
+                    b = gluon.contrib.rnn.Conv2DLSTMCell(input_shape=input_shape, hidden_channels=channels,
+                                                         i2h_kernel=kernel, h2h_kernel=kernel, i2h_pad=pad)
+
+            if bi:
+                self.rnn = gluon.rnn.BidirectionalCell(a, b)
+            else:
+                self.rnn = a
+
+    def hybrid_forward(self, F, x):
+        x, h = self.rnn.unroll(self._k, x, merge_outputs=True)
+        if self._bi:
+            x = F.split(x, 2, axis=2)  # avg the two bi dir channels
+            x  = (x[0] + x[1]) / 2
+        return x
+
+
 class YOLOOutputV3(gluon.HybridBlock):
     """YOLO output layer V3.
     Parameters
@@ -209,16 +251,23 @@ class YOLOOutputV3(gluon.HybridBlock):
         to export to symbol so we can run it in c++, Scalar, etc.
     """
     def __init__(self, index, num_class, anchors, stride,
-                 alloc_size=(128, 128), **kwargs):
+                 alloc_size=(128, 128), k=None, rnn_shape=None, k_join_type='max', **kwargs):
         super(YOLOOutputV3, self).__init__(**kwargs)
         anchors = np.array(anchors).astype('float32')
         self._classes = num_class
         self._num_pred = 1 + 4 + num_class  # 1 objness + 4 box + num_class
         self._num_anchors = anchors.size // 2
         self._stride = stride
+        self._rnn_shape = rnn_shape
+        self._k = k
+        self._k_join_type = k_join_type
         with self.name_scope():
             all_pred = self._num_pred * self._num_anchors
-            self.prediction = nn.Conv2D(all_pred, kernel_size=1, padding=0, strides=1)
+            if k is not None and rnn_shape is not None:
+                self.prediction = RNN(k=k, input_shape=rnn_shape, channels=all_pred, kernel=(1,1))
+                self.pool = TemporalPooling(k=k, type=k_join_type)
+            else:
+                self.prediction = nn.Conv2D(all_pred, kernel_size=1, padding=0, strides=1)
             # anchors will be multiplied to predictions
             anchors = anchors.reshape(1, 1, -1, 2)
             self.anchors = self.params.get_constant('anchor_%d'%(index), anchors)
@@ -257,9 +306,14 @@ class YOLOOutputV3(gluon.HybridBlock):
         all_pred = self._num_pred * self._num_anchors
         # to avoid deferred init, number of in_channels must be defined
         in_channels = list(old_pred.params.values())[0].shape[1]
-        self.prediction = nn.Conv2D(
-            all_pred, kernel_size=1, padding=0, strides=1,
-            in_channels=in_channels, prefix=old_pred.prefix)
+
+        if self._k is not None and self._rnn_shape is not None:
+            self.prediction = RNN(k=self._k, input_shape=self._rnn_shape, channels=all_pred, kernel=(1,1),
+                                  prefix=old_pred.prefix) # todo not sure this will work espec with weights reuse
+            self.pool = TemporalPooling(k=self._k, type=self._k_join_type)
+        else:
+            self.prediction = nn.Conv2D(all_pred, kernel_size=1, padding=0, strides=1, in_channels=in_channels,
+                                        prefix=old_pred.prefix)
         self.prediction.initialize(ctx=ctx)
         if reuse_weights:
             new_pred = self.prediction
@@ -303,7 +357,13 @@ class YOLOOutputV3(gluon.HybridBlock):
             During inference, return detections.
         """
         # prediction flat to (batch, pred per pixel, height * width)
-        pred = self.prediction(x).reshape((0, self._num_anchors * self._num_pred, -1))
+        if self._k is not None and self._rnn_shape is not None:
+            pred = self.prediction(x)
+            pred = self.pool(pred)#F.squeeze(F.max(pred, axis=1, keepdims=True), axis=1)
+            x = self.pool(x) # F.squeeze(F.max(x, axis=1, keepdims=True), axis=1)
+        else:
+            pred = self.prediction(x)
+        pred = pred.reshape((0, self._num_anchors * self._num_pred, -1))
         # transpose to (batch, height * width, num_anchor, num_pred)
         pred = pred.transpose(axes=(0, 2, 1)).reshape((0, -1, self._num_anchors, self._num_pred))
         # components
@@ -392,6 +452,92 @@ class YOLODetectionBlockV3(gluon.HybridBlock):
             route = F.swapaxes(route, 1, 2)
             tip = F.swapaxes(tip, 1, 2)
         return route, tip
+
+class YOLODetectionNoTipBlockV3(gluon.HybridBlock):
+    """YOLO V3 Detection Block which does the following:
+    - add a few conv layers
+    - return the output
+    Parameters
+    ----------
+    channel : int
+        Number of channels for 1x1 conv. 3x3 Conv will have 2*channel.
+    norm_layer : object
+        Normalization layer used (default: :class:`mxnet.gluon.nn.BatchNorm`)
+        Can be :class:`mxnet.gluon.nn.BatchNorm` or :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    norm_kwargs : dict
+        Additional `norm_layer` arguments, for example `num_devices=4`
+        for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    """
+    def __init__(self, channel, conv_type='2', norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+        super(YOLODetectionNoTipBlockV3, self).__init__(**kwargs)
+
+        self._conv_type = conv_type
+
+        assert channel % 2 == 0, "channel {} cannot be divided by 2".format(channel)
+        with self.name_scope():
+            self.body = nn.HybridSequential(prefix='')
+            for _ in range(2):
+                # 1x1 reduce
+                # self.body.add(_conv2d(channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                if conv_type in ['3', '21']:  # keep the expand as a normal 1x1x1 3d conv
+                    self.body.add(Conv('3', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                else:
+                    self.body.add(Conv('2', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                # 3x3 expand
+                # self.body.add(_conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                self.body.add(Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+
+            # self.body.add(_conv2d(channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+            if conv_type in ['3', '21']:
+                self.body.add(Conv('3', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+            else:
+                self.body.add(Conv('2', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+
+
+    def hybrid_forward(self, F, x):
+        if self._conv_type in ['3', '21']:
+            x = F.swapaxes(x, 1, 2)
+        x = self.body(x)
+        if self._conv_type in ['3', '21']:
+            x = F.swapaxes(x, 1, 2)
+        return x
+
+class YOLOTipBlockV3(gluon.HybridBlock):
+    """YOLO V3 Tip Block which does the following:
+    - have a branch that do yolo detection.
+    Parameters
+    ----------
+    channel : int
+        Number of channels for 1x1 conv. 3x3 Conv will have 2*channel.
+    norm_layer : object
+        Normalization layer used (default: :class:`mxnet.gluon.nn.BatchNorm`)
+        Can be :class:`mxnet.gluon.nn.BatchNorm` or :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    norm_kwargs : dict
+        Additional `norm_layer` arguments, for example `num_devices=4`
+        for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    """
+    def __init__(self, channel, conv_type='2', norm_layer=BatchNorm, norm_kwargs=None,
+                 rnn_pos=None, rnn_shape=None, k=None, **kwargs):
+        super(YOLOTipBlockV3, self).__init__(**kwargs)
+
+        self._conv_type = conv_type
+
+        assert channel % 2 == 0, "channel {} cannot be divided by 2".format(channel)
+        with self.name_scope():
+
+            if rnn_pos == 'late':
+                self.tip = RNN(k=k, input_shape=rnn_shape, channels=channel * 2, kernel=(3,3))
+            else:
+                # self.tip = _conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+                self.tip = Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+
+    def hybrid_forward(self, F, x):
+        if self._conv_type in ['3', '21']:
+            x = F.swapaxes(x, 1, 2)
+        x = self.tip(x)
+        if self._conv_type in ['3', '21']:
+            x = F.swapaxes(x, 1, 2)
+        return x
 
 
 class YOLOV3(gluon.HybridBlock):
@@ -724,7 +870,8 @@ class YOLOV3T(gluon.HybridBlock):
     def __init__(self, stages, channels, anchors, strides, classes, alloc_size=(128, 128),
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
                  ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None,
-                 k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', **kwargs):
+                 k=None, k_join_type=None, k_join_pos=None, block_conv_type='2',
+                 rnn_shapes=None, rnn_pos=None, **kwargs):
         super(YOLOV3T, self).__init__(**kwargs)
         self._classes = classes
         self.nms_thresh = nms_thresh
@@ -736,12 +883,17 @@ class YOLOV3T(gluon.HybridBlock):
         self._k_join_type = k_join_type
         self._k_join_pos = k_join_pos
         self._block_conv_type = block_conv_type
+        self._rnn_pos = rnn_pos
+        assert rnn_pos in [None, 'late', 'out']
         if block_conv_type in ['3', '21']:
             assert k > 1, "k must be greater than 1 to use 3D or 2+1D convolutions"
             assert k_join_pos == 'late', "only 'late' pooling can be used when using 3D or 2+1D convolutions"
             assert k_join_type is not None, "please specify a k_join_type: max, mean, or cat"
         assert k_join_type in [None, 'max', 'mean', 'cat']
         assert k_join_pos in [None, 'early', 'late']
+        if rnn_pos == 'late':
+            assert k_join_pos == 'late', "with 'late' rnn_pos you also need 'late' k_join_pos"
+            assert k_join_type in [None, 'max', 'mean', 'cat'], "with 'late' rnn_pos you also need to specify a k_join_type"
         if pos_iou_thresh >= 1:
             self._target_generator = YOLOV3TargetMerger(len(classes), ignore_iou_thresh)
         else:
@@ -749,12 +901,16 @@ class YOLOV3T(gluon.HybridBlock):
                 "pos_iou_thresh({}) < 1.0 is not implemented!".format(pos_iou_thresh))
         self._loss = YOLOV3Loss()
         with self.name_scope():
+
             if k > 1 and k_join_type in ['max', 'mean']:
                 self.pool = TemporalPooling(k=k, type=k_join_type)
+
             self.stages = nn.HybridSequential()
             self.transitions = nn.HybridSequential()
             self.yolo_blocks = nn.HybridSequential()
+            self.yolo_tips = nn.HybridSequential()
             self.yolo_outputs = nn.HybridSequential()
+
             # note that anchors and strides should be used in reverse order
             for i, stage, channel, anchor, stride in zip(
                     range(len(stages)), stages, channels, anchors[::-1], strides[::-1]):
@@ -764,17 +920,32 @@ class YOLOV3T(gluon.HybridBlock):
                 else:
                     self.stages.add(stage)
 
-                block = YOLODetectionBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
-                if self._k > 1 and self._k_join_pos == 'late' and block_conv_type == '2':
+                # with late rnn_pos we split block and tip into sep
+                # block = YOLODetectionBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+                block = YOLODetectionNoTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+                tip = YOLOTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
+                                     rnn_pos=rnn_pos, rnn_shape=(int(rnn_shapes[i][0]/2),) + rnn_shapes[i][1:], k=k)
+                if rnn_pos == 'late':
+                    self.yolo_tips.add(tip)
+                else:
+                    self.yolo_tips.add(TimeDistributed(tip))
+                ######################################################
+
+                if self._k > 1 and block_conv_type == '2' and (self._k_join_pos == 'late' or rnn_pos in ['late','out']):
                     self.yolo_blocks.add(TimeDistributed(block))
                 else:
                     self.yolo_blocks.add(block)
+                ######################################################
 
-                output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size)
+                if rnn_pos == 'out':
+                    output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size,
+                                          k=k, rnn_shape=rnn_shapes[i], k_join_type=k_join_type)
+                else:
+                    output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size)
                 self.yolo_outputs.add(output)
 
                 if i > 0:
-                    if self._k > 1 and self._k_join_pos == 'late':
+                    if self._k > 1 and (self._k_join_pos == 'late' or rnn_pos in ['late','out']):
                         self.transitions.add(TimeDistributed(_conv2d(channel, 1, 0, 1,
                                                              norm_layer=norm_layer, norm_kwargs=norm_kwargs)))
                     else:
@@ -831,7 +1002,7 @@ class YOLOV3T(gluon.HybridBlock):
         routes = []
         for stage, block, output in zip(self.stages, self.yolo_blocks, self.yolo_outputs):
             x = stage(x)
-            if self._k > 1 and self._k_join_pos == 'early':
+            if self._k > 1 and self._k_join_pos == 'early' and self._rnn_pos != 'out':
                 if self._k_join_type == 'cat':
                     routes.append(F.reshape(x,(0,-3,-2)))  # B,K,C,H,W -> B,K*C,H,W
                 elif self._k_join_type in ['max', 'mean']:
@@ -839,16 +1010,20 @@ class YOLOV3T(gluon.HybridBlock):
             else:
                 routes.append(x)
 
-        if self._k > 1 and self._k_join_pos == 'early':
+        if self._k > 1 and self._k_join_pos == 'early' and self._rnn_pos != 'out':
             if self._k_join_type == 'cat':
                 x = F.reshape(x,(0,-3,-2))  # B,K,C,H,W -> B,K*C,H,W
             elif self._k_join_type in ['max', 'mean']:
                 x = self.pool(x)
 
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
-        for i, block, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs):
-            x, tip = block(x)
-            if self._k > 1 and self._k_join_pos == 'late':
+        for i, block, tips, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_tips, self.yolo_outputs):
+
+            x = block(x)
+            tip = tips(x)
+            # x, tip = block(x)  # with rnn_pos late we rewrite to have sep blocks and tips
+
+            if self._k > 1 and self._k_join_pos == 'late' and self._rnn_pos != 'out':
                 if self._k_join_type == 'cat':
                     tip = F.reshape(tip, (0, -3, -2))  # B,K,C,H,W -> B,K*C,H,W
                 elif self._k_join_type in ['max', 'mean']:
@@ -862,9 +1037,13 @@ class YOLOV3T(gluon.HybridBlock):
                 all_class_pred.append(class_pred.reshape((0, -3, -1)))
                 all_anchors.append(anchors)
                 all_offsets.append(offsets)
-                # here we use fake featmap to reduce memory consuption, only shape[2, 3] is used
-                fake_featmap = F.zeros_like(tip.slice_axis(
-                    axis=0, begin=0, end=1).slice_axis(axis=1, begin=0, end=1))
+                # here we use fake featmap to reduce memory consumption, only shape[2, 3] is used
+                if self._rnn_pos == 'out':
+                    fake_featmap = F.zeros_like(
+                        tip.slice_axis(axis=0, begin=0, end=1).slice_axis(axis=1, begin=0, end=1).slice_axis(axis=2, begin=0, end=1))
+                else:
+                    fake_featmap = F.zeros_like(
+                        tip.slice_axis(axis=0, begin=0, end=1).slice_axis(axis=1, begin=0, end=1))
                 all_feat_maps.append(fake_featmap)
             else:
                 dets = output(tip)
@@ -882,7 +1061,7 @@ class YOLOV3T(gluon.HybridBlock):
             route_now = routes[::-1][i + 1]
 
             # concat
-            if self._k > 1 and self._k_join_pos == 'late':
+            if self._k > 1 and (self._k_join_pos == 'late' or self._rnn_pos == 'out'):
                 x = F.concat(F.slice_like(upsample, route_now * 0, axes=(3, 4)), route_now, dim=2)
             else:
                 x = F.concat(F.slice_like(upsample, route_now * 0, axes=(2, 3)), route_now, dim=1)

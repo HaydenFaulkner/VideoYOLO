@@ -17,7 +17,7 @@ from .mobilenet import get_mobilenet
 
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
                     norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
-                    k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', **kwargs):
+                    k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -66,12 +66,16 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
             [30, 61, 62, 45, 59, 119],
             [116, 90, 156, 198, 373, 326]]
         strides = [8, 16, 32]
+        rnn_shapes = None
+        if rnn_pos is not None:
+            rnn_shapes = [(1024, 13, 13), (512, 26, 26), (256, 52, 52)]  # todo currently hardcoded which will fail for input not = to 416 need to work out better way
         # net = get_yolov3(
         #     'darknet53', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
         #     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)  # don't need get_yolov3 as won't use gluon pretrained
         # net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
         net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
-                      k_join_pos=k_join_pos, block_conv_type=block_conv_type, **kwargs)
+                      k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
+                      **kwargs)
     else:
         net = get_model('yolo3_darknet53_' + str(transfer), pretrained=True, **kwargs)
         reuse_classes = [x for x in classes if x in net.classes]
@@ -112,7 +116,7 @@ def yolo3_no_backbone(classes, norm_layer=BatchNorm, norm_kwargs=None, **kwargs)
 
 def yolo3_mobilenet1_0(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
                        norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
-                       k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', **kwargs):
+                       k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None, **kwargs):
     """YOLO3 multi-scale with mobilenet base network on custom dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -158,12 +162,16 @@ def yolo3_mobilenet1_0(classes, dataset_name, transfer=None, pretrained_base=Tru
             [30, 61, 62, 45, 59, 119],
             [116, 90, 156, 198, 373, 326]]
         strides = [8, 16, 32]
+        rnn_shapes = None
+        if rnn_pos is not None:
+            rnn_shapes = [(1024, 13, 13), (512, 26, 26), (256, 52, 52)]  # todo currently hardcoded which will fail for input not = to 416 need to work out better way
         # net = get_yolov3(
         #     'mobilenet1.0', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
         #     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)  # don't need get_yolov3 as won't use gluon pretrained
         # net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
         net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
-                      k_join_pos=k_join_pos, block_conv_type=block_conv_type, **kwargs)
+                      k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
+                      **kwargs)
     else:
         net = get_model('yolo3_mobilenet1.0_' + str(transfer), pretrained=True, **kwargs)
         reuse_classes = [x for x in classes if x in net.classes]
