@@ -906,7 +906,10 @@ class YOLOV3T(gluon.HybridBlock):
             self.stages = nn.HybridSequential()
             self.transitions = nn.HybridSequential()
             self.yolo_blocks = nn.HybridSequential()
-            self.yolo_tips = nn.HybridSequential()
+            if rnn_pos == 'late':
+                self.yolo_tips = nn.HybridSequential()
+            else:
+                self.yolo_tips = (None, None, None)
             self.yolo_outputs = nn.HybridSequential()
 
             # note that anchors and strides should be used in reverse order
@@ -919,17 +922,14 @@ class YOLOV3T(gluon.HybridBlock):
                     self.stages.add(stage)
 
                 # with late rnn_pos we split block and tip into sep
-                # block = YOLODetectionBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
-                block = YOLODetectionNoTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
-                if rnn_pos is not None:
+                if rnn_pos == 'late':
+                    block = YOLODetectionNoTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
                     tip = YOLOTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
                                          rnn_pos=rnn_pos, rnn_shape=(int(rnn_shapes[i][0]/2),) + rnn_shapes[i][1:], k=k)
                 else:
-                    tip = YOLOTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
-                                         rnn_pos=None, rnn_shape=None, k=1)
-                if rnn_pos == 'out':
-                    self.yolo_tips.add(TimeDistributed(tip))
-                else:
+                    block = YOLODetectionBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+
+                if rnn_pos == 'late':
                     self.yolo_tips.add(tip)
                 ######################################################
 
@@ -1021,9 +1021,11 @@ class YOLOV3T(gluon.HybridBlock):
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
         for i, block, tips, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_tips, self.yolo_outputs):
 
-            x = block(x)
-            tip = tips(x)
-            # x, tip = block(x)  # with rnn_pos late we rewrite to have sep blocks and tips
+            if self._rnn_pos  == 'late': # with rnn_pos late we rewrite to have sep blocks and tips
+                x = block(x)
+                tip = tips(x)
+            else:
+                x, tip = block(x)
 
             if self._k > 1 and self._k_join_pos == 'late' and self._rnn_pos != 'out':
                 if self._k_join_type == 'cat':
