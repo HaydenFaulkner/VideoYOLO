@@ -6,7 +6,7 @@ from gluoncv.model_zoo import get_model
 # only use custom modelling code on personal machines so as to not break everything
 # if platform.node() == 'HUB-HOME' or platform.node() == 'HUB' :
 #     print("USING CUSTOM MODEL CODE")
-from .yolo3 import get_yolov3, YOLOV3_noback, YOLOV3T, TimeDistributed
+from .yolo3 import get_yolov3, YOLOV3_noback, YOLOV3, YOLOV3T, TimeDistributed
 from .darknet import darknet53
 from .mobilenet import get_mobilenet
 # else:
