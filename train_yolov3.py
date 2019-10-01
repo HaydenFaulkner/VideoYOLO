@@ -196,20 +196,19 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
 
     if FLAGS.no_random_shape:
         train_loader = gluon.data.DataLoader(
-            # train_dataset.transform(YOLO3VideoTrainTransform(FLAGS.window[0], width, height, net, mixup=FLAGS.mixup)),
-            train_dataset.transform(YOLO3DefaultTrainTransform(width, height, net, mixup=FLAGS.mixup)),
+            train_dataset.transform(YOLO3VideoTrainTransform(FLAGS.window[0], width, height, net, mixup=FLAGS.mixup)),
             batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
     else:
-        # transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
-        transform_fns = [YOLO3DefaultTrainTransform(x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
+        transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
+        # transform_fns = [YOLO3DefaultTrainTransform(x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
         train_loader = RandomTransformDataLoader(
             transform_fns, train_dataset, batch_size=batch_size, interval=10, last_batch='rollover',
             shuffle=True, batchify_fn=batchify_fn, num_workers=FLAGS.num_workers)
 
     val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
     val_loader = gluon.data.DataLoader(
-        # val_dataset.transform(YOLO3VideoInferenceTransform(width, height)),
-        val_dataset.transform(YOLO3DefaultInferenceTransform(width, height)),
+        val_dataset.transform(YOLO3VideoInferenceTransform(width, height)),
+        # val_dataset.transform(YOLO3DefaultInferenceTransform(width, height)),
         batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
     # NOTE for val batch loader last_batch='keep' changed to last_batch='discard' so exception not thrown
     # when last batch size is smaller than the number of GPUS (which throws exception) this is fixed in gluon
