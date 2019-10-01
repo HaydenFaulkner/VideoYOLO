@@ -72,10 +72,10 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         # net = get_yolov3(
         #     'darknet53', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
         #     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)  # don't need get_yolov3 as won't use gluon pretrained
-        # net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
-        net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
-                      k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
-                      **kwargs)
+        net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
+        # net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
+        #               k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
+        #               **kwargs)
     else:
         net = get_model('yolo3_darknet53_' + str(transfer), pretrained=True, **kwargs)
         reuse_classes = [x for x in classes if x in net.classes]
