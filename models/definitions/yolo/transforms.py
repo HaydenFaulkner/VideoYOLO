@@ -192,8 +192,8 @@ class YOLO3VideoTrainTransform(object):
 
         img = experimental.image.random_color_distort(src)  # works for video without modification
         was_three = False
-        if len(src.shape) == 3:
-            src = mx.nd.expand_dims(src, axis=0)
+        if len(img.shape) == 3:
+            img = mx.nd.expand_dims(img, axis=0)
             was_three = True
 
         # img=src
