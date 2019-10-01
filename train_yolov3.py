@@ -575,8 +575,8 @@ def main(_argv):
     if FLAGS.window[0] > 1:
         assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'
     else:
-        FLAGS.pooling_type = None  # can't pool 1 frame..
-        FLAGS.pooling_position = None
+        FLAGS.k_join_type = None  # can't pool 1 frame..
+        FLAGS.k_join_pos = None
 
     if FLAGS.num_workers < 0:
         FLAGS.num_workers = multiprocessing.cpu_count()
