@@ -195,10 +195,10 @@ class YOLO3VideoTrainTransform(object):
             src = mx.nd.expand_dims(src, axis=0)
             was_three = True
 
-        # img=src
+        img=src
         bbox=label
         # random color jittering
-        img = experimental.image.random_color_distort(src)  # works for video without modification
+        # img = experimental.image.random_color_distort(src)  # works for video without modification
 
         # random expansion with prob 0.5
         # if np.random.uniform(0, 1) > 0.5:
