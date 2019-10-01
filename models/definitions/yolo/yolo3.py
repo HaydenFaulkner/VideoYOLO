@@ -429,19 +429,28 @@ class YOLODetectionBlockV3(gluon.HybridBlock):
                 if conv_type in ['3', '21']:  # keep the expand as a normal 1x1x1 3d conv
                     self.body.add(Conv('3', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
                 else:
-                    self.body.add(Conv('2', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                    self.body.add(_conv2d(channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                    # self.body.add(Conv('2', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+
                 # 3x3 expand
                 # self.body.add(_conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
-                self.body.add(Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                if conv_type in ['3', '21']:
+                    self.body.add(Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                else:
+                    self.body.add(_conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
 
             # self.body.add(_conv2d(channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
             if conv_type in ['3', '21']:
                 self.body.add(Conv('3', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
             else:
-                self.body.add(Conv('2', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                self.body.add(_conv2d(channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                # self.body.add(Conv('2', channel, 1, 0, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
 
             # self.tip = _conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
-            self.tip = Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+            if conv_type in ['3', '21']:
+                self.tip = Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+            else:
+                self.tip = _conv2d(channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
 
     def hybrid_forward(self, F, x):
         if self._conv_type in ['3', '21']:
