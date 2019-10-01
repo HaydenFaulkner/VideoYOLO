@@ -197,6 +197,7 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
     if FLAGS.no_random_shape:
         train_loader = gluon.data.DataLoader(
             train_dataset.transform(YOLO3VideoTrainTransform(FLAGS.window[0], width, height, net, mixup=FLAGS.mixup)),
+            # train_dataset.transform(YOLO3DefaultTrainTransform(width, height, net, mixup=FLAGS.mixup)),
             batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
     else:
         transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]

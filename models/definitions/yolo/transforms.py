@@ -195,21 +195,23 @@ class YOLO3VideoTrainTransform(object):
             src = mx.nd.expand_dims(src, axis=0)
             was_three = True
 
+        img=src
+        bbox=label
         # random color jittering
-        img = experimental.image.random_color_distort(src)  # works for video without modification
+        # img = experimental.image.random_color_distort(src)  # works for video without modification
 
         # random expansion with prob 0.5
-        if np.random.uniform(0, 1) > 0.5:
-            img, expand = tvideo.random_expand(img, fill=[m * 255 for m in self._mean])
-            bbox = tbbox.translate(label, x_offset=expand[0], y_offset=expand[1])
-        else:
-            img, bbox = img, label
+        # if np.random.uniform(0, 1) > 0.5:
+        #     img, expand = tvideo.random_expand(img, fill=[m * 255 for m in self._mean])
+        #     bbox = tbbox.translate(label, x_offset=expand[0], y_offset=expand[1])
+        # else:
+        #     img, bbox = img, label
 
         # random cropping
-        k, h, w, c = img.shape
-        bbox, crop = experimental.bbox.random_crop_with_constraints(bbox, (w, h))
-        x0, y0, w, h = crop
-        img = img[:, y0:y0+h, x0:x0+w, :]
+        # k, h, w, c = img.shape
+        # bbox, crop = experimental.bbox.random_crop_with_constraints(bbox, (w, h))
+        # x0, y0, w, h = crop
+        # img = img[:, y0:y0+h, x0:x0+w, :]
 
         # resize with random interpolation
         k, h, w, c = img.shape
@@ -222,9 +224,9 @@ class YOLO3VideoTrainTransform(object):
 
         # random horizontal flip with prob 0.5
         k, h, w, c = img.shape
-        if np.random.uniform(0, 1) > 0.5:
-            img = mx.nd.flip(img, axis=1)
-            bbox = tbbox.flip(bbox, (w, h), flip_x=True)
+        # if np.random.uniform(0, 1) > 0.5:
+        #     img = mx.nd.flip(img, axis=1)
+        #     bbox = tbbox.flip(bbox, (w, h), flip_x=True)
 
         img = mx.nd.image.to_tensor(img)  # to tensor, also transforms from k,h,w,c to k,c,h,w
         # normalise
