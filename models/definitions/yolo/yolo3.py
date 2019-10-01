@@ -532,8 +532,6 @@ class YOLOTipBlockV3(gluon.HybridBlock):
                 self.tip = Conv(conv_type, channel * 2, 3, 1, 1, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
 
     def hybrid_forward(self, F, x):
-        if self._conv_type in ['3', '21']:
-            x = F.swapaxes(x, 1, 2)
         x = self.tip(x)
         if self._conv_type in ['3', '21']:
             x = F.swapaxes(x, 1, 2)
@@ -929,10 +927,10 @@ class YOLOV3T(gluon.HybridBlock):
                 else:
                     tip = YOLOTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
                                          rnn_pos=None, rnn_shape=None, k=1)
-                if rnn_pos == 'late':
-                    self.yolo_tips.add(tip)
-                else:
+                if rnn_pos == 'out':
                     self.yolo_tips.add(TimeDistributed(tip))
+                else:
+                    self.yolo_tips.add(tip)
                 ######################################################
 
                 if self._k > 1 and block_conv_type == '2' and (self._k_join_pos == 'late' or rnn_pos in ['late','out']):
