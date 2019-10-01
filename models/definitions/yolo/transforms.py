@@ -50,7 +50,7 @@ class YOLO3DefaultTrainTransform(object):
         net.collect_params().reset_ctx(None)
         with autograd.train_mode():
             _, self._anchors, self._offsets, self._feat_maps, _, _, _, _ = net(self._fake_x)
-        from ....model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
+        from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
         self._target_generator = YOLOV3PrefetchTargetGenerator(
             num_class=len(net.classes), **kwargs)
 
