@@ -195,10 +195,10 @@ class YOLO3VideoTrainTransform(object):
             src = mx.nd.expand_dims(src, axis=0)
             was_three = True
 
-        img=src
+        # img=src
         bbox=label
         # random color jittering
-        # img = experimental.image.random_color_distort(src)  # works for video without modification
+        img = experimental.image.random_color_distort(src)  # works for video without modification
 
         # random expansion with prob 0.5
         # if np.random.uniform(0, 1) > 0.5:
@@ -224,9 +224,9 @@ class YOLO3VideoTrainTransform(object):
 
         # random horizontal flip with prob 0.5
         k, h, w, c = img.shape
-        if np.random.uniform(0, 1) > 0.5:
-            img = mx.nd.flip(img, axis=1)
-            bbox = tbbox.flip(bbox, (w, h), flip_x=True)
+        # if np.random.uniform(0, 1) > 0.5:
+        #     img = mx.nd.flip(img, axis=1)
+        #     bbox = tbbox.flip(bbox, (w, h), flip_x=True)
 
         img = mx.nd.image.to_tensor(img)  # to tensor, also transforms from k,h,w,c to k,c,h,w
         # normalise
