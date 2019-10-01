@@ -923,8 +923,12 @@ class YOLOV3T(gluon.HybridBlock):
                 # with late rnn_pos we split block and tip into sep
                 # block = YOLODetectionBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
                 block = YOLODetectionNoTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
-                tip = YOLOTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
-                                     rnn_pos=rnn_pos, rnn_shape=(int(rnn_shapes[i][0]/2),) + rnn_shapes[i][1:], k=k)
+                if rnn_pos is not None:
+                    tip = YOLOTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
+                                         rnn_pos=rnn_pos, rnn_shape=(int(rnn_shapes[i][0]/2),) + rnn_shapes[i][1:], k=k)
+                else:
+                    tip = YOLOTipBlockV3(channel, block_conv_type, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
+                                         rnn_pos=None, rnn_shape=None, k=1)
                 if rnn_pos == 'late':
                     self.yolo_tips.add(tip)
                 else:
