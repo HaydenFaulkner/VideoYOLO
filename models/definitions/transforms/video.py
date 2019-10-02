@@ -64,6 +64,7 @@ def random_expand(src, max_ratio=4, fill=0, keep_ratio=True):
 
     return dst, (off_x, off_y, ow, oh)
 
+
 def random_color_distort(src, brightness_delta=32, contrast_low=0.5, contrast_high=1.5,
                          saturation_low=0.5, saturation_high=1.5, hue_delta=18):
     """Randomly distort image color space.
