@@ -190,14 +190,14 @@ class YOLO3VideoTrainTransform(object):
     def __call__(self, src, label):
         """Apply transform to training image/label."""
 
-        img = experimental.image.random_color_distort(src)  # works for video without modification
+        img = src#experimental.image.random_color_distort(src)  # works for video without modification
         was_three = False
         if len(img.shape) == 3:
             img = mx.nd.expand_dims(img, axis=0)
             was_three = True
 
         # random color jittering
-        # img = experimental.image.random_color_distort(img)  # works for video without modification
+        img = tvideo.random_color_distort(img)  # works for video without modification
 
         # random expansion with prob 0.5
         if np.random.uniform(0, 1) > 0.5:
