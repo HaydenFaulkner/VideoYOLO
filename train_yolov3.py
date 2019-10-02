@@ -376,7 +376,7 @@ def validate(net, val_data, ctx, eval_metric):
                 det_ids.append(ids)
                 det_scores.append(scores)
                 # clip to image size
-                det_bboxes.append(bboxes.clip(0, batch[0].shape[2]))
+                det_bboxes.append(bboxes.clip(0, batch[0].shape[-1]))  # clip to last dim which we assume is width
                 # split ground truths
                 gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
                 gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
@@ -388,7 +388,7 @@ def validate(net, val_data, ctx, eval_metric):
                 det_ids.append(ids)
                 det_scores.append(scores)
                 # clip to image size
-                det_bboxes.append(bboxes.clip(0, batch[0].shape[2]))
+                det_bboxes.append(bboxes.clip(0, batch[0].shape[-1]))  # clip to last dim which we assume is width
                 # split ground truths
                 gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
                 gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
