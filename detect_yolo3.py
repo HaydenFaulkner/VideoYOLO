@@ -26,6 +26,7 @@ from metrics.mscoco import COCODetectionMetric
 from metrics.imgnetvid import VIDDetectionMetric
 
 from models.definitions.yolo.transforms import YOLO3VideoInferenceTransform
+from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_mobilenet1_0, yolo3_no_backbone
 
 from utils.general import as_numpy
 from utils.image import cv_plot_bbox
@@ -63,6 +64,16 @@ flags.DEFINE_float('frames', 0.04,
                    'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
                    'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
                    'If =1: Every sample used - full dataset')
+flags.DEFINE_list('window', '1, 1',
+                  'Temporal window size of frames and the frame gap of the windows samples')
+flags.DEFINE_string('k_join_type', None,
+                    'way to fuse k type, either max, mean, cat.')
+flags.DEFINE_string('k_join_pos', None,
+                    'position of k fuse, either early or late.')
+flags.DEFINE_string('block_conv_type', '2',
+                    "convolution type for the YOLO blocks: '2'2D, '3':3D or '21':2+1D, must be used with 'late' joining")
+flags.DEFINE_string('rnn_pos', None,
+                    "position of RNN, currently only supports 'late' or 'out")
 
 flags.DEFINE_boolean('visualise', False,
                      'Do you want to display the detections?')
@@ -87,7 +98,8 @@ def get_dataset(dataset_name):
         dataset = ImageNetDetection(splits=['val'], allow_empty=False, inference=True)
 
     elif dataset_name.lower() == 'vid':
-        dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, frames=FLAGS.frames, inference=True)
+        dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, frames=FLAGS.frames,
+                                       window=FLAGS.window, inference=True)
 
     elif dataset_name[-4:] == '.txt':  # list of images or list of videos
         with open(dataset_name, 'r') as f:
@@ -171,7 +183,7 @@ def detect(net, dataset, loader, ctx, max_do=-1):
                 det_ids.append(ids)
                 det_scores.append(scores)
                 # clip to image size
-                det_bboxes.append(bboxes.clip(0, batch[0].shape[2]))
+                det_bboxes.append(bboxes.clip(0, batch[0].shape[-1]))
                 # split ground truths
                 gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
                 gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
@@ -183,7 +195,7 @@ def detect(net, dataset, loader, ctx, max_do=-1):
                 file = dataset.sample_path(int(sidx))
 
                 valid_pred = np.where(id.flat >= 0)[0]  # get the boxes that have a class assigned
-                box = box[valid_pred, :] / batch[0].shape[2]  # normalise boxes
+                box = box[valid_pred, :] / batch[0].shape[-1]  # normalise boxes
                 id = id.flat[valid_pred].astype(int)
                 score = score.flat[valid_pred]
 
@@ -312,10 +324,10 @@ def evaluate(metrics, dataset, predictions):
 
         # get the predictions : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
         if img_path in predictions:
-            det_bboxes = [[[[b[2]*img.shape[1],  # change pred box dims to match image (unnormalise them)
-                             b[3]*img.shape[0],
-                             b[4]*img.shape[1],
-                             b[5]*img.shape[0]] for b in predictions[img_path]]]]
+            det_bboxes = [[[[b[2]*img.shape[-2],  # change pred box dims to match image (unnormalise them)
+                             b[3]*img.shape[-3],
+                             b[4]*img.shape[-2],
+                             b[5]*img.shape[-3]] for b in predictions[img_path]]]]
             det_ids = [[[[b[0]] for b in predictions[img_path]]]]
             det_scores = [[[[b[1]] for b in predictions[img_path]]]]
 
@@ -340,6 +352,11 @@ def get_class_map(trained_on, eval_on):
 
 
 def main(_argv):
+
+    FLAGS.window = [int(s) for s in FLAGS.window]
+
+    if FLAGS.window[0] > 1:
+        assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'
 
     # if we aren't given a full path, assume the file is in 'models/save_prefix' directory
     if len(os.path.split(FLAGS.model_path)[0]) > 0:
@@ -378,8 +395,18 @@ def main(_argv):
     loader = get_dataloader(dataset, batch_size)
 
     # setup network
-    net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
-    net = get_model(net_name, root='models', pretrained_base=True, classes=trained_on_dataset.classes)
+    # net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
+    # net = get_model(net_name, root='models', pretrained_base=True, classes=trained_on_dataset.classes)
+    if FLAGS.network == 'darknet53':
+        net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
+                              k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
+                              block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)
+    elif FLAGS.network == 'mobilenet1.0':
+        net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
+                                 k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
+                                 block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)
+    else:
+        raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
     net.load_parameters(model_path)
 
     max_do = FLAGS.max_do
