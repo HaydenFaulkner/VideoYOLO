@@ -17,7 +17,8 @@ from .mobilenet import get_mobilenet
 
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
                     norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
-                    k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None, **kwargs):
+                    k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None,
+                    corr_pos=None, corr_d=None, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -75,7 +76,7 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         # net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
         net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
                       k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
-                      **kwargs)
+                      corr_pos=corr_pos, corr_d=corr_d, **kwargs)
     else:
         net = get_model('yolo3_darknet53_' + str(transfer), pretrained=True, **kwargs)
         reuse_classes = [x for x in classes if x in net.classes]
@@ -116,7 +117,8 @@ def yolo3_no_backbone(classes, norm_layer=BatchNorm, norm_kwargs=None, **kwargs)
 
 def yolo3_mobilenet1_0(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
                        norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
-                       k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None, **kwargs):
+                       k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None,
+                       corr_pos=None, corr_d=None, **kwargs):
     """YOLO3 multi-scale with mobilenet base network on custom dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -171,7 +173,7 @@ def yolo3_mobilenet1_0(classes, dataset_name, transfer=None, pretrained_base=Tru
         # net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
         net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
                       k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
-                      **kwargs)
+                      corr_pos=corr_pos, corr_d=corr_d, **kwargs)
     else:
         net = get_model('yolo3_mobilenet1.0_' + str(transfer), pretrained=True, **kwargs)
         reuse_classes = [x for x in classes if x in net.classes]

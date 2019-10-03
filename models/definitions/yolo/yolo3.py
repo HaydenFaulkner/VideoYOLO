@@ -190,6 +190,40 @@ class Conv(gluon.HybridBlock):
             return self.conv(x)
 
 
+class Corr(gluon.HybridBlock):
+    def __init__(self, d, k, kernal_size=1, stride=1, full_k='keep', **kwargs):
+        """
+        Correlation helper layer, can perform over k time-steps
+        """
+        super(Corr, self).__init__(**kwargs)
+
+        # used for determining whether to also concat the k features of just the middle with the corr filters
+        assert full_k in ['keep', 'discard']
+        self._full_k = full_k
+        self._d = d
+        self._k = k
+        self._kernal_size = kernal_size
+        self._stride = stride
+
+
+    def hybrid_forward(self, F, x):
+        xs = F.split(x, self._k, axis=1)
+        middle_index = int(self._k/2)
+        if self._full_k == 'keep':  # keep all k features
+            x = F.reshape(x,(0,-3,-2))
+        else:  # just keep the middle feature
+            x = F.squeeze(xs[middle_index], axis=1)
+
+        for i, t in enumerate(xs):  # calculate the correlation features across all k
+            if i == middle_index: # but skip comparing the middle one
+                continue
+            c = F.Correlation(F.squeeze(t, axis=1), F.squeeze(xs[middle_index], axis=1),
+                              kernel_size=self._kernal_size, max_displacement=self._d, pad_size=self._d,
+                              stride1=self._stride, stride2=self._stride)
+            x = F.concat(x,c,dim=1)
+
+        return x
+
 class RNN(gluon.HybridBlock):
     def __init__(self, k, input_shape, type='gru', channels=None, kernel=(3,3), bi=True, **kwargs):
         """
@@ -878,7 +912,7 @@ class YOLOV3T(gluon.HybridBlock):
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
                  ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None,
                  k=None, k_join_type=None, k_join_pos=None, block_conv_type='2',
-                 rnn_shapes=None, rnn_pos=None, **kwargs):
+                 rnn_shapes=None, rnn_pos=None, corr_pos=None, corr_d=None, **kwargs):
         super(YOLOV3T, self).__init__(**kwargs)
         self._classes = classes
         self.nms_thresh = nms_thresh
@@ -891,6 +925,8 @@ class YOLOV3T(gluon.HybridBlock):
         self._k_join_pos = k_join_pos
         self._block_conv_type = block_conv_type
         self._rnn_pos = rnn_pos
+        self._corr_pos = corr_pos
+        self._corr_d = corr_d
         assert rnn_pos in [None, 'late', 'out']
         if block_conv_type in ['3', '21']:
             assert k > 1, "k must be greater than 1 to use 3D or 2+1D convolutions"
@@ -898,6 +934,7 @@ class YOLOV3T(gluon.HybridBlock):
             assert k_join_type is not None, "please specify a k_join_type: max, mean, or cat"
         assert k_join_type in [None, 'max', 'mean', 'cat']
         assert k_join_pos in [None, 'early', 'late']
+        assert corr_pos in [None, 'early', 'late']
         if rnn_pos == 'late':
             assert k_join_pos == 'late', "with 'late' rnn_pos you also need 'late' k_join_pos"
             assert k_join_type in [None, 'max', 'mean', 'cat'], "with 'late' rnn_pos you also need to specify a k_join_type"
@@ -911,6 +948,9 @@ class YOLOV3T(gluon.HybridBlock):
 
             if k > 1 and k_join_type in ['max', 'mean']:
                 self.pool = TemporalPooling(k=k, type=k_join_type)
+
+            if k > 1 and corr_pos is not None:
+                self.corr = Corr(corr_d, k, kernal_size=1, stride=1, full_k='keep')
 
             self.stages = nn.HybridSequential()
             self.transitions = nn.HybridSequential()
@@ -942,7 +982,8 @@ class YOLOV3T(gluon.HybridBlock):
                     self.yolo_tips.add(tip)
                 ######################################################
 
-                if self._k > 1 and block_conv_type == '2' and (self._k_join_pos == 'late' or rnn_pos in ['late','out']):
+                if self._k > 1 and block_conv_type == '2' and \
+                        (self._k_join_pos == 'late' or self._corr_pos == 'late' or rnn_pos in ['late','out']):
                     self.yolo_blocks.add(TimeDistributed(block))
                 else:
                     self.yolo_blocks.add(block)
@@ -956,7 +997,8 @@ class YOLOV3T(gluon.HybridBlock):
                 self.yolo_outputs.add(output)
 
                 if i > 0:
-                    if self._k > 1 and (self._k_join_pos == 'late' or rnn_pos in ['late','out']):
+                    if self._k > 1 and \
+                            (self._k_join_pos == 'late' or self._corr_pos == 'late' or rnn_pos in ['late','out']):
                         self.transitions.add(TimeDistributed(_conv2d(channel, 1, 0, 1,
                                                              norm_layer=norm_layer, norm_kwargs=norm_kwargs)))
                     else:
@@ -1018,6 +1060,8 @@ class YOLOV3T(gluon.HybridBlock):
                     routes.append(F.reshape(x,(0,-3,-2)))  # B,K,C,H,W -> B,K*C,H,W
                 elif self._k_join_type in ['max', 'mean']:
                     routes.append(self.pool(x))
+            elif self._k > 1 and self._corr_pos == 'early':
+                routes.append(self.corr(x))
             else:
                 routes.append(x)
 
@@ -1026,6 +1070,8 @@ class YOLOV3T(gluon.HybridBlock):
                 x = F.reshape(x,(0,-3,-2))  # B,K,C,H,W -> B,K*C,H,W
             elif self._k_join_type in ['max', 'mean']:
                 x = self.pool(x)
+        elif self._k > 1 and self._corr_pos == 'early':
+            x = self.corr(x)
 
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
         for i, block, tips, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_tips, self.yolo_outputs):
@@ -1041,6 +1087,8 @@ class YOLOV3T(gluon.HybridBlock):
                     tip = F.reshape(tip, (0, -3, -2))  # B,K,C,H,W -> B,K*C,H,W
                 elif self._k_join_type in ['max', 'mean']:
                     tip = self.pool(tip)
+            elif self._k > 1 and self._corr_pos == 'late':
+                tip = self.corr(tip)
 
             if autograd.is_training():
                 dets, box_centers, box_scales, objness, class_pred, anchors, offsets = output(tip)
@@ -1074,7 +1122,7 @@ class YOLOV3T(gluon.HybridBlock):
             route_now = routes[::-1][i + 1]
 
             # concat
-            if self._k > 1 and (self._k_join_pos == 'late' or self._rnn_pos == 'out'):
+            if self._k > 1 and (self._k_join_pos == 'late' or self._corr_pos == 'late' or self._rnn_pos == 'out'):
                 x = F.concat(F.slice_like(upsample, route_now * 0, axes=(3, 4)), route_now, dim=2)
             else:
                 x = F.concat(F.slice_like(upsample, route_now * 0, axes=(2, 3)), route_now, dim=1)
