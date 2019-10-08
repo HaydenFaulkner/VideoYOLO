@@ -19,7 +19,7 @@ class ImageNetVidDetection(VisionDataset):
 
     def __init__(self, root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
                  splits=[(2017, 'train')], allow_empty=True, videos=False,
-                 transform=None, index_map=None, frames=1, inference=False,
+                 transform=None, index_map=None, every=1, inference=False,
                  window=[1, 1], features_dir=None):
 
         """
@@ -30,11 +30,7 @@ class ImageNetVidDetection(VisionDataset):
             videos (bool): interpret samples as full videos rather than frames (default is False)
             transform: the transform to apply to the image/video and label (default is None)
             index_map (dict): custom class to id dictionary (default is None)
-            frames (float): Based per video - and is evenly sampled, NOT randomly sampled (default is 1)
-                            <1: Percent of the full dataset to take -> range(0, len(video), int(1/frames))
-                                eg. .04 takes every 25th frame
-                            >1: This many frames per video -> range(0, len(video), int(ceil(len(video)/frames)))
-                            =1: Every sample used -> full dataset
+            every (float): every ?th frame of each video
             inference (bool): are we doing inference? (default is False)
             window_size (int): how many frames does a sample consist of? ie. the temporal window size (default is 1)
             window_step (int): the step distance of the temporal window (default is 1)
@@ -46,7 +42,6 @@ class ImageNetVidDetection(VisionDataset):
         assert len(splits) == 1, logging.error('Can only take one split currently as otherwise conflicting image ids')
         self._splits = splits
         self._videos = videos
-        self._frames = frames
         self._inference = inference
         self._window_size = window[0]
         self._window_step = window[1]
@@ -66,7 +61,13 @@ class ImageNetVidDetection(VisionDataset):
         
         # load the samples
         self.samples = self._load_samples()
-        
+        self.all_samples = self.samples.copy()
+
+        # only do every n frames
+        assert every >= 1
+        if every != 1:
+            self.samples = self._only_every(self.samples, every)
+
         # generate a sorted list of the sample ids
         self.sample_ids = sorted(list(self.samples.keys()))
 
@@ -191,7 +192,7 @@ class ImageNetVidDetection(VisionDataset):
 
                 # go through the sample ids for the window
                 for sid in window_sample_ids:
-                    img_path = self._image_path.format(*self.samples[sid])
+                    img_path = self._image_path.format(*self.all_samples[sid])
                     img = mx.image.imread(img_path)
 
                     if self._transform is not None:  # transform each image in the window
@@ -269,6 +270,15 @@ class ImageNetVidDetection(VisionDataset):
             return os.path.join(sample[0], sample[1], sample[2])
 
         return self._image_path.format(*self.samples[self.sample_ids[idx]])
+
+    def _only_every(self, samples, every):
+
+        cutback_samples = dict()
+        for k, v in samples.items():
+            if int(v[-1]) % every == 0:
+                cutback_samples[k] = v  # add it
+
+        return cutback_samples
 
     def _remove_empties(self):
         """
@@ -356,26 +366,26 @@ class ImageNetVidDetection(VisionDataset):
                 past_vid_id = vid_id
 
             elif i == len(ids)-1:  # last iteration - add the last video
-                if self._frames < 1:  # cut down per video
-                    frames = [frames[i] for i in range(0, len(frames), int(1 / self._frames))]
-                    frame_ids = [frame_ids[i] for i in range(0, len(frame_ids), int(1 / self._frames))]
-                elif self._frames > 1:  # cut down per video
-                    frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames) / self._frames)))]
-                    frame_ids = [frame_ids[i] for i in
-                                 range(0, len(frame_ids), int(math.ceil(len(frames) / self._frames)))]
+                # if self._frames < 1:  # cut down per video
+                #     frames = [frames[i] for i in range(0, len(frames), int(1 / self._frames))]
+                #     frame_ids = [frame_ids[i] for i in range(0, len(frame_ids), int(1 / self._frames))]
+                # elif self._frames > 1:  # cut down per video
+                #     frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames) / self._frames)))]
+                #     frame_ids = [frame_ids[i] for i in
+                #                  range(0, len(frame_ids), int(math.ceil(len(frames) / self._frames)))]
 
                 videos[vid_id] = (id_[2], vid_id, frames, frame_ids)
 
             else:
                 if vid_id != past_vid_id:  # new video - add it
 
-                    if self._frames < 1:  # cut down per video
-                        frames = [frames[i] for i in range(0, len(frames), int(1/self._frames))]
-                        frame_ids = [frame_ids[i] for i in range(0, len(frame_ids), int(1/self._frames))]
-                    elif self._frames > 1:  # cut down per video
-                        frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
-                        frame_ids = [frame_ids[i] for i in
-                                     range(0, len(frame_ids), int(math.ceil(len(frames)/self._frames)))]
+                    # if self._frames < 1:  # cut down per video
+                    #     frames = [frames[i] for i in range(0, len(frames), int(1/self._frames))]
+                    #     frame_ids = [frame_ids[i] for i in range(0, len(frame_ids), int(1/self._frames))]
+                    # elif self._frames > 1:  # cut down per video
+                    #     frames = [frames[i] for i in range(0, len(frames), int(math.ceil(len(frames)/self._frames)))]
+                    #     frame_ids = [frame_ids[i] for i in
+                    #                  range(0, len(frame_ids), int(math.ceil(len(frames)/self._frames)))]
 
                     videos[past_vid_id] = (past_id[2], past_vid_id, frames, frame_ids)
 

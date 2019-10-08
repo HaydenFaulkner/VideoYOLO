@@ -59,13 +59,10 @@ flags.DEFINE_float('detection_threshold', 0.5,
                    'The threshold on detections to them being displayed.')
 flags.DEFINE_integer('max_do', -1,
                      'Maximum samples to detect on. -1 is all.')
-flags.DEFINE_float('frames', 0.04,
-                   'Based per video - and is NOT randomly sampled:'
-                   'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
-                   'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
-                   'If =1: Every sample used - full dataset')
+flags.DEFINE_float('every', 25,
+                   'do every this many frames')
 flags.DEFINE_list('window', '1, 1',
-                  'Temporal window size of frames and the frame gap of the windows samples')
+                  'Temporal window size of frames and the frame gap/stride of the windows samples')
 flags.DEFINE_string('k_join_type', None,
                     'way to fuse k type, either max, mean, cat.')
 flags.DEFINE_string('k_join_pos', None,
@@ -98,7 +95,7 @@ def get_dataset(dataset_name):
         dataset = ImageNetDetection(splits=['val'], allow_empty=False, inference=True)
 
     elif dataset_name.lower() == 'vid':
-        dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, frames=FLAGS.frames,
+        dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=FLAGS.every,
                                        window=FLAGS.window, inference=True)
 
     elif dataset_name[-4:] == '.txt':  # list of images or list of videos

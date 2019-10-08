@@ -116,13 +116,10 @@ flags.DEFINE_integer('num_workers', -1,
 
 flags.DEFINE_integer('num_samples', -1,
                      'Training images. Use -1 to automatically get the number.')
-flags.DEFINE_float('frames', 0.04,
-                   'Based per video - and is NOT randomly sampled:'
-                   'If <1: Percent of the full dataset to take eg. .04 (every 25th frame) - range(0, len(video), int(1/frames))'
-                   'If >1: This many frames per video - range(0, len(video), int(ceil(len(video)/frames)))'
-                   'If =1: Every sample used - full dataset')
+flags.DEFINE_float('every', 25,
+                   'do every this many frames')
 flags.DEFINE_list('window', '1, 1',
-                  'Temporal window size of frames and the frame gap of the windows samples')
+                  'Temporal window size of frames and the frame gap/stride of the windows samples')
 flags.DEFINE_integer('seed', 233,
                      'Random seed to be fixed.')
 flags.DEFINE_string('features_dir', None,
@@ -161,9 +158,9 @@ def get_dataset(dataset_name, save_prefix=''):
 
     elif dataset_name.lower() == 'vid':
         train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty,
-                                             frames=FLAGS.frames, window=FLAGS.window, features_dir=FLAGS.features_dir)
+                                             every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir)
         val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty,
-                                           frames=FLAGS.frames, window=FLAGS.window, features_dir=FLAGS.features_dir)
+                                           every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     else:

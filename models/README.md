@@ -64,7 +64,7 @@ by clicking on each model ID below.
 Trained on [PascalVOC](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/index.html#devkit) `trainval 07+12`
 
 ```
-python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
 ```
 #### 0002
 [**Download (SOON)**]()
@@ -72,7 +72,7 @@ python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_wor
 Trained on [ImageNetDET](http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php) `train_nonempty`
 
 ```
-python train_yolov3.py --dataset det --gpus 0,1,2,3 --save_prefix 0002 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --dataset det --gpus 0,1,2,3 --save_prefix 0002 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
 ```
 #### 0003
 [**Download**](http://hf.id.au/models/VidDet/0003.tar.gz)
@@ -80,7 +80,7 @@ python train_yolov3.py --dataset det --gpus 0,1,2,3 --save_prefix 0002 --num_wor
 Trained on [MSCoco](http://cocodataset.org/#download) `train 17`
 
 ```
-python train_yolov3.py --dataset coco --gpus 0,1,2,3 --save_prefix 0003 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --dataset coco --gpus 0,1,2,3 --save_prefix 0003 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
 ```
 
 #### 0004
@@ -89,7 +89,7 @@ python train_yolov3.py --dataset coco --gpus 0,1,2,3 --save_prefix 0003 --num_wo
 Trained on [ImageNetVID](http://bvisionweb1.cs.unc.edu/ILSVRC2017/download-videos-1p39.php) `train17_ne_0.04`
 
 ```
-python train_yolov3.py --dataset vid --gpus 0,1,2,3 --save_prefix 0004 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True --frames 0.04
+python train_yolov3.py --dataset vid --gpus 0,1,2,3 --save_prefix 0004 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn --every 25
 ```
 
 #### 0006
@@ -100,7 +100,7 @@ Uses MobileNet1.0 instead of DarkNet53
 Trained on [PascalVOC](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/index.html#devkit) `trainval 07+12`
 
 ```
-python train_yolov3.py --network mobilenet1.0 --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --network mobilenet1.0 --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
 ```
 #### 0007
 [**Download (SOON)**]()
@@ -110,7 +110,7 @@ Uses MobileNet1.0 instead of DarkNet53
 Trained on [ImageNetDET](http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php) `train_nonempty`
 
 ```
-python train_yolov3.py --network mobilenet1.0 --dataset det --gpus 0,1,2,3 --save_prefix 0002 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --network mobilenet1.0 --dataset det --gpus 0,1,2,3 --save_prefix 0002 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
 ```
 #### 0008
 [**Download (SOON)**]()
@@ -120,7 +120,7 @@ Uses MobileNet1.0 instead of DarkNet53
 Trained on [MSCoco](http://cocodataset.org/#download) `train 17`
 
 ```
-python train_yolov3.py --network mobilenet1.0 --dataset coco --gpus 0,1,2,3 --save_prefix 0003 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --network mobilenet1.0 --dataset coco --gpus 0,1,2,3 --save_prefix 0003 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
 ```
 
 #### 0009
@@ -131,7 +131,7 @@ Uses MobileNet1.0 instead of DarkNet53
 Trained on [ImageNetVID](http://bvisionweb1.cs.unc.edu/ILSVRC2017/download-videos-1p39.php) `train17_ne_0.04`
 
 ```
-python train_yolov3.py --network mobilenet1_0 --dataset vid --gpus 0,1,2,3 --save_prefix 0004 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True --frames 0.04
+python train_yolov3.py --network mobilenet1_0 --dataset vid --gpus 0,1,2,3 --save_prefix 0004 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn --every 25
 ```
 
 ## Results
