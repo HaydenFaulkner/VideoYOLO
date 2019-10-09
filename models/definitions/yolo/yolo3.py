@@ -100,19 +100,19 @@ def _upsample(x, stride=2):
     return x.repeat(axis=-1, repeats=stride).repeat(axis=-2, repeats=stride)
 
 def _conv3d(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
-    """A common conv-bn-leakyrelu cell"""
-    cell = nn.HybridSequential(prefix='')
+    """A common 3dconv-bn-leakyrelu cell"""
+    cell = nn.HybridSequential(prefix='3D')
     cell.add(nn.Conv3D(channel, kernel_size=kernel, strides=stride, padding=padding, use_bias=False))
     cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
     cell.add(nn.LeakyReLU(0.1))
     return cell
 
 def _conv21d(channel, t, d, m, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
-    """A common conv-bn-leakyrelu cell"""
-    cell = nn.HybridSequential(prefix='')
+    """R(2+1)D from 'A Closer Look at Spatiotemporal Convolutions for Action Recognition'"""
+    cell = nn.HybridSequential(prefix='R(2+1)D')
 
-    cell.add(_conv3d(m, (1, d, d), (0, padding, padding), stride, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
-    cell.add(_conv3d(channel, (t, 1, 1), (1, 0, 0), stride, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+    cell.add(_conv3d(m, (1, d, d), (0, padding[0], padding[0]), stride[0], norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+    cell.add(_conv3d(channel, (t, 1, 1), (padding[1], 0, 0), stride[1], norm_layer=norm_layer, norm_kwargs=norm_kwargs))
 
     return cell
 
@@ -183,8 +183,8 @@ class Conv(gluon.HybridBlock):
                 self.conv = _conv3d(channel=channel, kernel=kernel, padding=padding, stride=stride,
                                     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
             else:
-                self.conv = _conv21d(channel=channel, t=kernel, d=kernel, m=channel, padding=padding, stride=stride,
-                                     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+                self.conv = _conv21d(channel=channel, t=kernel, d=kernel, m=channel, padding=[padding, padding],
+                                     stride=[stride, stride], norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
 
     def hybrid_forward(self, F, x):
             return self.conv(x)
