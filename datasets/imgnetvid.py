@@ -684,7 +684,7 @@ def generate_motion_ious():
 
     """
     for split in ['train', 'val']:
-        dataset = ImageNetVidDetection(splits=[(2017, split)], allow_empty=True, videos=True, percent=1)
+        dataset = ImageNetVidDetection(splits=[(2017, split)], allow_empty=True, videos=True)
     
         all_ious = {}  # using dict for better removing of elements on loading based on sample_id
         sample_id = 1  # messy but works
