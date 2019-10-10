@@ -74,6 +74,11 @@ flags.DEFINE_string('rnn_pos', None,
 
 flags.DEFINE_boolean('visualise', False,
                      'Do you want to display the detections?')
+flags.DEFINE_boolean('per_frame_metric', False,
+                     'Do you want to save out a per frame metric to the prediction files?')
+flags.DEFINE_string('worst_video_path', None,
+                    'Path to save video of worst case detections. If not None will require visualise and '
+                    'per_frame_metric to have been done previously')
 flags.DEFINE_boolean('display_gt', True,
                      'Do you want to display the ground truth boxes on the images?')
 
@@ -233,10 +238,15 @@ def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1):
                     f.write("{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5]))
 
 
-def load_predictions(save_dir, dataset, max_do=-1):
-    if not os.path.exists(os.path.join(save_dir, 'pred')):
-        logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'pred')))
-        return None
+def load_predictions(save_dir, dataset, max_do=-1, metric=None):
+    if metric is None:
+        if not os.path.exists(os.path.join(save_dir, 'pred')):
+            logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'pred')))
+            return None
+    else:
+        if not os.path.exists(os.path.join(save_dir, 'pred_metric')):
+            logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'pred_metric')))
+            return None
 
     boxes = dict()
     for idx in tqdm(range(min(len(dataset), max_do)), desc="Loading in prediction .txts"):
@@ -246,11 +256,64 @@ def load_predictions(save_dir, dataset, max_do=-1):
         if FLAGS.dataset == 'vid':
             file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
 
-        if not os.path.exists(os.path.join(save_dir, 'pred', file_id + '.txt')):
-            logging.error("Prediction file does not exist {}".format(os.path.join(save_dir, 'pred', file_id + '.txt')))
+        add_metrics = False
+        if metric is None:
+            file_path = os.path.join(save_dir, 'pred', file_id + '.txt')
+            if not os.path.exists(file_path):
+                logging.error("Prediction file does not exist {}".format(file_path))
+                return None
+        else:  # todo allow specific metrics
+            file_path = os.path.join(save_dir, 'pred_metric', file_id + '.txt')
+            if not os.path.exists(file_path):
+                if not os.path.exists(os.path.join(save_dir, 'pred', file_id + '.txt')):
+                    logging.error("Prediction file does not exist {}".format(file_path))
+                    return None
+                else:
+                    add_metrics = True
+
+        with open(file_path, 'r') as f:
+            bb = [line.rstrip().split(',') for line in f.readlines()]
+
+        if metric is not None and not add_metrics:
+            for box in bb:
+                if box[0] in boxes:
+                    boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6]), float(box[7])])
+                else:
+                    boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6]), float(box[7])]]
+        else:
+            for box in bb:
+                if box[0] in boxes:
+                    boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])])
+                else:
+                    boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])]]
+
+    if add_metrics:
+        boxes = add_metrics_to_predictions(save_dir, dataset, metric)
+
+    return boxes
+
+
+def add_metrics_to_predictions(load_dir, dataset, metric):
+
+    if not os.path.exists(os.path.join(load_dir, 'pred')):
+        logging.error("Predictions directory does not exist {}".format(os.path.join(load_dir, 'pred')))
+        return None
+
+    summary = dict()
+    boxes = dict()
+    for idx in tqdm(range(len(dataset)), desc="Adding metrics to predictions .txt"):
+        img_path = dataset.sample_path(idx)
+
+        file_id = img_path.split('/')[-1][:-4]
+        if FLAGS.dataset == 'vid':
+            file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+
+        if not os.path.exists(os.path.join(load_dir, 'pred', file_id + '.txt')):
+            logging.error("Prediction file does not exist {}".format(os.path.join(load_dir, 'pred', file_id + '.txt')))
             return None
 
-        with open(os.path.join(save_dir, 'pred', file_id + '.txt'), 'r') as f:
+        # Load the predictions
+        with open(os.path.join(load_dir, 'pred', file_id + '.txt'), 'r') as f:
             bb = [line.rstrip().split(',') for line in f.readlines()]
         for box in bb:
             if box[0] in boxes:
@@ -258,6 +321,61 @@ def load_predictions(save_dir, dataset, max_do=-1):
             else:
                 boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])]]
 
+        # Run the metrics
+        # get the gt boxes : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
+        img, y, _ = dataset[idx]
+        gt_bboxes = [np.expand_dims(y[:, :4], axis=0)]
+        gt_ids = [np.expand_dims(y[:, 4], axis=0)]
+        gt_difficults = [np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None]
+
+        # get the predictions : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
+        if img_path in boxes:
+            det_bboxes = [[[[b[2] * img.shape[-2],  # change pred box dims to match image (unnormalise them)
+                             b[3] * img.shape[-3],
+                             b[4] * img.shape[-2],
+                             b[5] * img.shape[-3]] for b in boxes[img_path]]]]
+            det_ids = [[[[b[0]] for b in boxes[img_path]]]]
+            det_scores = [[[[b[1]] for b in boxes[img_path]]]]
+
+        metric.reset()
+        metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+        _, scores = metric.get()
+        score = scores[-1]  # take the mean - which is the last score
+        if FLAGS.dataset == 'vid':
+            vid_id = img_path.split('/')[-2]
+            if vid_id in summary:
+                summary[vid_id].append(score)
+            else:
+                summary[vid_id] = [score]
+        else:
+            summary[img_path] = score
+
+        # Save out the new detection file
+        os.makedirs(os.path.join(load_dir, 'pred_metric'), exist_ok=True)
+
+        if FLAGS.dataset == 'vid':
+            os.makedirs(os.path.join(load_dir, 'pred_metric', img_path.split('/')[-2]), exist_ok=True)
+
+        with open(os.path.join(load_dir, 'pred_metric', file_id + '.txt'), 'w') as f:
+            if img_path in boxes:
+                for box in boxes[img_path]:  # sid, class, score, box
+                    f.write("{},{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5], score))
+                    box.append(score)
+
+    # generate a summary file listing ranking the worst clips
+    if isinstance(summary[list(summary.keys())[0]], list):
+        # need to sort on map first then number of frames, more frames ranked higher -> more wrong
+        for k in summary.keys():
+            summary[k] = [sum(summary[k])/len(summary[k]), len(summary[k])]
+        summary_sorted = sorted(summary.items(), key=lambda kv: (kv[1][0], -kv[1][1]))
+        for i in range(len(summary_sorted)):
+            summary_sorted[i] = (summary_sorted[i][0], summary_sorted[i][1][0])
+    else:
+        summary_sorted = sorted(summary.items(), key=lambda kv: kv[1])
+
+    with open(os.path.join(load_dir, 'pred_metric', 'summary.txt'), 'w') as f:
+        for ss in summary_sorted:
+            f.write("{}\t{}\n".format(ss[0], ss[1]))
     return boxes
 
 
@@ -306,6 +424,81 @@ def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes,
             cv2.imwrite(os.path.join(save_dir, 'vis', '/'.join(img_path.split('/')[-2:])), img)
         else:
             cv2.imwrite(os.path.join(save_dir, 'vis', img_path.split('/')[-1]), img)
+
+
+def video_of_worst(video_path, frames_dir, summary_file=None, fps=4):
+    assert fps < 25
+    # add the .mp4 extension if it isn't already there
+    if video_path[-4:] != ".mp4":
+        video_path += ".mp4"
+
+    files = list()
+    summaries_dict = dict()
+    # get the frame file paths
+    if summary_file is None:
+        for ext in [".jpg", ".png", ".jpeg", ".JPG", ".PNG", ".JPEG"]:
+            files = glob.glob(frames_dir + "/**/*" + ext, recursive=True)
+            if len(files) > 0:
+                break
+    else:
+        with open(summary_file, 'r') as f:
+            lines = f.readlines()
+        summaries = [l.rstrip().split() for l in lines]
+
+        for vid, score in summaries:
+            for ext in [".jpg", ".png", ".jpeg", ".JPG", ".PNG", ".JPEG"]:
+                frame_files = glob.glob(os.path.join(frames_dir, vid) + "/**/*" + ext, recursive=True)
+                if len(frame_files) > 0:
+                    break
+            # sort the files alphabetically assuming this will do them in the correct order
+            frame_files.sort()
+            files += frame_files
+            summaries_dict[vid] = score
+
+    # couldn't find any images
+    if not len(files) > 0:
+        print("Couldn't find any files in {}".format(frames_dir))
+        return None
+
+    # make specific frame size and fit all videos in this frame, with rescale and centering
+    height = 1080
+    width = 1920
+
+    # create the videowriter - will create an .mp4
+    video = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), 25, (width, height))
+
+    # load and write the frames to the video
+    for filename in tqdm(files, desc="Generating Video {}".format(video_path)):
+        blank_image = np.zeros((height, width, 3), np.uint8)
+        if os.path.exists(filename):
+            image = cv2.imread(filename)  # load the frame
+        else:
+            continue
+
+        h, w, _ = image.shape
+        ratio = min(height/h, width/w)
+        hs = int(h*ratio)
+        ws = int(w*ratio)
+        hm = int(hs/2)
+        wm = int(ws/2)
+        height_m = int(height/2)
+        width_m = int(width/2)
+
+        image = cv2.resize(image, (ws, hs), interpolation=cv2.INTER_AREA)  # resize
+        blank_image[height_m-hm:height_m+hm, width_m-wm:width_m+wm, :] = image[:2*hm, :2*wm, :]  # place in centre
+
+        vid_id = filename.split('/')[-2]
+        score = 'Clip AP: {:.2f}'.format(float(summaries_dict[vid_id]))
+
+        cv2.putText(blank_image, '{:s}'.format(score), (1650, 1060), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        cv2.putText(blank_image, '{:s}'.format(filename), (10, 1060), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+
+        for _ in range(int(25/fps)):
+            video.write(blank_image)  # write the frame to the video
+
+    video.release()  # release the video
+
+    return video_path
 
 
 def evaluate(metrics, dataset, predictions):
@@ -418,7 +611,12 @@ def main(_argv):
     os.makedirs(save_dir, exist_ok=True)
 
     # attempt to load predictions
-    predictions = load_predictions(save_dir, dataset, max_do=max_do)
+    max_do =200
+    per_sample_metric = None
+    if 1:#FLAGS.per_frame_metric:
+        per_sample_metric = get_metric(dataset, 'voc', FLAGS.data_shape, save_dir,
+                                       class_map=get_class_map(trained_on_dataset, dataset))
+    predictions = load_predictions(save_dir, dataset, max_do=max_do, metric=per_sample_metric)
 
     if predictions is None:  # id not exist detect and make
         predictions = detect(net, dataset, loader, ctx, max_do=max_do)  # todo fix det thresh
@@ -427,6 +625,10 @@ def main(_argv):
     if FLAGS.visualise:
         visualise_predictions(save_dir, dataset, trained_on_dataset, predictions,
                               max_do, display_gt=FLAGS.display_gt, detection_threshold=FLAGS.detection_threshold)
+
+    if FLAGS.worst_video_path is not None:
+        video_of_worst(FLAGS.worst_video_path, os.path.join(save_dir, "vis"),
+                       summary_file=os.path.join(save_dir, 'pred_metric', 'summary.txt'), fps=4)
 
     metrics = list()
     if FLAGS.metrics:
