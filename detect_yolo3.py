@@ -611,9 +611,11 @@ def main(_argv):
     os.makedirs(save_dir, exist_ok=True)
 
     # attempt to load predictions
-    max_do =200
+
     per_sample_metric = None
-    if 1:#FLAGS.per_frame_metric:
+    if FLAGS.worst_video_path is not None:
+        FLAGS.per_frame_metric = True
+    if FLAGS.per_frame_metric:
         per_sample_metric = get_metric(dataset, 'voc', FLAGS.data_shape, save_dir,
                                        class_map=get_class_map(trained_on_dataset, dataset))
     predictions = load_predictions(save_dir, dataset, max_do=max_do, metric=per_sample_metric)
