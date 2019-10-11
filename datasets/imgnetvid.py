@@ -233,9 +233,9 @@ class ImageNetVidDetection(VisionDataset):
             sample = self.samples[sample_id]
             vid = None
             labels = None
-            for frame_id in sample[3]:  # for each frame in the video
+            for frame_id in sample[2]:  # for each frame in the video
                 # load the frame and the label
-                img_id = (sample[0], sample[1], os.path.join(sample[2], frame_id))
+                img_id = (sample[0], sample[1], frame_id)
                 img_path = self._image_path.format(*img_id)
                 label = self._load_label(idx, frame_id=frame_id)
                 img = mx.image.imread(img_path, 1)
@@ -272,13 +272,24 @@ class ImageNetVidDetection(VisionDataset):
         return self._image_path.format(*self.samples[self.sample_ids[idx]])
 
     def _only_every(self, samples, every):
+        if self._videos:
+            for k, v in samples.items():
+                frame_ids = list()
+                frame_nums = list()
+                for i, frame_id in enumerate(v[2]):
+                    if int(int(frame_id)) % every == 0:
+                        frame_ids.append(frame_id)
+                        frame_nums.append(v[3][i])
+                samples[k][2] = frame_ids
+                samples[k][3] = frame_nums
+            return samples
+        else:
+            cutback_samples = dict()
+            for k, v in samples.items():
+                if int(v[-1]) % every == 0:
+                    cutback_samples[k] = v  # add it
 
-        cutback_samples = dict()
-        for k, v in samples.items():
-            if int(v[-1]) % every == 0:
-                cutback_samples[k] = v  # add it
-
-        return cutback_samples
+            return cutback_samples
 
     def _remove_empties(self):
         """
@@ -374,7 +385,7 @@ class ImageNetVidDetection(VisionDataset):
                 #     frame_ids = [frame_ids[i] for i in
                 #                  range(0, len(frame_ids), int(math.ceil(len(frames) / self._frames)))]
 
-                videos[vid_id] = (id_[2], vid_id, frames, frame_ids)
+                videos[vid_id] = [id_[2], vid_id, frames, frame_ids]
 
             else:
                 if vid_id != past_vid_id:  # new video - add it
@@ -387,7 +398,7 @@ class ImageNetVidDetection(VisionDataset):
                     #     frame_ids = [frame_ids[i] for i in
                     #                  range(0, len(frame_ids), int(math.ceil(len(frames)/self._frames)))]
 
-                    videos[past_vid_id] = (past_id[2], past_vid_id, frames, frame_ids)
+                    videos[past_vid_id] = [past_id[2], past_vid_id, frames, frame_ids]
 
                     past_id = id_
                     frames = [frame]
@@ -720,12 +731,12 @@ def generate_motion_ious():
 
 
 if __name__ == '__main__':
-    train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], frames=0.04)
+    train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], every=25)
     for s in tqdm(train_dataset, desc='Test Pass of Training Set'):
         pass
     print(train_dataset)
 
-    val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], frames=0.04)
+    val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], every=25, videos=True)
     for s in tqdm(val_dataset, desc='Test Pass of Validation Set'):
         pass
     print(val_dataset)
