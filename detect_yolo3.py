@@ -401,7 +401,7 @@ def visualise_predictions(save_dir, dataset, trained_on_dataset, boxes,
         if display_gt and len(y) > 0:
             img = cv_plot_bbox(img=img,
                                bboxes=[list(g) for g in y[:, :4]],
-                               scores=[1]*len(y),
+                               scores=None,#[1]*len(y),
                                labels=[g for g in y[:, 4]],
                                thresh=detection_threshold,
                                colors=colors_gt,
