@@ -85,7 +85,7 @@ conda activate viddet-mx
 ### Training
 To train a model you can use something like:
 ```
-python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn True
+python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
 ```
 
 If you don't have this much power available you will need to specify a lower batch size:
