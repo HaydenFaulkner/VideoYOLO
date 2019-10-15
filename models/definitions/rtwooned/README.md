@@ -13,19 +13,19 @@ The original `.pkl` pre-trained models can be downloaded from their
 
 We have converted two models into `.params`, which you can download by clicking on them below:
 
-Original ([Download](https://www.dropbox.com/s/p81twy88kwrrcop/r2plus1d_34_clip8_ft_kinetics_from_ig65m_%20f128022400.pkl?dl=0)): 
+**Original** ([Download](https://www.dropbox.com/s/p81twy88kwrrcop/r2plus1d_34_clip8_ft_kinetics_from_ig65m_%20f128022400.pkl?dl=0)): 
 `r2plus1d_34_clip8_ft_kinetics_from_ig65m_ f128022400.pkl` 
+ 
+**Converted** (Download): `34_kinetics_from_ig65m_f128022400.params`
 
-Converted (Download): `34_kinetics_from_ig65m_f128022400.params`
 
-
-Original ([Download](https://www.dropbox.com/s/w5cdqeyqukuaqt7/r2plus1d_152_sports1m_from_scratch_f127111290.pkl?dl=0)): 
+**Original** ([Download](https://www.dropbox.com/s/w5cdqeyqukuaqt7/r2plus1d_152_sports1m_from_scratch_f127111290.pkl?dl=0)): 
 `r2plus1d_152_sports1m_from_scratch_f127111290.pkl` 
 
-Converted (Download): `152_sports1m_f127111290.params`
+**Converted** (Download): `152_sports1m_f127111290.params`
 
 
-We store the models in the [VidDet/models/r21d](../../../r21d) directory.
+We store the models in the `VidDet/models/r21d` directory.
 
 ### The Minor Differences
 We tested our implementation in comparison to the official code, and despite similar setups 
