@@ -6,7 +6,7 @@ import mxnet as mx
 from mxnet import nd
 from mxnet.base import numeric_types
 
-__all__ = ['random_expand']
+__all__ = ['random_expand', 'random_color_distort']
 
 
 def random_expand(src, max_ratio=4, fill=0, keep_ratio=True):

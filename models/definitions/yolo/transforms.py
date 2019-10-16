@@ -8,7 +8,7 @@ from gluoncv.data.transforms import bbox as tbbox
 from gluoncv.data.transforms import image as timage
 from gluoncv.data.transforms import experimental
 
-from ..transforms import video as tvideo
+from ...transforms import video as tvideo
 
 class YOLO3DefaultTrainTransform(object):
     """Default YOLO training transform which includes tons of image augmentations.

@@ -329,14 +329,19 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
     else:  # the default definition from gluoncv
         if FLAGS.network == 'darknet53' or FLAGS.network == 'mobilenet1.0':
             net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))  # only get custom, use FLAGS.resume to load particular set (voc, coco) weights
+            if FLAGS.network == 'darknet53':
+                root = os.path.join('models', 'definitions', 'darknet', 'weights')
+            else:
+                root = os.path.join('models', 'definitions', 'mobilenet', 'weights')
+
             if FLAGS.syncbn and len(ctx) > 1:
-                net = get_model(net_name, root='models', pretrained_base=FLAGS.pretrained_cnn,
+                net = get_model(net_name, root=root, pretrained_base=FLAGS.pretrained_cnn,
                                 classes=trained_on_dataset.classes,
                                 norm_layer=gluon.contrib.nn.SyncBatchNorm,
                                 norm_kwargs={'num_devices': len(ctx)})
                 async_net = get_model(net_name, pretrained_base=False, classes=trained_on_dataset.classes)
             else:
-                net = get_model(net_name, root='models',
+                net = get_model(net_name, root=root,
                                 pretrained_base=FLAGS.pretrained_cnn, classes=trained_on_dataset.classes)
                 async_net = net
         else:
@@ -607,14 +612,14 @@ def main(_argv):
         trained_on_dataset, _, _ = get_dataset(FLAGS.trained_on, os.path.join('models', FLAGS.save_prefix))
 
     # network
-    if os.path.exists(os.path.join('models', FLAGS.save_prefix)) and not bool(FLAGS.resume.strip()) \
+    if os.path.exists(os.path.join('models', 'experiments', FLAGS.save_prefix)) and not bool(FLAGS.resume.strip()) \
             and FLAGS.save_prefix != '0000':  # using 0000 for testing
         logging.error("{} exists so won't overwrite and restart training. You can resume training by using "
                       "--resume".format(os.path.join('models', FLAGS.save_prefix)))
         return
-    os.makedirs(os.path.join('models', FLAGS.save_prefix), exist_ok=True)
+    os.makedirs(os.path.join('models', 'experiments', FLAGS.save_prefix), exist_ok=True)
     net_name = '_'.join(('yolo3', FLAGS.network, FLAGS.dataset))
-    save_prefix = os.path.join('models', FLAGS.save_prefix, net_name)
+    save_prefix = os.path.join('models', 'experiments', FLAGS.save_prefix, net_name)
 
     net, async_net, start_epoch = get_net(trained_on_dataset, ctx, definition='ours')  # 'gluon' or 'ours'
 

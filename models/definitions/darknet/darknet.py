@@ -112,7 +112,7 @@ darknet_spec = {
 }
 
 def get_darknet(darknet_version, num_layers, pretrained=False, ctx=mx.cpu(),
-                root=os.path.join('~', '.mxnet', 'models'), **kwargs):
+                root=os.path.join('models', 'definitions', 'darknet', 'weights'), **kwargs):
     """Get darknet by `version` and `num_layers` info.
 
     Parameters

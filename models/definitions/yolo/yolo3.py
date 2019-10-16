@@ -11,8 +11,8 @@ from mxnet import gluon
 from mxnet import autograd
 from mxnet.gluon import nn
 from mxnet.gluon.nn import BatchNorm
-from .darknet import _conv2d, darknet53
-from .mobilenet import get_mobilenet
+from ..darknet.darknet import _conv2d, darknet53
+from ..mobilenet.mobilenet import get_mobilenet
 from .yolo_target import YOLOV3TargetMerger
 from gluoncv.loss import YOLOV3Loss
 

@@ -611,9 +611,9 @@ def main(_argv):
 
     # organise the save directories for the results
     if FLAGS.dataset in ['voc', 'coco', 'det', 'vid']:
-        save_dir = os.path.join('models', FLAGS.save_prefix, FLAGS.save_dir, FLAGS.dataset)
+        save_dir = os.path.join('models', 'experiments', FLAGS.save_prefix, FLAGS.save_dir, FLAGS.dataset)
     else:
-        save_dir = os.path.join('models', FLAGS.save_prefix, FLAGS.save_dir)
+        save_dir = os.path.join('models', 'experiments', FLAGS.save_prefix, FLAGS.save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
     # attempt to load predictions
