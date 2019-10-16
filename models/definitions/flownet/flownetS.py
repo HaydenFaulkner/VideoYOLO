@@ -16,9 +16,8 @@ class FlowNetS(HybridBlock):
     """
     FlowNet S without batch norm
     """
-    def __init__(self, prefix='flownetS', div_flow=20, **kwargs):
+    def __init__(self, prefix='flownetS', **kwargs):
         super(FlowNetS, self).__init__(**kwargs)
-        self.div_flow = div_flow
         with self.name_scope():
             self.conv1 = nn.HybridSequential(prefix=prefix+'_conv_1.')
             self.conv1.add(nn.Conv2D(channels=64, kernel_size=7, strides=2, padding=3, prefix='conv1.0.'))
@@ -119,19 +118,16 @@ class FlowNetS(HybridBlock):
 
 
 if __name__ == '__main__':
+    # just for debugging
 
-    # contexts
-    gpus = [0]
-    ctx = [mx.gpu(int(i)) for i in gpus]
-    ctx = ctx if ctx else [mx.cpu()]
+    pth_path = "models/definitions/flownet/weights/FlowNet2-S_checkpoint.pth"
+    save_path = "models/definitions/flownet/weights/FlowNet2-S_checkpoint.params"
 
-    net = FlowNetS()
-    net.initialize()
+    model = FlowNetS()
+    model.initialize()
 
-    out = net.summary(mx.nd.random_normal(shape=(1, 2, 3, 384, 512)))
+    out = model.summary(mx.nd.random_normal(shape=(1, 2, 3, 384, 512)))
 
-    # convert_weights(net, load_path='/home/hayden/Downloads/FlowNet2-S_checkpoint.pth')
-    # net.load_parameters('/home/hayden/Downloads/FlowNet2-S_checkpoint.params')
+    convert_weights(model, load_path=pth_path)
 
-    net.collect_params().reset_ctx(ctx)
-    print()
+    print('DONE')

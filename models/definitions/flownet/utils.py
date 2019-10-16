@@ -10,7 +10,7 @@ from mxnet.gluon import nn
 
 UNKNOWN_FLOW_THRESH = 1e7
 
-def convert_weights(model, load_path, save_path=None):
+def convert_weights(model, load_path, model_type='flownetS', save_path=None):
     """
     Used to convert weigths of FlowNet2-S_checkpoint.pth into FlowNet2-S_checkpoint.params
 
@@ -33,7 +33,12 @@ def convert_weights(model, load_path, save_path=None):
     original = torch.load(load_path)
     comp = dict()
     for k, v in original['state_dict'].items():
-        comp['flownets0_'+k] = k
+        if model_type == 'flownetS':
+            comp['flownets0_'+k] = k
+        elif model_type == 'flownetC':
+            comp['flownetc0_'+k] = k
+        else:
+            return NotImplementedError
 
     found = []
     not_found = []

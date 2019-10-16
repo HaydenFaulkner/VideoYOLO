@@ -254,19 +254,19 @@ def get_r21d(num_layers, t=1, dataset='sports1m', **kwargs):
 if __name__ == '__main__':
     # just for debugging
 
-    pkl_path = "models/rdnet/weights/r2plus1d_152_sports1m_from_scratch_f127111290.pkl"
-    save_path = "models/rdnet/weights/152_sports1m_f127111290.params"
+    pkl_path = "models/definitions/rdnet/weights/r2plus1d_152_sports1m_from_scratch_f127111290.pkl"
+    save_path = "models/definitions/rdnet/weights/152_sports1m_f127111290.params"
     n_layers = 152
     length_rgb = 32
     dataset = 'sports1m'
 
-    # pkl_path = "models/rdnet/weights/r2plus1d_34_clip8_ft_kinetics_from_ig65m_ f128022400.pkl"
-    # save_path = "models/rdnet/weights/34_kinetics_from_ig65m_f128022400.params"
+    # pkl_path = "models/definitions/rdnet/weights/r2plus1d_34_clip8_ft_kinetics_from_ig65m_ f128022400.pkl"
+    # save_path = "models/definitions/rdnet/weights/34_kinetics_from_ig65m_f128022400.params"
     # n_layers = 34
     # length_rgb = 8
     # dataset = 'kinetics'
 
-    model =  get_r21d(n_layers, t=1, dataset=dataset)
+    model = get_r21d(n_layers, t=1, dataset=dataset)
     model.initialize()
 
     out = model.summary(mx.nd.ones((2, 3, length_rgb, 112, 112)))

@@ -137,21 +137,20 @@ def process_video(model, input_path, output_path=None, ctx=None):
     return output_path
 
 if __name__ == '__main__':
+    # just for debugging
 
-    # contexts
-    # gpus = [0]
-    # ctx = [mx.gpu(int(i)) for i in gpus]
-    # ctx = ctx if ctx else [mx.cpu()]
+    save_path = "models/definitions/flownet/weights/FlowNet2-S_checkpoint.params"
 
     ctx = mx.gpu(0)
 
     net = FlowNetS()
     net.initialize()
 
-    net.load_parameters('/home/hayden/Downloads/FlowNet2-S_checkpoint.params')
+    net.load_parameters(save_path)
     net.collect_params().reset_ctx(ctx)
     net.hybridize()
 
-    input_path = "/home/hayden/Downloads/test.mp4"
+    input_path = "/path/to/test.mp4"
     process_video(net, input_path, ctx=ctx)
+
     print("DONE")
