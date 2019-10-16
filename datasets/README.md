@@ -25,6 +25,11 @@ If using an IDE such as PyCharm be sure to mark each of the
 dataset directories as `excluded` so they aren't indexed. Indexing just
 takes too long for the many files that will exist in these directories.
 
+### Extras
+Download the **motion IoU groundtruth** `.json` for the ImageNetVID validation set from 
+[Google Drive](https://drive.google.com/open?id=1-bvtqx71KNfNSi7twXbgBDdeoCA_use7) and place 
+it in the `VidDet/datasets/ImageNetDET/ILSVRC/` directory.
+
 ### Stats
 Number of boxes per set, attained by running `stats.py`
 #### Training
