@@ -6,10 +6,10 @@ subdirectory named with the `args.save-prefix` argument. For example
 our structure looks as follows:
 ```
 VidDet/models/README.md
-VidDet/models/darknet53-2189ea49.params        <- downloaded by gluoncv
-VidDet/models/mobilenet1.0-efbb2ca3.params     <- downloaded by gluoncv
+VidDet/models/definitions/darknet/weights/darknet53-2189ea49.params               <- downloaded by gluoncv
+VidDet/models/definitions/darknet/weights/mobilenet/mobilenet1.0-efbb2ca3.params  <- downloaded by gluoncv
 
-VidDet/models/0001/                            <- our own trained model
+VidDet/models/experiments/0001/                                                   <- our own trained models
 
 ```
 
