@@ -46,6 +46,6 @@ def display_stats(stats, columns=['Epoch', 'mAP', 'ObjLoss', 'BoxCenterLoss', 'B
 
 
 if __name__ == '__main__':
-    model = '0051'
+    model = '0030'
     stats = extract_stats("models/"+model+"/yolo3_darknet53_vid_train.log")
     print(display_stats(stats, columns=['mAP']))
