@@ -71,6 +71,10 @@ flags.DEFINE_string('block_conv_type', '2',
                     "convolution type for the YOLO blocks: '2'2D, '3':3D or '21':2+1D, must be used with 'late' joining")
 flags.DEFINE_string('rnn_pos', None,
                     "position of RNN, currently only supports 'late' or 'out")
+flags.DEFINE_string('corr_pos', None,
+                    "position of correlation features calculation, currently only supports 'early' or 'late")
+flags.DEFINE_integer('corr_d', 4,
+                     'The d value for the correlation filter.')
 
 flags.DEFINE_boolean('visualise', False,
                      'Do you want to display the detections?')
@@ -590,11 +594,13 @@ def main(_argv):
     if FLAGS.network == 'darknet53':
         net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                               k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                              block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)
+                              block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
+                              corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)
     elif FLAGS.network == 'mobilenet1.0':
         net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                  k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                 block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos)
+                                 block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
+                                 corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)
     else:
         raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
     net.load_parameters(model_path)
