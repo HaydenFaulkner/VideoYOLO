@@ -17,7 +17,7 @@ We have converted two models into `.params`, which you can download from
 
 `r2plus1d_152_sports1m_from_scratch_f127111290.pkl` --> `152_sports1m_f127111290.params`
 
-We store the models in the `/VidDet/models/rdnet/weights/` directory.
+We store the models in the `/VidDet/models/definitions/rdnet/weights/` directory.
 
 ### The Minor Differences
 We tested our implementation in comparison to the official code, and despite similar setups 
