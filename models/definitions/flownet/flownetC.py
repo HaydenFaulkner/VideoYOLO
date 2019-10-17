@@ -12,12 +12,14 @@ from mxnet.gluon import nn
 
 from utils import convert_weights
 
-class FlowNetS(HybridBlock):
+
+
+class FlowNetC(HybridBlock):
     """
-    FlowNet S without batch norm
+    FlowNet C without batch norm
     """
-    def __init__(self, prefix='flownetS', **kwargs):
-        super(FlowNetS, self).__init__(**kwargs)
+    def __init__(self, prefix='flownetC', **kwargs):
+        super(FlowNetC, self).__init__(**kwargs)
         with self.name_scope():
             self.conv1 = nn.HybridSequential(prefix=prefix+'_conv_1.')
             self.conv1.add(nn.Conv2D(channels=64, kernel_size=7, strides=2, padding=3, prefix='conv1.0.'))
@@ -30,8 +32,16 @@ class FlowNetS(HybridBlock):
             self.conv3 = nn.HybridSequential(prefix=prefix+'_conv_3.')
             self.conv3.add(nn.Conv2D(channels=256, kernel_size=5, strides=2, padding=2, prefix='conv3.0.'))
             self.conv3.add(nn.LeakyReLU(alpha=0.1, prefix='ReLU3.'))
-            self.conv3.add(nn.Conv2D(channels=256, kernel_size=3, strides=1, padding=1, prefix='conv3_1.0.'))
-            self.conv3.add(nn.LeakyReLU(alpha=0.1, prefix='ReLU4.'))
+
+            self.conv_redir = nn.HybridSequential(prefix=prefix+'_conv_redir.')
+            self.conv_redir.add(nn.Conv2D(channels=32, kernel_size=1, strides=1, padding=0, prefix='conv_redir.0.'))
+            self.conv_redir.add(nn.LeakyReLU(alpha=0.1, prefix='ReLU_redir.'))
+
+            self.corr_activation = nn.LeakyReLU(alpha=0.1, prefix='corr_act.')
+
+            self.conv3_1 = nn.HybridSequential(prefix=prefix+'_conv_3.1')
+            self.conv3_1.add(nn.Conv2D(channels=256, kernel_size=3, strides=1, padding=1, prefix='conv3_1.0.'))
+            self.conv3_1.add(nn.LeakyReLU(alpha=0.1, prefix='ReLU4.'))
 
             self.conv4 = nn.HybridSequential(prefix=prefix+'_conv_4.')
             self.conv4.add(nn.Conv2D(channels=512, kernel_size=3, strides=2, padding=1, prefix='conv4.0.'))
@@ -55,36 +65,52 @@ class FlowNetS(HybridBlock):
             self.deconv5 = nn.Conv2DTranspose(channels=512, kernel_size=4, strides=2, padding=1, prefix='deconv5.0.')
             self.relu11 = nn.LeakyReLU(alpha=0.1, prefix='ReLU11.')
             self.upsampled_flow6_to_5 = nn.Conv2DTranspose(channels=2, kernel_size=4, strides=2, padding=1,
-                                                           prefix='upsampled_flow6_to_5.', use_bias=False)
+                                                           prefix='upsampled_flow6_to_5.')
 
             self.predict_flow5 = nn.Conv2D(channels=2, kernel_size=3, strides=1, padding=1, prefix='predict_flow5.')
             self.deconv4 = nn.Conv2DTranspose(channels=256, kernel_size=4, strides=2, padding=1, prefix='deconv4.0.')
             self.relu12 = nn.LeakyReLU(alpha=0.1, prefix='ReLU12.')
             self.upsampled_flow5_to_4 = nn.Conv2DTranspose(channels=2, kernel_size=4, strides=2, padding=1,
-                                                           prefix='upsampled_flow5_to_4.', use_bias=False)
+                                                           prefix='upsampled_flow5_to_4.')
 
             self.predict_flow4 = nn.Conv2D(channels=2, kernel_size=3, strides=1, padding=1, prefix='predict_flow4.')
             self.deconv3 = nn.Conv2DTranspose(channels=128, kernel_size=4, strides=2, padding=1, prefix='deconv3.0.')
             self.relu13 = nn.LeakyReLU(alpha=0.1, prefix='ReLU13.')
             self.upsampled_flow4_to_3 = nn.Conv2DTranspose(channels=2, kernel_size=4, strides=2, padding=1,
-                                                           prefix='upsampled_flow4_to_3.', use_bias=False)
+                                                           prefix='upsampled_flow4_to_3.')
 
             self.predict_flow3 = nn.Conv2D(channels=2, kernel_size=3, strides=1, padding=1, prefix='predict_flow3.')
             self.deconv2 = nn.Conv2DTranspose(channels=64, kernel_size=4, strides=2, padding=1, prefix='deconv2.0.')
             self.relu14 = nn.LeakyReLU(alpha=0.1, prefix='ReLU14.')
             self.upsampled_flow3_to_2 = nn.Conv2DTranspose(channels=2, kernel_size=4, strides=2, padding=1,
-                                                           prefix='upsampled_flow3_to_2.', use_bias=False)
+                                                           prefix='upsampled_flow3_to_2.')
 
             self.predict_flow2 = nn.Conv2D(channels=2, kernel_size=3, strides=1, padding=1, prefix='predict_flow2.')
 
 
     def hybrid_forward(self, F, x):
+        x = F.split(data=x, axis=1, num_outputs=2)
+        xa = F.squeeze(x[0], axis=1) # take i=0 b,i,c,h,w -> b,c,h,w
+        xb = F.squeeze(x[1], axis=1) # take i=1 b,i,c,h,w -> b,c,h,w
 
-        x = F.reshape(x, shape=(0,-3,-2))  # concat the two imgs on the channels dim b,i,c,h,w -> b,i*c,h,w
+        out_conv1a = self.conv1(xa)
+        out_conv2a = self.conv2(out_conv1a)
+        out_conv3a = self.conv3(out_conv2a)
 
-        out_conv1 = self.conv1(x)
-        out_conv2 = self.conv2(out_conv1)
-        out_conv3 = self.conv3(out_conv2)
+        out_conv1b = self.conv1(xb)
+        out_conv2b = self.conv2(out_conv1b)
+        out_conv3b = self.conv3(out_conv2b)
+
+        out_corr = F.Correlation(out_conv3a, out_conv3b,
+                                 kernel_size=1, max_displacement=20, pad_size=20, stride1=1, stride2=2)
+        out_corr = self.corr_activation(out_corr)
+
+        out_conv_redir = self.conv_redir(out_conv3a)
+
+        in_conv_3_1 = F.concat(out_conv_redir, out_corr, dim=1)
+
+        out_conv3 = self.conv3_1(in_conv_3_1)
+
         out_conv4 = self.conv4(out_conv3)
         out_conv5 = self.conv5(out_conv4)
         out_conv6 = self.conv6(out_conv5)
@@ -108,7 +134,7 @@ class FlowNetS(HybridBlock):
         flow3_up = self.upsampled_flow3_to_2(flow3)
         out_deconv2 = self.relu14(self.deconv2(concat3))
 
-        concat2 = F.concat(out_conv2, out_deconv2, flow3_up)
+        concat2 = F.concat(out_conv2a, out_deconv2, flow3_up)
         flow2 = self.predict_flow2(concat2)
 
         if autograd.is_training():
@@ -120,14 +146,14 @@ class FlowNetS(HybridBlock):
 if __name__ == '__main__':
     # just for debugging
 
-    pth_path = "models/definitions/flownet/weights/FlowNet2-S_checkpoint.pth"
-    save_path = "models/definitions/flownet/weights/FlowNet2-S_checkpoint.params"
+    pth_path = "models/definitions/flownet/weights/FlowNet2-C_checkpoint.pth"
+    save_path = "models/definitions/flownet/weights/FlowNet2-C_checkpoint.params"
 
-    model = FlowNetS()
+    model = FlowNetC()
     model.initialize()
 
     out = model.summary(mx.nd.random_normal(shape=(1, 2, 3, 384, 512)))
 
-    convert_weights(model, load_path=pth_path, model_type='flownetS')
+    convert_weights(model, load_path=pth_path, model_type='flownetC')
 
     print('DONE')

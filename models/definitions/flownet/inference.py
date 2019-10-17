@@ -5,6 +5,7 @@ from scipy.misc import imresize
 from tqdm import tqdm
 
 from flownetS import FlowNetS
+from flownetC import FlowNetC
 from utils import flow_to_image, crop, normalise
 
 def process_two_images(model, imgs, ctx=None):
@@ -139,11 +140,13 @@ def process_video(model, input_path, output_path=None, ctx=None):
 if __name__ == '__main__':
     # just for debugging
 
-    save_path = "models/definitions/flownet/weights/FlowNet2-S_checkpoint.params"
+    # save_path = "models/definitions/flownet/weights/FlowNet2-S_checkpoint.params"
+    save_path = "models/definitions/flownet/weights/FlowNet2-C_checkpoint.params"
 
     ctx = mx.gpu(0)
 
-    net = FlowNetS()
+    # net = FlowNetS()
+    net = FlowNetC()
     net.initialize()
 
     net.load_parameters(save_path)
