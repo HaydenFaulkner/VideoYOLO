@@ -1,6 +1,8 @@
-# VidDet
+<h1 align='center'>VidDet</h1>
+<p align=center>
 A fast, accurate and diverse object detection pipeline for video written
-in [MXNet](https://mxnet.apache.org/) and [GluonCV](https://gluon-cv.mxnet.io/).
+in MXNet and Gluon.
+</p>
 
 ## Todo
 - Train and upload pre-trained models for all datasets and MobileNet

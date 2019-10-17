@@ -2,6 +2,9 @@
 We have attempted to convert the [official R(2+1)D](https://github.com/facebookresearch/VMZ)
  models and weights **from Caffe2 over to Gluon**.
 
+There is also a newer very nicely written [_unnoficial_ PyTorch implementation](https://github.com/moabitcoin/ig65m-pytorch), 
+however we don't directly use it.
+
 ### Model Definition
 We modify [Gluon's ResNet implementation](https://github.com/apache/incubator-mxnet/blob/master/python/mxnet/gluon/model_zoo/vision/resnet.py) 
 to handle R(2+1)D models. The definition can be found in `r21d.py`.
