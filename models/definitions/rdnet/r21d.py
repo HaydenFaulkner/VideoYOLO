@@ -207,7 +207,7 @@ class R21DV1(HybridBlock):
         return x, avg, sm
 
 # Constructor
-def get_r21d(num_layers, t=1, dataset='sports1m', **kwargs):
+def get_r21d(num_layers, n_classes, t=1, **kwargs):
     r"""ResNet V1 model from `"Deep Residual Learning for Image Recognition"
     <http://arxiv.org/abs/1512.03385>`_ paper.
     ResNet V2 model from `"Identity Mappings in Deep Residual Networks"
@@ -237,11 +237,6 @@ def get_r21d(num_layers, t=1, dataset='sports1m', **kwargs):
 
     block_type, layers, channels = net_layers[num_layers]
 
-    if dataset == 'sports1m':
-        n_classes = 487
-    elif dataset == 'kinetics':
-        n_classes = 400
-
     if block_type == 'basic_block':
         block_class = BasicBlockV1
     else:
@@ -254,24 +249,24 @@ def get_r21d(num_layers, t=1, dataset='sports1m', **kwargs):
 if __name__ == '__main__':
     # just for debugging
 
-    pkl_path = "models/definitions/rdnet/weights/r2plus1d_152_sports1m_from_scratch_f127111290.pkl"
-    save_path = "models/definitions/rdnet/weights/152_sports1m_f127111290.params"
-    n_layers = 152
+    # pkl_path = "models/definitions/rdnet/weights/r2plus1d_152_sports1m_from_scratch_f127111290.pkl"
+    # save_path = "models/definitions/rdnet/weights/152_sports1m_f127111290.params"
+    # n_layers = 152
+    # length_rgb = 32
+    # dataset = 'sports1m'
+
+    pkl_path = "models/definitions/rdnet/weights/r2plus1d_34_clip32_ig65m_from_scratch_f102649996.pkl"
+    save_path = "models/definitions/rdnet/weights/34_32_ig65m_from_scratch_f102649996.params"
+    n_layers = 34
     length_rgb = 32
-    dataset = 'sports1m'
+    n_classes = 359 # 487 sports, # 400 kinetics
 
-    # pkl_path = "models/definitions/rdnet/weights/r2plus1d_34_clip8_ft_kinetics_from_ig65m_ f128022400.pkl"
-    # save_path = "models/definitions/rdnet/weights/34_kinetics_from_ig65m_f128022400.params"
-    # n_layers = 34
-    # length_rgb = 8
-    # dataset = 'kinetics'
-
-    model = get_r21d(n_layers, t=1, dataset=dataset)
+    model = get_r21d(n_layers, n_classes, t=1)
     model.initialize()
 
     out = model.summary(mx.nd.ones((2, 3, length_rgb, 112, 112)))
 
-    # convert_weights(model, load_path=pkl_path, n_layers=n_layers, dataset=dataset, save_path=save_path)
+    convert_weights(model, load_path=pkl_path, n_classes=n_classes, n_layers=n_layers, save_path=save_path)
 
     # model.load_parameters(save_path)
     # frames = get_test_frames("/path/to/test.mp4", length_rgb=length_rgb)

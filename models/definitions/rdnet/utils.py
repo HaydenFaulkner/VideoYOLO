@@ -4,7 +4,7 @@ import _pickle as pkl
 
 import mxnet as mx
 
-def convert_weights(model, load_path, n_layers=34, save_path=None, dataset='sports1m'):
+def convert_weights(model, load_path, n_classes, n_layers=34, save_path=None, dataset='sports1m'):
     """
     Used to convert model weights from official .pkl to gluon .params
 
@@ -22,11 +22,6 @@ def convert_weights(model, load_path, n_layers=34, save_path=None, dataset='spor
     assert load_path[-4:] == '.pkl', 'Must be a .pkl file'
     # only 34 and 152 layer nets avail
     assert n_layers in [34, 152], 'Can only be a 34 or 152 layer model'
-
-    if dataset == 'sports1m':
-        n_classes = 487
-    elif dataset == 'kinetics':
-        n_classes = 400
 
     if save_path is None:
         save_path = load_path[:-4] + ".params"
@@ -167,6 +162,7 @@ def transform_frames(frames, length_rgb=8, scale_h=128, scale_w=171, crop=112, b
 
     # per frame transforms
     for i in range(length_rgb):
+        frames[i] = frames[i] / 255 # put values in range [0,1]
         frames[i] = cv2.resize(frames[i], (scale_w, scale_h), fx=0, fy=0, interpolation=cv2.INTER_AREA) # resize
         if bgr:
             frames[i] = cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB)
@@ -177,12 +173,11 @@ def transform_frames(frames, length_rgb=8, scale_h=128, scale_w=171, crop=112, b
     frames = np.expand_dims(frames, 0)  # t,c,h,w -> b,t,c,h,w
     frames = mx.nd.array(frames)  # make mx nd array
 
-    # normalise with the mean and std dev provided here:
-    # https://github.com/pytorch/pytorch/blob/3f660cdf0f7d33efb40f6c254f136dea293daa1d/caffe2/video/video_input_op.h#L378
+    # normalise with the mean and std dev of kinetics
     for i in range(length_rgb):
-        frames[0][i] = mx.nd.image.normalize(frames[0][i]+1,  # +1 as it makes the interpolation differences less
-                                             mean=[110.201, 100.64, 95.9966],
-                                             std=[58.1489, 56.4701, 55.3324])
+        frames[0][i] = mx.nd.image.normalize(frames[0][i],
+                                             mean=[0.43216, 0.394666, 0.37645],
+                                             std=[0.22803, 0.22145, 0.216989])
 
     frames = mx.nd.swapaxes(frames, dim1=1, dim2=2)  # b,t,c,h,w -> b,c,t,h,w
 

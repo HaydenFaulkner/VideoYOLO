@@ -16,7 +16,7 @@ The original `.pkl` pre-trained models can be downloaded from their
 We have converted two models into `.params`, which you can download from 
 [Google Drive](https://drive.google.com/open?id=1j3x7OTvz_MFviJCFxEnLjyuF0lyGemBO).
 
-`r2plus1d_34_clip8_ft_kinetics_from_ig65m_ f128022400.pkl` --> `34_kinetics_from_ig65m_f128022400.params`
+`r2plus1d_34_clip8_ft_kinetics_from_ig65m_ f128022400.pkl` --> `34_8_kinetics_from_ig65m_f128022400.params`
 
 `r2plus1d_152_sports1m_from_scratch_f127111290.pkl` --> `152_sports1m_f127111290.params`
 
