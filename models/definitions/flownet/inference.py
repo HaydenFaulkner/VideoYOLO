@@ -4,8 +4,7 @@ import numpy as np
 from scipy.misc import imresize
 from tqdm import tqdm
 
-from flownetS import FlowNetS
-from flownetC import FlowNetC
+from flownet import get_flownet
 from utils import flow_to_image, crop, normalise
 
 def process_two_images(model, imgs, ctx=None):
@@ -145,12 +144,8 @@ if __name__ == '__main__':
 
     ctx = mx.gpu(0)
 
-    # net = FlowNetS()
-    net = FlowNetC()
-    net.initialize()
-
-    net.load_parameters(save_path)
-    net.collect_params().reset_ctx(ctx)
+    # net = get_flownet('S', pretrained=True, ctx=ctx)
+    net = get_flownet('C', pretrained=True, ctx=ctx)
     net.hybridize()
 
     input_path = "/path/to/test.mp4"

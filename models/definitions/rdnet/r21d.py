@@ -16,6 +16,7 @@ __all__ = ['R21DV1',
            'get_r21d']
 
 import math
+import os
 
 import mxnet as mx
 from mxnet.gluon.block import HybridBlock
@@ -174,13 +175,14 @@ class R21DV1(HybridBlock):
     t : int, default 1
         number of timesteps.
     """
-    def __init__(self, block, layers, channels, classes=400, t=1, **kwargs):
+    def __init__(self, block, layers, channels, classes=400, return_features=False, **kwargs):
         super(R21DV1, self).__init__(**kwargs)
         assert len(layers) == len(channels) - 1
+        self.return_features = return_features
         with self.name_scope():
             self.features = nn.HybridSequential(prefix='')
             self.features.add(_conv21d(channels[0], [3, 7, 7], strides=[1, 2, 2], padding=[1, 3, 3],
-                                       in_channels=t, mid_channels=45, prefix='init_'))
+                                       mid_channels=45, prefix='init_'))
             self.features.add(nn.BatchNorm(epsilon=1e-3, momentum=0.9, use_global_stats=True, prefix='init_'))
             self.features.add(nn.LeakyReLU(0.0))
 
@@ -201,6 +203,13 @@ class R21DV1(HybridBlock):
         return layer
 
     def hybrid_forward(self, F, x):
+        if self.return_features:
+            out_a = self.features[:5](x)
+            out_b = self.features[5:6](out_a)
+            out_c = self.features[6:](out_b)
+
+            return out_a, out_b, out_c
+
         x = self.features(x)
         avg = self.avg(x)
         sm = F.softmax(self.dense(avg))
@@ -208,34 +217,20 @@ class R21DV1(HybridBlock):
         return x, avg, sm
 
 # Constructor
-def get_r21d(num_layers, n_classes, t=1, **kwargs):
-    r"""ResNet V1 model from `"Deep Residual Learning for Image Recognition"
-    <http://arxiv.org/abs/1512.03385>`_ paper.
-    ResNet V2 model from `"Identity Mappings in Deep Residual Networks"
-    <https://arxiv.org/abs/1603.05027>`_ paper.
-    Parameters
-    ----------
-    version : int
-        Version of ResNet. Options are 1, 2.
-    num_layers : int
-        Numbers of layers. Options are 18, 34, 50, 101, 152.
-    pretrained : bool, default False
-        Whether to load the pretrained weights for model.
-    ctx : Context, default CPU
-        The context in which to load the pretrained weights.
-    root : str, default $MXNET_HOME/models
-        Location for keeping the model parameters.
-    """
+def get_r21d(num_layers, n_classes, t=8, pretrained=False, ctx=mx.cpu(),
+             root=os.path.join('models', 'definitions', 'rdnet', 'weights'), **kwargs):
 
-    net_layers = {18: ('basic_block', [2, 2, 2, 2], [64, 64, 128, 256, 512]),
+    net_layers = {#18: ('basic_block', [2, 2, 2, 2], [64, 64, 128, 256, 512]),
                   34: ('basic_block', [3, 4, 6, 3], [64, 64, 128, 256, 512]),
-                  50: ('bottle_neck', [3, 4, 6, 3], [64, 256, 512, 1024, 2048]),
-                  101: ('bottle_neck', [3, 4, 23, 3], [64, 256, 512, 1024, 2048]),
+                  # 50: ('bottle_neck', [3, 4, 6, 3], [64, 256, 512, 1024, 2048]),
+                  # 101: ('bottle_neck', [3, 4, 23, 3], [64, 256, 512, 1024, 2048]),
                   152: ('bottle_neck', [3, 8, 36, 3], [64, 256, 512, 1024, 2048])}
 
     assert num_layers in net_layers, \
         "Invalid number of layers: %d. Options are %s" % (num_layers, str(net_layers.keys()))
 
+    assert n_classes in [387, 400, 487]
+    assert t in [8, 32]
     block_type, layers, channels = net_layers[num_layers]
 
     if block_type == 'basic_block':
@@ -243,7 +238,28 @@ def get_r21d(num_layers, n_classes, t=1, **kwargs):
     else:
         block_class = BottleneckV1
 
-    net = R21DV1(block_class, layers, channels, classes=n_classes, t=t, **kwargs)
+    net = R21DV1(block_class, layers, channels, classes=n_classes, **kwargs)
+
+    if pretrained:
+        if num_layers == 34:
+            if n_classes == 400:
+                if t == 8:
+                    pretrained_path = '34_8_kinetics_from_ig65m_f128022400.params'
+                else:
+                    pretrained_path = '34_32_kinetics_from_ig65m_f1061696810.params'
+            else:
+                if t == 8:
+                    pretrained_path = '34_8_ig65m_from_scratch_f79708462.params'
+                else:
+                    pretrained_path = '34_32_ig65m_from_scratch_f102649996.params'
+        else:
+            assert n_classes == 487
+            assert t == 32
+            pretrained_path = '152_sports1m_f127111290.params'
+
+        net.load_parameters(os.path.join(root, pretrained_path), ctx=ctx)
+    else:
+        net.initialize()
 
     return net
 
@@ -253,23 +269,28 @@ if __name__ == '__main__':
     # pkl_path = "models/definitions/rdnet/weights/r2plus1d_152_sports1m_from_scratch_f127111290.pkl"
     # save_path = "models/definitions/rdnet/weights/152_sports1m_f127111290.params"
     # n_layers = 152
-    # length_rgb = 32
+    # t = 32
     # dataset = 'sports1m'
 
-    pkl_path = "models/definitions/rdnet/weights/r2plus1d_34_clip32_ig65m_from_scratch_f102649996.pkl"
-    save_path = "models/definitions/rdnet/weights/34_32_ig65m_from_scratch_f102649996.params"
+    # pkl_path = "models/definitions/rdnet/weights/r2plus1d_34_clip32_ig65m_from_scratch_f102649996.pkl"
+    # save_path = "models/definitions/rdnet/weights/34_32_ig65m_from_scratch_f102649996.params"
+    # n_layers = 34
+    # t = 32
+    # n_classes = 359 # 487 sports, # 400 kinetics
+
+    pkl_path = "models/definitions/rdnet/weights/r2plus1d_34_clip8_ft_kinetics_from_ig65m_ f128022400.pkl"
+    save_path = "models/definitions/rdnet/weights/34_8_kinetics_from_ig65m_f128022400.params"
     n_layers = 34
-    length_rgb = 32
-    n_classes = 359 # 487 sports, # 400 kinetics
+    t = 8
+    n_classes = 400 # 487 sports, # 400 kinetics
 
-    model = get_r21d(n_layers, n_classes, t=1)
-    model.initialize()
+    model = get_r21d(n_layers, n_classes, t=t, pretrained=True)
 
-    out = model.summary(mx.nd.ones((2, 3, length_rgb, 112, 112)))
+    out = model.summary(mx.nd.ones((2, 3, t, 112, 112)))
 
     # gluoncv.utils.viz.plot_network(model, shape=(2, 3, length_rgb, 112, 112))
 
-    convert_weights(model, load_path=pkl_path, n_classes=n_classes, n_layers=n_layers, save_path=save_path)
+    # convert_weights(model, load_path=pkl_path, n_classes=n_classes, n_layers=n_layers, save_path=save_path)
 
     # model.load_parameters(save_path)
     # frames = get_test_frames("/path/to/test.mp4", length_rgb=length_rgb)
