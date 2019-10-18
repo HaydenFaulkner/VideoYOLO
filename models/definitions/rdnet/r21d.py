@@ -20,6 +20,7 @@ import math
 import mxnet as mx
 from mxnet.gluon.block import HybridBlock
 from mxnet.gluon import nn
+import gluoncv
 
 from utils import convert_weights, get_test_frames
 
@@ -265,6 +266,8 @@ if __name__ == '__main__':
     model.initialize()
 
     out = model.summary(mx.nd.ones((2, 3, length_rgb, 112, 112)))
+
+    # gluoncv.utils.viz.plot_network(model, shape=(2, 3, length_rgb, 112, 112))
 
     convert_weights(model, load_path=pkl_path, n_classes=n_classes, n_layers=n_layers, save_path=save_path)
 
