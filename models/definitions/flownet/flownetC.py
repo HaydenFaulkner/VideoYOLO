@@ -10,7 +10,7 @@ from mxnet import gluon, autograd
 from mxnet.gluon.block import HybridBlock
 from mxnet.gluon import nn
 
-from utils import convert_weights
+from .utils import convert_weights
 
 
 
