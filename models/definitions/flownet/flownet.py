@@ -11,8 +11,6 @@ from mxnet import gluon, autograd
 from mxnet.gluon.block import HybridBlock
 from mxnet.gluon import nn
 
-from utils import convert_weights
-
 class FlowNetS(HybridBlock):
     """
     FlowNet S without batch norm
@@ -273,6 +271,7 @@ def get_flownet(version, pretrained=False, ctx=mx.cpu(),
     return net
 
 if __name__ == '__main__':
+    from utils import convert_weights
     # just for debugging
     model = get_flownet('S')
 

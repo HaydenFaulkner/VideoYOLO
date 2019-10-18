@@ -23,8 +23,6 @@ from mxnet.gluon.block import HybridBlock
 from mxnet.gluon import nn
 import gluoncv
 
-from utils import convert_weights, get_test_frames
-
 # Helpers
 def _conv3d(out_channels, kernel, strides=(1, 1, 1), padding=(0, 0, 0), dilation=(1, 1, 1),
             groups=1, use_bias=False, prefix=''):
@@ -203,18 +201,19 @@ class R21DV1(HybridBlock):
         return layer
 
     def hybrid_forward(self, F, x):
+        x = F.swapaxes(x, 1, 2) # b,t,c,w,h -> b,c,t,w,h
         if self.return_features:
             out_a = self.features[:5](x)
             out_b = self.features[5:6](out_a)
             out_c = self.features[6:](out_b)
 
             # max pool out the extra dims  # todo avg pooling over time may be better as these are spatial feats
-            out_a = F.Pooling(out_a, kernel=(1,2,2), stride=(1,2,2), pad=(0,0,0), global_pool=False) # spatial
-            out_a = F.max(out_a, axis=1) # temporal - works for any number of timesteps
-            out_b = F.Pooling(out_b, kernel=(1,2,2), stride=(1,2,2), pad=(0,0,0), global_pool=False) # spatial
-            out_b = F.max(out_b, axis=1) # temporal - works for any number of timesteps
-            out_c = F.Pooling(out_c, kernel=(1,2,2), stride=(1,2,2), pad=(0,0,0), global_pool=False) # spatial
-            out_c = F.max(out_c, axis=1) # temporal - works for any number of timesteps
+            out_a = F.Pooling(out_a, kernel=(1,2,2), stride=(1,2,2), pad=(0,0,0), global_pool=False, pool_type='max') # spatial
+            out_a = F.max(out_a, axis=2) # temporal - works for any number of timesteps
+            out_b = F.Pooling(out_b, kernel=(1,2,2), stride=(1,2,2), pad=(0,0,0), global_pool=False, pool_type='max') # spatial
+            out_b = F.max(out_b, axis=2) # temporal - works for any number of timesteps
+            out_c = F.Pooling(out_c, kernel=(1,2,2), stride=(1,2,2), pad=(0,0,0), global_pool=False, pool_type='max') # spatial
+            out_c = F.max(out_c, axis=2) # temporal - works for any number of timesteps
             return out_a, out_b, out_c
 
         x = self.features(x)
@@ -271,6 +270,7 @@ def get_r21d(num_layers, n_classes, t=8, pretrained=False, ctx=mx.cpu(),
     return net
 
 if __name__ == '__main__':
+    from utils import convert_weights, get_test_frames
     # just for debugging
 
     # pkl_path = "models/definitions/rdnet/weights/r2plus1d_152_sports1m_from_scratch_f127111290.pkl"
