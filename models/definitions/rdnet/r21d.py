@@ -208,7 +208,7 @@ class R21DV1(HybridBlock):
             out_b = self.features[5:6](out_a)
             out_c = self.features[6:](out_b)
 
-            # max pool out the extra dims
+            # max pool out the extra dims  # todo avg pooling over time may be better as these are spatial feats
             out_a = F.Pooling(out_a, kernel=(1,2,2), stride=(1,2,2), pad=(0,0,0), global_pool=False) # spatial
             out_a = F.max(out_a, axis=1) # temporal - works for any number of timesteps
             out_b = F.Pooling(out_b, kernel=(1,2,2), stride=(1,2,2), pad=(0,0,0), global_pool=False) # spatial
