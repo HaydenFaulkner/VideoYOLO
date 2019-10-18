@@ -863,6 +863,310 @@ class YOLOV3(gluon.HybridBlock):
         for outputs in self.yolo_outputs:
             outputs.reset_class(classes, reuse_weights=reuse_weights)
 
+class YOLOV3TS(gluon.HybridBlock):
+    """YOLO V3 detection network.
+    Reference: https://arxiv.org/pdf/1804.02767.pdf.
+    Parameters
+    ----------
+    stages : mxnet.gluon.HybridBlock
+        Staged feature extraction blocks.
+        For example, 3 stages and 3 YOLO output layers are used original paper.
+    channels : iterable
+        Number of conv channels for each appended stage.
+        `len(channels)` should match `len(stages)`.
+    num_class : int
+        Number of foreground objects.
+    anchors : iterable
+        The anchor setting. `len(anchors)` should match `len(stages)`.
+    strides : iterable
+        Strides of feature map. `len(strides)` should match `len(stages)`.
+    alloc_size : tuple of int, default is (128, 128)
+        For advanced users. Define `alloc_size` to generate large enough anchor
+        maps, which will later saved in parameters. During inference, we support arbitrary
+        input image by cropping corresponding area of the anchor map. This allow us
+        to export to symbol so we can run it in c++, Scalar, etc.
+    nms_thresh : float, default is 0.45.
+        Non-maximum suppression threshold. You can specify < 0 or > 1 to disable NMS.
+    nms_topk : int, default is 400
+        Apply NMS to top k detection results, use -1 to disable so that every Detection
+         result is used in NMS.
+    post_nms : int, default is 100
+        Only return top `post_nms` detection results, the rest is discarded. The number is
+        based on COCO dataset which has maximum 100 objects per image. You can adjust this
+        number if expecting more objects. You can use -1 to return all detections.
+    pos_iou_thresh : float, default is 1.0
+        IOU threshold for true anchors that match real objects.
+        'pos_iou_thresh < 1' is not implemented.
+    ignore_iou_thresh : float
+        Anchors that has IOU in `range(ignore_iou_thresh, pos_iou_thresh)` don't get
+        penalized of objectness score.
+    norm_layer : object
+        Normalization layer used (default: :class:`mxnet.gluon.nn.BatchNorm`)
+        Can be :class:`mxnet.gluon.nn.BatchNorm` or :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    norm_kwargs : dict
+        Additional `norm_layer` arguments, for example `num_devices=4`
+        for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+    """
+    def __init__(self, stages, motion_stream, t, channels, anchors, strides, classes, alloc_size=(128, 128),
+                 nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
+                 ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+        super(YOLOV3TS, self).__init__(**kwargs)
+        self.motion_stream = motion_stream
+        self.t = t
+        self._classes = classes
+        self.nms_thresh = nms_thresh
+        self.nms_topk = nms_topk
+        self.post_nms = post_nms
+        self._pos_iou_thresh = pos_iou_thresh
+        self._ignore_iou_thresh = ignore_iou_thresh
+        if pos_iou_thresh >= 1:
+            self._target_generator = YOLOV3TargetMerger(len(classes), ignore_iou_thresh)
+        else:
+            raise NotImplementedError(
+                "pos_iou_thresh({}) < 1.0 is not implemented!".format(pos_iou_thresh))
+        self._loss = YOLOV3Loss()
+        with self.name_scope():
+            self.stages = nn.HybridSequential()
+            self.transitions = nn.HybridSequential()
+            self.yolo_blocks = nn.HybridSequential()
+            self.yolo_outputs = nn.HybridSequential()
+            # note that anchors and strides should be used in reverse order
+            for i, stage, channel, anchor, stride in zip(
+                    range(len(stages)), stages, channels, anchors[::-1], strides[::-1]):
+                self.stages.add(stage)
+                block = YOLODetectionBlockV3(
+                    channel, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+                self.yolo_blocks.add(block)
+                output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size)
+                self.yolo_outputs.add(output)
+                if i > 0:
+                    self.transitions.add(_conv2d(channel, 1, 0, 1,
+                                                 norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+
+    @property
+    def num_class(self):
+        """Number of (non-background) categories.
+        Returns
+        -------
+        int
+            Number of (non-background) categories.
+        """
+        return self._num_class
+
+    @property
+    def classes(self):
+        """Return names of (non-background) categories.
+        Returns
+        -------
+        iterable of str
+            Names of (non-background) categories.
+        """
+        return self._classes
+
+    def hybrid_forward(self, F, x, *args):
+        """YOLOV3 network hybrid forward.
+        Parameters
+        ----------
+        F : mxnet.nd or mxnet.sym
+            `F` is mxnet.sym if hybridized or mxnet.nd if not.
+        x : mxnet.nd.NDArray
+            Input data.
+        *args : optional, mxnet.nd.NDArray
+            During training, extra inputs are required:
+            (gt_boxes, obj_t, centers_t, scales_t, weights_t, clas_t)
+            These are generated by YOLOV3PrefetchTargetGenerator in dataloader transform function.
+        Returns
+        -------
+        (tuple of) mxnet.nd.NDArray
+            During inference, return detections in shape (B, N, 6)
+            with format (cid, score, xmin, ymin, xmax, ymax)
+            During training, return losses only: (obj_loss, center_loss, scale_loss, cls_loss).
+        """
+        all_box_centers = []
+        all_box_scales = []
+        all_objectness = []
+        all_class_pred = []
+        all_anchors = []
+        all_offsets = []
+        all_feat_maps = []
+        all_detections = []
+        routes = []
+
+        # split the input array into the individual timesteps
+        input_arr = F.split(x, num_outputs=self.t)
+
+        darknet_input = input_arr[int(self.t / 2)]  # b,1,c,w,h
+        darknet_input = F.squeeze(darknet_input, axis=1)  # b,c,w,h
+
+        # input_list = input_arr[:int(self.t / 2)] + input_arr[int(self.t / 2)+1:]  # todo: doesn't work with symbol seems to cat on channels dim
+        # motion_input = F.concat(*input_list, dim=1)  # put back into nd array now without the darknet input frame
+
+        motion_input = input_arr[0]
+        for i in range(1, self.t):
+            if i != int(self.t / 2):
+                motion_input = F.concat(motion_input, input_arr[i], dim=1)
+        motion_feats = list(self.motion_stream(motion_input))  # calculate the motion feats and put in list
+
+        darknet_feat = darknet_input
+        for i, stage, block, output in zip(range(len(self.stages)), self.stages, self.yolo_blocks, self.yolo_outputs):
+            darknet_feat = stage(darknet_feat)
+            motion_feat = motion_feats[i]
+            routes.append(F.concat(darknet_feat, motion_feat))
+
+        x = routes[-1]
+        # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
+        for i, block, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs):
+            x, tip = block(x)
+            if autograd.is_training():
+                dets, box_centers, box_scales, objness, class_pred, anchors, offsets = output(tip)
+                all_box_centers.append(box_centers.reshape((0, -3, -1)))
+                all_box_scales.append(box_scales.reshape((0, -3, -1)))
+                all_objectness.append(objness.reshape((0, -3, -1)))
+                all_class_pred.append(class_pred.reshape((0, -3, -1)))
+                all_anchors.append(anchors)
+                all_offsets.append(offsets)
+                # here we use fake featmap to reduce memory consuption, only shape[2, 3] is used
+                fake_featmap = F.zeros_like(tip.slice_axis(
+                    axis=0, begin=0, end=1).slice_axis(axis=1, begin=0, end=1))
+                all_feat_maps.append(fake_featmap)
+            else:
+                dets = output(tip)
+            all_detections.append(dets)
+            if i >= len(routes) - 1:
+                break
+            # add transition layers
+            x = self.transitions[i](x)
+            # upsample feature map reverse to shallow layers
+            upsample = _upsample(x, stride=2)
+            route_now = routes[::-1][i + 1]
+            x = F.concat(F.slice_like(upsample, route_now * 0, axes=(2, 3)), route_now, dim=1)
+
+        if autograd.is_training():
+            # during training, the network behaves differently since we don't need detection results
+            if autograd.is_recording():
+                # generate losses and return them directly
+                box_preds = F.concat(*all_detections, dim=1)
+                all_preds = [F.concat(*p, dim=1) for p in [
+                    all_objectness, all_box_centers, all_box_scales, all_class_pred]]
+                all_targets = self._target_generator(box_preds, *args)
+                return self._loss(*(all_preds + all_targets))
+
+            # return raw predictions, this is only used in DataLoader transform function.
+            return (F.concat(*all_detections, dim=1), all_anchors, all_offsets, all_feat_maps,
+                    F.concat(*all_box_centers, dim=1), F.concat(*all_box_scales, dim=1),
+                    F.concat(*all_objectness, dim=1), F.concat(*all_class_pred, dim=1))
+
+        # concat all detection results from different stages
+        result = F.concat(*all_detections, dim=1)
+        # apply nms per class
+        if self.nms_thresh > 0 and self.nms_thresh < 1:
+            result = F.contrib.box_nms(
+                result, overlap_thresh=self.nms_thresh, valid_thresh=0.01,
+                topk=self.nms_topk, id_index=0, score_index=1, coord_start=2, force_suppress=False)
+            if self.post_nms > 0:
+                result = result.slice_axis(axis=1, begin=0, end=self.post_nms)
+        ids = result.slice_axis(axis=-1, begin=0, end=1)
+        scores = result.slice_axis(axis=-1, begin=1, end=2)
+        bboxes = result.slice_axis(axis=-1, begin=2, end=None)
+        return ids, scores, bboxes
+
+    def set_nms(self, nms_thresh=0.45, nms_topk=400, post_nms=100):
+        """Set non-maximum suppression parameters.
+        Parameters
+        ----------
+        nms_thresh : float, default is 0.45.
+            Non-maximum suppression threshold. You can specify < 0 or > 1 to disable NMS.
+        nms_topk : int, default is 400
+            Apply NMS to top k detection results, use -1 to disable so that every Detection
+             result is used in NMS.
+        post_nms : int, default is 100
+            Only return top `post_nms` detection results, the rest is discarded. The number is
+            based on COCO dataset which has maximum 100 objects per image. You can adjust this
+            number if expecting more objects. You can use -1 to return all detections.
+        Returns
+        -------
+        None
+        """
+        self._clear_cached_op()
+        self.nms_thresh = nms_thresh
+        self.nms_topk = nms_topk
+        self.post_nms = post_nms
+
+    def reset_class(self, classes, reuse_weights=None):
+        """Reset class categories and class predictors.
+        Parameters
+        ----------
+        classes : iterable of str
+            The new categories. ['apple', 'orange'] for example.
+        reuse_weights : dict
+            A {new_integer : old_integer} or mapping dict or {new_name : old_name} mapping dict,
+            or a list of [name0, name1,...] if class names don't change.
+            This allows the new predictor to reuse the
+            previously trained weights specified.
+
+        Example
+        -------
+        >>> net = gluoncv.model_zoo.get_model('yolo3_darknet53_voc', pretrained=True)
+        >>> # use direct name to name mapping to reuse weights
+        >>> net.reset_class(classes=['person'], reuse_weights={'person':'person'})
+        >>> # or use interger mapping, person is the 14th category in VOC
+        >>> net.reset_class(classes=['person'], reuse_weights={0:14})
+        >>> # you can even mix them
+        >>> net.reset_class(classes=['person'], reuse_weights={'person':14})
+        >>> # or use a list of string if class name don't change
+        >>> net.reset_class(classes=['person'], reuse_weights=['person'])
+
+        """
+        self._clear_cached_op()
+        old_classes = self._classes
+        self._classes = classes
+        if self._pos_iou_thresh >= 1:
+            self._target_generator = YOLOV3TargetMerger(len(classes), self._ignore_iou_thresh)
+        if isinstance(reuse_weights, (dict, list)):
+            if isinstance(reuse_weights, dict):
+                # trying to replace str with indices
+                new_keys = []
+                new_vals = []
+                for k, v in reuse_weights.items():
+                    if isinstance(v, str):
+                        try:
+                            new_vals.append(old_classes.index(v))  # raise ValueError if not found
+                        except ValueError:
+                            raise ValueError(
+                                "{} not found in old class names {}".format(v, old_classes))
+                    else:
+                        if v < 0 or v >= len(old_classes):
+                            raise ValueError(
+                                "Index {} out of bounds for old class names".format(v))
+                        new_vals.append(v)
+                    if isinstance(k, str):
+                        try:
+                            new_keys.append(self.classes.index(k))  # raise ValueError if not found
+                        except ValueError:
+                            raise ValueError(
+                                "{} not found in new class names {}".format(k, self.classes))
+                    else:
+                        if k < 0 or k >= len(self.classes):
+                            raise ValueError(
+                                "Index {} out of bounds for new class names".format(k))
+                        new_keys.append(k)
+                reuse_weights = dict(zip(new_keys, new_vals))
+            else:
+                new_map = {}
+                for x in reuse_weights:
+                    try:
+                        new_idx = self._classes.index(x)
+                        old_idx = old_classes.index(x)
+                        new_map[new_idx] = old_idx
+                    except ValueError:
+                        warnings.warn("{} not found in old: {} or new class names: {}".format(
+                            x, old_classes, self._classes))
+                reuse_weights = new_map
+
+        for outputs in self.yolo_outputs:
+            outputs.reset_class(classes, reuse_weights=reuse_weights)
+
+
 
 class YOLOV3T(gluon.HybridBlock):
     """YOLO V3 detection network.
@@ -1251,6 +1555,7 @@ class YOLOV3T(gluon.HybridBlock):
 
         for outputs in self.yolo_outputs:
             outputs.reset_class(classes, reuse_weights=reuse_weights)
+
 
 
 class YOLOV3_noback(gluon.HybridBlock):

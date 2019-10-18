@@ -137,6 +137,8 @@ flags.DEFINE_string('corr_pos', None,
                     "position of correlation features calculation, currently only supports 'early' or 'late")
 flags.DEFINE_integer('corr_d', 4,
                      'The d value for the correlation filter.')
+flags.DEFINE_string('motion_stream', None,
+                    'Add a motion stream? can be flownet or r21d.')
 
 
 def get_dataset(dataset_name, save_prefix=''):
@@ -201,7 +203,10 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
             # train_dataset.transform(YOLO3DefaultTrainTransform(width, height, net, mixup=FLAGS.mixup)),
             batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
     else:
-        transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
+        if FLAGS.motion_stream == 'flownet': # get shape errors for some of the rand shapes as the conv floor messes up on deconv
+            transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20, 2)]
+        else:
+            transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
         # transform_fns = [YOLO3DefaultTrainTransform(x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
         train_loader = RandomTransformDataLoader(
             transform_fns, train_dataset, batch_size=batch_size, interval=10, last_batch='rollover',
@@ -283,20 +288,21 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                       norm_kwargs={'num_devices': len(ctx)},
                                       k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                       block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                      corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)
+                                      corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream)
                 async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                                             pretrained_base=False,
                                             freeze_base=bool(FLAGS.freeze_base),
                                             k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                             block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                            corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)  # used by cpu worker
+                                            corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d,
+                                            motion_stream=FLAGS.motion_stream)  # used by cpu worker
             else:
                 net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                                       pretrained_base=FLAGS.pretrained_cnn,
                                       freeze_base=bool(FLAGS.freeze_base),
                                       k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                       block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                      corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)
+                                      corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream)
                 async_net = net
 
         elif FLAGS.network == 'mobilenet1.0':
@@ -365,7 +371,7 @@ def validate(net, val_data, ctx, eval_metric):
     # set nms threshold and topk constraint
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     mx.nd.waitall()
-    net.hybridize()  # can't hybridize temporal net, backend error
+    # net.hybridize()
     for batch in val_data:
         if FLAGS.features_dir is not None:
             f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
@@ -626,6 +632,9 @@ def main(_argv):
     if FLAGS.trained_on:
         net.reset_class(train_dataset.classes)
 
+    if FLAGS.motion_stream == 'flownet':
+        FLAGS.data_shape = 384  # cause 416 is a nasty shape
+
     # log a summary of the network
     if FLAGS.features_dir is not None:
         if FLAGS.window[0] > 1:
@@ -644,8 +653,12 @@ def main(_argv):
                                                                int(FLAGS.data_shape / 32), int(FLAGS.data_shape / 32)))))
     else:
         if FLAGS.window[0] > 1:
+            # gutils.viz.plot_network(net, shape=(FLAGS.batch_size, FLAGS.window[0], 3, FLAGS.data_shape, FLAGS.data_shape),
+            #                         save_prefix=save_prefix)
             logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, FLAGS.window[0], 3, FLAGS.data_shape, FLAGS.data_shape))))
         else:
+            # gutils.viz.plot_network(net, shape=(FLAGS.batch_size, 3, FLAGS.data_shape, FLAGS.data_shape),
+            #                         save_prefix=save_prefix)
             logging.info(net.summary(mx.nd.ndarray.ones(shape=(FLAGS.batch_size, 3, FLAGS.data_shape, FLAGS.data_shape))))
 
     # load the dataloader

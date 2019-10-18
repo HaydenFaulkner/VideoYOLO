@@ -3,14 +3,16 @@ import warnings
 from mxnet.gluon.nn import BatchNorm
 from gluoncv.model_zoo import get_model
 
-from .yolo3 import get_yolov3, YOLOV3_noback, YOLOV3, YOLOV3T, TimeDistributed
+from .yolo3 import get_yolov3, YOLOV3_noback, YOLOV3, YOLOV3T, TimeDistributed, YOLOV3TS
 from ..darknet.darknet import darknet53
 from ..mobilenet.mobilenet import get_mobilenet
+from ..flownet.flownet import get_flownet
+from ..rdnet.r21d import get_r21d
 
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
                     norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
                     k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None,
-                    corr_pos=None, corr_d=None, **kwargs):
+                    corr_pos=None, corr_d=None, motion_stream=None, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -42,9 +44,21 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         base_net = darknet53(
             pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
 
+        motion_net = None
+        if motion_stream == 'flownet':
+            assert k == 3
+            motion_net = get_flownet('S', pretrained=pretrained_base, return_features=True)
+        elif motion_stream == 'r21d':
+            assert k in [9, 33]
+            motion_net = get_r21d(34, 400, t=k-1, pretrained=pretrained_base, return_features=True)
+
         if freeze_base:
             for param in base_net.collect_params().values():
                 param.grad_req = 'null'
+
+            if motion_net is not None:
+                for param in motion_net.collect_params().values():
+                    param.grad_req = 'null'
 
         # if input_channels != 3:
         #     assert input_channels % 3 == 0
@@ -62,17 +76,19 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         rnn_shapes = None
         if rnn_pos is not None:
             rnn_shapes = [(1024, 13, 13), (512, 26, 26), (256, 52, 52)]  # todo currently hardcoded which will fail for input not = to 416 need to work out better way
-        # net = get_yolov3(
-        #     'darknet53', stages, [512, 256, 128], anchors, strides, classes, dataset_name,
-        #     norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)  # don't need get_yolov3 as won't use gluon pretrained
-        # net = YOLOV3(stages, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
-        net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
-                      k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
-                      corr_pos=corr_pos, corr_d=corr_d, **kwargs)
+
+        if motion_net is None:
+            net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
+                          k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
+                          corr_pos=corr_pos, corr_d=corr_d, **kwargs)
+        else:
+            net = YOLOV3TS(stages, motion_net, k, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
+
     else:
-        net = get_model('yolo3_darknet53_' + str(transfer), pretrained=True, **kwargs)
-        reuse_classes = [x for x in classes if x in net.classes]
-        net.reset_class(classes, reuse_weights=reuse_classes)
+        return NotImplementedError
+        # net = get_model('yolo3_darknet53_' + str(transfer), pretrained=True, **kwargs)
+        # reuse_classes = [x for x in classes if x in net.classes]
+        # net.reset_class(classes, reuse_weights=reuse_classes)
     return net
 
 
