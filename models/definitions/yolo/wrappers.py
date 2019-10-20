@@ -12,7 +12,7 @@ from ..rdnet.r21d import get_r21d
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
                     norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
                     k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None,
-                    corr_pos=None, corr_d=None, motion_stream=None, **kwargs):
+                    corr_pos=None, corr_d=None, motion_stream=None, agnostic=False, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -80,9 +80,10 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         if motion_net is None:
             net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
                           k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
-                          corr_pos=corr_pos, corr_d=corr_d, **kwargs)
+                          corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
         else:
-            net = YOLOV3TS(stages, motion_net, k, [512, 256, 128], anchors, strides, classes=classes, **kwargs)
+            net = YOLOV3TS(stages, motion_net, k, [512, 256, 128], anchors, strides, classes=classes, agnostic=agnostic,
+                           **kwargs)
 
     else:
         return NotImplementedError

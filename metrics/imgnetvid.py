@@ -61,7 +61,7 @@ def vid_ap(rec, prec):
     return ap
 
 
-def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, class_map=None):
+def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, class_map=None, agnostic=False):
     """
     Do the evaluation
 
@@ -78,6 +78,9 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
     """
     classname_map = dataset.wn_classes
     gt_img_ids = dataset.sample_ids
+
+    if agnostic:
+        classname_map = ['agnostic']
 
     recs = parse_set(dataset, iou_thr=iou_threshold, pixel_tolerance=10)
 
@@ -116,6 +119,9 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
                 img_id = img_ids[i+1]
                 start_i = i+1
 
+    if agnostic:
+        obj_labels_cell = [c*0 if c is not None else None for c in obj_labels_cell]
+
     ov_all = [None] * num_imgs
     # extract objects in :param classname:
     npos = np.zeros(len(classname_map))
@@ -135,6 +141,9 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
             gt_labels = gt_labels.flat[valid_gt].astype(int)
 
         num_gt_obj = len(gt_labels)
+
+        if agnostic:
+            gt_labels *= 0
 
         # calculate total gt for each class
         for x in gt_labels:
@@ -250,6 +259,8 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
 
                 for k in range(0, num_gt_obj):
                     label = gt_labels[k]
+                    if agnostic:
+                        label = 0
                     if (ig_gt_motion[k]) | (ig_gt_area[k]):
                         npos[label] = npos[label] - 1
 
@@ -334,7 +345,8 @@ def calculate_ap(tp_cell, fp_cell, gt_img_ids, obj_labels_cell, obj_confs_cell, 
 
 class VIDDetectionMetric(mx.metric.EvalMetric):
 
-    def __init__(self, dataset, conf_score_thresh=0.05, iou_thresh=0.5, data_shape=None, class_map=None):
+    def __init__(self, dataset, conf_score_thresh=0.05, iou_thresh=0.5, data_shape=None, class_map=None,
+                 agnostic=False):
         """
         Detection metric for ImageNet VID task - does standard and motion evaluation
 
@@ -354,6 +366,7 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
         self._conf_score_thresh = conf_score_thresh
         self._iou_thresh = iou_thresh
         self._class_map = class_map  # for use when model preds are diff to eval set classes
+        self._agnostic = agnostic
 
         # hard set of the motion and area ranges
         self._motion_ranges = [[0.0, 1.0], [0.0, 0.7], [0.7, 0.9], [0.9, 1.0]]
@@ -383,7 +396,7 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
             return ['mAP', ], ['0.0', ]
 
         ap = vid_eval_motion(self.dataset, self._results, self._motion_ranges, self._area_ranges,
-                             iou_threshold=self._iou_thresh, class_map=self._class_map)
+                             iou_threshold=self._iou_thresh, class_map=self._class_map, agnostic=self._agnostic)
 
         names, values = [], []
         names.append('~~~~ Summary metrics ~~~~\n')
@@ -398,6 +411,12 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
                                                                    for i in range(len(ap[motion_index][area_index]))
                                                                    if ap[motion_index][area_index][i] >= 0]))
         values.append(info_str)
+
+        if self._agnostic:
+            names.append('agnostic')
+            values.append('{:.1f}'.format(100 * ap[0, 0, 0]))
+            return names, values
+
         for cls_ind, cls_name in enumerate(self.dataset.classes):
 
             names.append(cls_name)

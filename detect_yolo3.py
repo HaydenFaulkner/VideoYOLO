@@ -85,6 +85,10 @@ flags.DEFINE_string('worst_video_path', None,
                     'per_frame_metric to have been done previously')
 flags.DEFINE_boolean('display_gt', True,
                      'Do you want to display the ground truth boxes on the images?')
+flags.DEFINE_boolean('model_agnostic', False,
+                     'make the model class agnostic?')
+flags.DEFINE_boolean('metric_agnostic', False,
+                     'make the metric class agnostic?')
 
 flags.DEFINE_list('gpus', [0],
                   'GPU IDs to use. Use comma or space for multiple eg. 0,1 or 0 1.')
@@ -155,7 +159,8 @@ def get_metric(dataset, metric_name, data_shape, save_dir, class_map=None):
         metric = COCODetectionMetric(dataset, save_dir, cleanup=True, data_shape=None)
 
     elif metric_name.lower() == 'vid':
-        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=None, class_map=class_map)
+        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=None, class_map=class_map,
+                                    agnostic=FLAGS.metric_agnostic)
 
     else:
         raise NotImplementedError('Mertic: {} not implemented.'.format(metric_name))
@@ -166,7 +171,7 @@ def get_metric(dataset, metric_name, data_shape, save_dir, class_map=None):
 def detect(net, dataset, loader, ctx, max_do=-1):
     net.collect_params().reset_ctx(ctx)
     net.set_nms(nms_thresh=0.45, nms_topk=400)
-    net.hybridize()
+    # net.hybridize()
     boxes = dict()
     if max_do < 0:
         max_do = len(dataset)
@@ -219,11 +224,16 @@ def detect(net, dataset, loader, ctx, max_do=-1):
     return boxes
 
 
-def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1):
-    if not overwrite and os.path.exists(os.path.join(save_dir, 'gt')) and os.path.exists(os.path.join(save_dir, 'pred')):
+def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1, agnostic=False):
+    if agnostic:
+        save_dir = os.path.join(save_dir, 'pred_ag')
+    else:
+        save_dir = os.path.join(save_dir, 'pred')
+
+    if not overwrite and os.path.exists(save_dir):
         logging.info("Ground truth and prediction files already exist")
 
-    os.makedirs(os.path.join(save_dir, 'pred'), exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
 
     if max_do < 0:
         max_do = len(dataset)
@@ -234,22 +244,27 @@ def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1):
         file_id = img_path.split('/')[-1][:-4]
         if FLAGS.dataset == 'vid':
             file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
-            os.makedirs(os.path.join(save_dir, 'pred', img_path.split('/')[-2]), exist_ok=True)
+            os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
 
-        with open(os.path.join(save_dir, 'pred', file_id + '.txt'), 'w') as f:
+        with open(os.path.join(save_dir, file_id + '.txt'), 'w') as f:
             if img_path in boxes:
                 for box in boxes[img_path]:  # sid, class, score, box
                     f.write("{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5]))
 
 
-def load_predictions(save_dir, dataset, max_do=-1, metric=None):
+def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
+    if agnostic:
+        save_dir = os.path.join(save_dir, 'pred_ag')
+    else:
+        save_dir = os.path.join(save_dir, 'pred')
+
     if metric is None:
-        if not os.path.exists(os.path.join(save_dir, 'pred')):
-            logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'pred')))
+        if not os.path.exists(save_dir):
+            logging.error("Predictions directory does not exist {}".format(save_dir))
             return None
     else:
-        if not os.path.exists(os.path.join(save_dir, 'pred_metric')):
-            logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'pred_metric')))
+        if not os.path.exists(os.path.join(save_dir, 'metric')):
+            logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'metric')))
             return None
 
     boxes = dict()
@@ -262,12 +277,12 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None):
 
         add_metrics = False
         if metric is None:
-            file_path = os.path.join(save_dir, 'pred', file_id + '.txt')
+            file_path = os.path.join(save_dir, file_id + '.txt')
             if not os.path.exists(file_path):
                 logging.error("Prediction file does not exist {}".format(file_path))
                 return None
         else:  # todo allow specific metrics
-            file_path = os.path.join(save_dir, 'pred_metric', file_id + '.txt')
+            file_path = os.path.join(save_dir, 'metric', file_id + '.txt')
             if not os.path.exists(file_path):
                 if not os.path.exists(os.path.join(save_dir, 'pred', file_id + '.txt')):
                     logging.error("Prediction file does not exist {}".format(file_path))
@@ -299,8 +314,8 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None):
 
 def add_metrics_to_predictions(load_dir, dataset, metric):
 
-    if not os.path.exists(os.path.join(load_dir, 'pred')):
-        logging.error("Predictions directory does not exist {}".format(os.path.join(load_dir, 'pred')))
+    if not os.path.exists(load_dir):
+        logging.error("Predictions directory does not exist {}".format(load_dir))
         return None
 
     summary = dict()
@@ -312,12 +327,12 @@ def add_metrics_to_predictions(load_dir, dataset, metric):
         if FLAGS.dataset == 'vid':
             file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
 
-        if not os.path.exists(os.path.join(load_dir, 'pred', file_id + '.txt')):
-            logging.error("Prediction file does not exist {}".format(os.path.join(load_dir, 'pred', file_id + '.txt')))
+        if not os.path.exists(os.path.join(load_dir, file_id + '.txt')):
+            logging.error("Prediction file does not exist {}".format(os.path.join(load_dir, file_id + '.txt')))
             return None
 
         # Load the predictions
-        with open(os.path.join(load_dir, 'pred', file_id + '.txt'), 'r') as f:
+        with open(os.path.join(load_dir, file_id + '.txt'), 'r') as f:
             bb = [line.rstrip().split(',') for line in f.readlines()]
         for box in bb:
             if box[0] in boxes:
@@ -355,12 +370,12 @@ def add_metrics_to_predictions(load_dir, dataset, metric):
             summary[img_path] = score
 
         # Save out the new detection file
-        os.makedirs(os.path.join(load_dir, 'pred_metric'), exist_ok=True)
+        os.makedirs(os.path.join(load_dir, 'metric'), exist_ok=True)
 
         if FLAGS.dataset == 'vid':
-            os.makedirs(os.path.join(load_dir, 'pred_metric', img_path.split('/')[-2]), exist_ok=True)
+            os.makedirs(os.path.join(load_dir, 'metric', img_path.split('/')[-2]), exist_ok=True)
 
-        with open(os.path.join(load_dir, 'pred_metric', file_id + '.txt'), 'w') as f:
+        with open(os.path.join(load_dir, 'metric', file_id + '.txt'), 'w') as f:
             if img_path in boxes:
                 for box in boxes[img_path]:  # sid, class, score, box
                     f.write("{},{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5], score))
@@ -377,7 +392,7 @@ def add_metrics_to_predictions(load_dir, dataset, metric):
     else:
         summary_sorted = sorted(summary.items(), key=lambda kv: kv[1])
 
-    with open(os.path.join(load_dir, 'pred_metric', 'summary.txt'), 'w') as f:
+    with open(os.path.join(load_dir, 'metric', 'summary.txt'), 'w') as f:
         for ss in summary_sorted:
             f.write("{}\t{}\n".format(ss[0], ss[1]))
     return boxes
@@ -548,6 +563,8 @@ def get_class_map(trained_on, eval_on):
 def main(_argv):
 
     FLAGS.window = [int(s) for s in FLAGS.window]
+    if FLAGS.model_agnostic:
+        FLAGS.metric_agnostic = True
 
     if FLAGS.window[0] > 1:
         assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'
@@ -595,7 +612,7 @@ def main(_argv):
         net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                               k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                               block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                              corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)
+                              corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, agnostic=FLAGS.model_agnostic)
     elif FLAGS.network == 'mobilenet1.0':
         net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                  k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
@@ -624,11 +641,12 @@ def main(_argv):
     if FLAGS.per_frame_metric:
         per_sample_metric = get_metric(dataset, 'voc', FLAGS.data_shape, save_dir,
                                        class_map=get_class_map(trained_on_dataset, dataset))
-    predictions = load_predictions(save_dir, dataset, max_do=max_do, metric=per_sample_metric)
+    predictions = load_predictions(save_dir, dataset, max_do=max_do, metric=per_sample_metric,
+                                   agnostic=FLAGS.model_agnostic)
 
     if predictions is None:  # id not exist detect and make
         predictions = detect(net, dataset, loader, ctx, max_do=max_do)  # todo fix det thresh
-        save_predictions(save_dir, dataset, predictions)
+        save_predictions(save_dir, dataset, predictions, agnostic=FLAGS.model_agnostic)
 
     if FLAGS.visualise:
         visualise_predictions(save_dir, dataset, trained_on_dataset, predictions,
@@ -636,7 +654,7 @@ def main(_argv):
 
     if FLAGS.worst_video_path is not None:
         video_of_worst(FLAGS.worst_video_path, os.path.join(save_dir, "vis"),
-                       summary_file=os.path.join(save_dir, 'pred_metric', 'summary.txt'), fps=4)
+                       summary_file=os.path.join(save_dir, 'metric', 'summary.txt'), fps=4)
 
     metrics = list()
     if FLAGS.metrics:
@@ -651,6 +669,10 @@ def main(_argv):
 
         for m, metric_name in enumerate(FLAGS.metrics):
             names, values = results[m]
+            if FLAGS.metric_agnostic:
+                metric_name += '_ag'
+                if not FLAGS.model_agnostic:
+                    metric_name += '_met'
             with open(os.path.join(save_dir, metric_name+'.txt'), 'w') as f:
                 for k, v in zip(names, values):
                     print(k, v)

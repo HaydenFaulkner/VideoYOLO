@@ -285,7 +285,7 @@ class YOLOOutputV3(gluon.HybridBlock):
         to export to symbol so we can run it in c++, Scalar, etc.
     """
     def __init__(self, index, num_class, anchors, stride,
-                 alloc_size=(128, 128), k=None, rnn_shape=None, k_join_type='max', **kwargs):
+                 alloc_size=(128, 128), k=None, rnn_shape=None, k_join_type='max', agnostic=False, **kwargs):
         super(YOLOOutputV3, self).__init__(**kwargs)
         anchors = np.array(anchors).astype('float32')
         self._classes = num_class
@@ -295,6 +295,7 @@ class YOLOOutputV3(gluon.HybridBlock):
         self._rnn_shape = rnn_shape
         self._k = k
         self._k_join_type = k_join_type
+        self._agnostic = agnostic
         with self.name_scope():
             all_pred = self._num_pred * self._num_anchors
             if k is not None and rnn_shape is not None:
@@ -423,6 +424,12 @@ class YOLOOutputV3(gluon.HybridBlock):
             return (bbox.reshape((0, -1, 4)), raw_box_centers, raw_box_scales,
                     objness, class_pred, anchors, offsets)
 
+        if self._agnostic:
+            idsa = F.broadcast_add(confidence * 0, F.arange(0, 1).reshape((0, 1, 1, 1)))
+            agnostic_detections = F.concat(idsa, confidence, bbox, dim=-1)
+            agnostic_detections = F.reshape(agnostic_detections, (0, -1, 6))
+            return agnostic_detections  # nms might merge some boxes as they now have same class
+
         # prediction per class
         bboxes = F.tile(bbox, reps=(self._classes, 1, 1, 1, 1))
         scores = F.transpose(class_score, axes=(3, 0, 1, 2)).expand_dims(axis=-1)
@@ -430,6 +437,7 @@ class YOLOOutputV3(gluon.HybridBlock):
         detections = F.concat(ids, scores, bboxes, dim=-1)
         # reshape to (B, xx, 6)
         detections = F.reshape(detections.transpose(axes=(1, 0, 2, 3, 4)), (0, -1, 6))
+
         return detections
 
 
@@ -627,7 +635,7 @@ class YOLOV3(gluon.HybridBlock):
     """
     def __init__(self, stages, channels, anchors, strides, classes, alloc_size=(128, 128),
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
-                 ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+                 ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None, agnostic=False, **kwargs):
         super(YOLOV3, self).__init__(**kwargs)
         self._classes = classes
         self.nms_thresh = nms_thresh
@@ -653,7 +661,7 @@ class YOLOV3(gluon.HybridBlock):
                 block = YOLODetectionBlockV3(
                     channel, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
                 self.yolo_blocks.add(block)
-                output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size)
+                output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size, agnostic=agnostic)
                 self.yolo_outputs.add(output)
                 if i > 0:
                     self.transitions.add(_conv2d(channel, 1, 0, 1,
@@ -909,7 +917,7 @@ class YOLOV3TS(gluon.HybridBlock):
     """
     def __init__(self, stages, motion_stream, t, channels, anchors, strides, classes, alloc_size=(128, 128),
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
-                 ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
+                 ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None, agnostic=False, **kwargs):
         super(YOLOV3TS, self).__init__(**kwargs)
         self.motion_stream = motion_stream
         self.t = t
@@ -937,7 +945,7 @@ class YOLOV3TS(gluon.HybridBlock):
                 block = YOLODetectionBlockV3(
                     channel, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
                 self.yolo_blocks.add(block)
-                output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size)
+                output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size, agnostic=agnostic)
                 self.yolo_outputs.add(output)
                 if i > 0:
                     self.transitions.add(_conv2d(channel, 1, 0, 1,
@@ -1216,7 +1224,7 @@ class YOLOV3T(gluon.HybridBlock):
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
                  ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None,
                  k=None, k_join_type=None, k_join_pos=None, block_conv_type='2',
-                 rnn_shapes=None, rnn_pos=None, corr_pos=None, corr_d=None, **kwargs):
+                 rnn_shapes=None, rnn_pos=None, corr_pos=None, corr_d=None, agnostic=False, **kwargs):
         super(YOLOV3T, self).__init__(**kwargs)
         self._classes = classes
         self.nms_thresh = nms_thresh
@@ -1295,9 +1303,9 @@ class YOLOV3T(gluon.HybridBlock):
 
                 if rnn_pos == 'out':
                     output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size,
-                                          k=k, rnn_shape=rnn_shapes[i], k_join_type=k_join_type)
+                                          k=k, rnn_shape=rnn_shapes[i], k_join_type=k_join_type, agnostic=agnostic)
                 else:
-                    output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size)
+                    output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size, agnostic=agnostic)
                 self.yolo_outputs.add(output)
 
                 if i > 0:
