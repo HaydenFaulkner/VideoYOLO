@@ -435,13 +435,22 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
         lr_decay_epoch = list(range(FLAGS.lr_decay_period, FLAGS.epochs, FLAGS.lr_decay_period))
     else:
         lr_decay_epoch = FLAGS.lr_decay_epoch
-    lr_decay_epoch = [int(e) - FLAGS.warmup_epochs for e in lr_decay_epoch]
+
+    # for handling reloading from past epoch
+    lr_decay_epoch_tmp = list()
+    for e in lr_decay_epoch:
+        if int(e) <= start_epoch:
+            FLAGS.lr = FLAGS.lr * FLAGS.lr_decay
+        else:
+            lr_decay_epoch_tmp.append(int(e) - start_epoch - FLAGS.warmup_epochs)
+    lr_decay_epoch = lr_decay_epoch_tmp
+
     num_batches = num_samples // FLAGS.batch_size
     lr_scheduler = LRSequential([
         LRScheduler('linear', base_lr=0, target_lr=FLAGS.lr,
                     nepochs=FLAGS.warmup_epochs, iters_per_epoch=num_batches),
         LRScheduler(FLAGS.lr_mode, base_lr=FLAGS.lr,
-                    nepochs=FLAGS.epochs - FLAGS.warmup_epochs,
+                    nepochs=FLAGS.epochs - FLAGS.warmup_epochs - start_epoch,
                     iters_per_epoch=num_batches,
                     step_epoch=lr_decay_epoch,
                     step_factor=FLAGS.lr_decay, power=2),
