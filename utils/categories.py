@@ -55,6 +55,7 @@ paths['n02870092'] = ['-1', 'n00002684', 'n00003553', 'n00021939', 'n03129123', 
 paths['n03346898'] = ['-1', 'n00002684', 'n00003553', 'n00021939', 'n04564698', 'n03895293', 'n03089014', 'n04493505',
                       'n03944672', 'n03206158', 'n03550916', 'n03346898']
 
+
 # build some more structure dicts
 tree = dict()  # values are children, keys are parents/current
 lvls = dict()  # keys are levels from root, and values are wids
@@ -111,12 +112,68 @@ with open(os.path.join('datasets', 'names', 'mini.treevis'), 'w') as f:
             name = wn.synset_from_pos_and_offset('n', int(node.name[1:]))._name
         f.write("%s%s\n" % (pre, name))
 
-# from ete3 import Tree, TreeStyle
-# t = Tree("((((H,K)D,(F,I)G)B,E)A,((L,(N,Q)O)J,(P,S)M)C);", format=1)
-# # t.populate(30)
-# ts = TreeStyle()
-# ts.show_leaf_name = True
-# ts.mode = "c"
-# ts.arc_start = -360 # 0 degrees = 3 o'clock
-# ts.arc_span = 360
-# t.show(tree_style=ts)
+# build filtered tree
+# manual overwrite of parents
+with open(os.path.join('datasets', 'names', 'new_parents.tree')) as f:
+    lines = f.readlines()
+new_parents = [l.rstrip().split() for l in lines]
+
+for np in new_parents:
+    parents[np[0]] = np[1]
+
+# manual deletion of wn_ids
+with open(os.path.join('datasets', 'names', 'removed_wn.tree')) as f:
+    lines = f.readlines()
+remove_wn = [l.rstrip() for l in lines]
+
+for wnid in remove_wn:
+    for c, p in parents.items():  # for all items with the parent we are about to delete
+        if p == wnid:
+            parents[c] = parents[p]  # give it the parent of the parent
+    del parents[wnid]  # once all assigned to grandparents we can delete
+
+
+# lets build and write out a .tree file
+# ordered_list = list()
+# for l in sorted(list(lvls.keys()))[1:]:
+#     for id in lvls[l]:
+#         ordered_list.append([id, parents[id]])
+#
+# with open(os.path.join('datasets', 'names', 'filtered.tree'), 'w') as f:
+#     for id in ordered_list:
+#         f.write('\t'.join(id)+'\n')
+
+
+# let's make some pretty graphs
+nodes = dict()
+nodes['-1'] = Node('ROOT')
+for c, p in parents.items():  # init the nodes all to root
+    nodes[c] = Node(c, nodes['-1'])
+
+for c, p in parents.items():  # change their parents
+    nodes[c].parent = nodes[p]
+
+for pre, fill, node in RenderTree(nodes['-1']):
+    print("%s%s" % (pre, node.name))
+
+with open(os.path.join('datasets', 'names', 'filtered_wn.treevis'), 'w') as f:
+    for pre, fill, node in RenderTree(nodes['-1']):
+        f.write("%s%s\n" % (pre, node.name))
+
+with open(os.path.join('datasets', 'names', 'filtered.treevis'), 'w') as f:
+    for pre, fill, node in RenderTree(nodes['-1']):
+        if node.name =='ROOT':
+            name = 'ROOT'
+        else:
+            name = wn.synset_from_pos_and_offset('n', int(node.name[1:]))._name
+        f.write("%s%s\n" % (pre, name))
+
+from ete3 import Tree, TreeStyle
+t = Tree("((((H,K)D,(F,I)G)B,E)A,((L,(N,Q)O)J,(P,S)M)C);", format=1)
+# t.populate(30)
+ts = TreeStyle()
+ts.show_leaf_name = True
+ts.mode = "c"
+ts.arc_start = -360 # 0 degrees = 3 o'clock
+ts.arc_span = 360
+t.show(tree_style=ts)
