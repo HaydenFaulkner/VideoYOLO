@@ -1,0 +1,161 @@
+ROOT
+├── artifact.n.01
+│   ├── electronic_device.n.01
+│   │   ├── mouse.n.04
+│   │   ├── telephone.n.01
+│   │   ├── display.n.06
+│   │   ├── laptop.n.01
+│   │   ├── remote_control.n.01
+│   │   ├── tape_player.n.01
+│   │   ├── ipod.n.01
+│   │   ├── electric_fan.n.01
+│   │   ├── computer_keyboard.n.01
+│   │   ├── microphone.n.01
+│   │   ├── printer.n.02
+│   │   └── digital_clock.n.01
+│   ├── tableware.n.01
+│   │   ├── bottle.n.01
+│   │   ├── bowl.n.01
+│   │   ├── platter.n.01
+│   │   ├── glass.n.02
+│   │   │   ├── wineglass.n.01
+│   │   │   └── beaker.n.01
+│   │   ├── vase.n.01
+│   │   ├── mug.n.04
+│   │   ├── bowl.n.03
+│   │   └── pitcher.n.02
+│   ├── fireplug.n.01
+│   ├── traffic_light.n.01
+│   ├── sports_equipment.n.01
+│   │   ├── tennis_racket.n.01
+│   │   ├── baseball_equipment.n.01
+│   │   │   ├── baseball_bat.n.01
+│   │   │   └── baseball_glove.n.01
+│   │   ├── ball.n.01
+│   │   ├── board.n.03
+│   │   │   ├── aquaplane.n.01
+│   │   │   ├── snowboard.n.01
+│   │   │   └── skateboard.n.01
+│   │   ├── ski.n.01
+│   │   ├── frisbee.n.01
+│   │   ├── sport_kite.n.01
+│   │   ├── punching_bag.n.02
+│   │   ├── puck.n.02
+│   │   └── bow.n.04
+│   ├── appliance.n.02
+│   │   ├── microwave.n.02
+│   │   ├── toaster.n.02
+│   │   ├── oven.n.01
+│   │   ├── hand_blower.n.01
+│   │   ├── refrigerator.n.01
+│   │   └── stove.n.02
+│   ├── bag.n.01
+│   │   ├── backpack.n.01
+│   │   ├── bag.n.04
+│   │   └── baggage.n.01
+│   ├── street_sign.n.01
+│   ├── teddy.n.01
+│   ├── furniture.n.01
+│   │   ├── washbasin.n.02
+│   │   ├── bed.n.01
+│   │   ├── seat.n.03
+│   │   │   ├── bench.n.01
+│   │   │   ├── sofa.n.01
+│   │   │   └── chair.n.01
+│   │   ├── toilet.n.02
+│   │   └── table.n.02
+│   │       └── dining-room_table.n.01
+│   ├── parking_meter.n.01
+│   ├── vehicle.n.01
+│   │   ├── car.n.01
+│   │   ├── motorcycle.n.01
+│   │   ├── bicycle.n.01
+│   │   ├── boat.n.01
+│   │   ├── airplane.n.01
+│   │   ├── train.n.01
+│   │   ├── bus.n.01
+│   │   ├── truck.n.01
+│   │   ├── snowplow.n.01
+│   │   ├── snowmobile.n.01
+│   │   ├── unicycle.n.01
+│   │   └── cart.n.01
+│   ├── clothing.n.01
+│   │   ├── necktie.n.01
+│   │   └── sunglasses.n.01
+│   ├── book.n.02
+│   ├── tool.n.01
+│   │   ├── chain_saw.n.01
+│   │   └── nail.n.02
+│   ├── scissors.n.01
+│   ├── kitchen_utensil.n.01
+│   │   ├── cutlery.n.02
+│   │   │   ├── fork.n.01
+│   │   │   ├── spoon.n.01
+│   │   │   └── table_knife.n.01
+│   │   ├── ladle.n.01
+│   │   ├── strainer.n.01
+│   │   ├── plate_rack.n.01
+│   │   ├── saltshaker.n.01
+│   │   ├── corkscrew.n.01
+│   │   └── can_opener.n.01
+│   ├── toiletry.n.01
+│   │   ├── toothbrush.n.01
+│   │   └── soap_dispenser.n.01
+│   └── medical_instrument.n.01
+│       ├── crutch.n.01
+│       ├── band_aid.n.01
+│       └── neck_brace.n.01
+├── living_thing.n.01
+│   ├── animal.n.01
+│   │   ├── mammal.n.01
+│   │   │   ├── lesser_panda.n.01
+│   │   │   ├── elephant.n.01
+│   │   │   ├── feline.n.01
+│   │   │   │   ├── tiger.n.02
+│   │   │   │   ├── lion.n.01
+│   │   │   │   └── domestic_cat.n.01
+│   │   │   ├── cow.n.02
+│   │   │   ├── giraffe.n.01
+│   │   │   ├── canine.n.02
+│   │   │   │   ├── fox.n.01
+│   │   │   │   └── dog.n.01
+│   │   │   ├── aquatic_mammal.n.01
+│   │   │   │   └── whale.n.02
+│   │   │   ├── cattle.n.01
+│   │   │   ├── monkey.n.01
+│   │   │   ├── giant_panda.n.01
+│   │   │   ├── rabbit.n.01
+│   │   │   ├── sheep.n.01
+│   │   │   ├── rodent.n.01
+│   │   │   │   ├── squirrel.n.01
+│   │   │   │   └── hamster.n.01
+│   │   │   ├── horse.n.01
+│   │   │   ├── antelope.n.01
+│   │   │   ├── bear.n.01
+│   │   │   └── zebra.n.01
+│   │   ├── reptile.n.01
+│   │   │   ├── turtle.n.02
+│   │   │   ├── lizard.n.01
+│   │   │   └── snake.n.01
+│   │   └── bird.n.01
+│   ├── person.n.01
+│   └── plant.n.02
+│       └── houseplant.n.01
+└── food.n.01
+    ├── vegetable.n.01
+    │   ├── carrot.n.03
+    │   └── broccoli.n.02
+    ├── trifle.n.01
+    ├── pizza.n.01
+    ├── hotdog.n.02
+    ├── baked_goods.n.01
+    │   └── doughnut.n.02
+    └── fruit.n.01
+        ├── banana.n.02
+        ├── apple.n.01
+        ├── orange.n.01
+        ├── lemon.n.01
+        ├── pineapple.n.02
+        ├── fig.n.04
+        ├── pomegranate.n.02
+        └── strawberry.n.01

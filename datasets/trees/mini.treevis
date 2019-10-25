@@ -1,0 +1,223 @@
+ROOT
+├── object.n.01
+│   └── whole.n.02
+│       ├── artifact.n.01
+│       │   ├── instrumentality.n.03
+│       │   │   ├── device.n.01
+│       │   │   │   ├── electronic_device.n.01
+│       │   │   │   │   ├── mouse.n.04
+│       │   │   │   │   └── display.n.06
+│       │   │   │   ├── signal.n.01
+│       │   │   │   │   ├── traffic_light.n.01
+│       │   │   │   │   └── street_sign.n.01
+│       │   │   │   ├── keyboard.n.01
+│       │   │   │   ├── ski.n.01
+│       │   │   │   ├── instrument.n.01
+│       │   │   │   │   └── measuring_instrument.n.01
+│       │   │   │   │       └── timepiece.n.01
+│       │   │   │   │           ├── timer.n.01
+│       │   │   │   │           │   └── parking_meter.n.01
+│       │   │   │   │           └── clock.n.01
+│       │   │   │   ├── machine.n.01
+│       │   │   │   │   └── computer.n.01
+│       │   │   │   │       └── digital_computer.n.01
+│       │   │   │   │           └── personal_computer.n.01
+│       │   │   │   │               └── portable_computer.n.01
+│       │   │   │   │                   └── laptop.n.01
+│       │   │   │   ├── remote_control.n.01
+│       │   │   │   └── mechanism.n.05
+│       │   │   │       └── rotating_mechanism.n.01
+│       │   │   │           └── circle.n.08
+│       │   │   │               └── disk.n.02
+│       │   │   │                   └── frisbee.n.01
+│       │   │   ├── container.n.01
+│       │   │   │   ├── wheeled_vehicle.n.01
+│       │   │   │   │   ├── self-propelled_vehicle.n.01
+│       │   │   │   │   │   └── motor_vehicle.n.01
+│       │   │   │   │   │       ├── car.n.01
+│       │   │   │   │   │       ├── motorcycle.n.01
+│       │   │   │   │   │       └── truck.n.01
+│       │   │   │   │   └── bicycle.n.01
+│       │   │   │   ├── vessel.n.03
+│       │   │   │   │   ├── bottle.n.01
+│       │   │   │   │   ├── bowl.n.01
+│       │   │   │   │   ├── basin.n.01
+│       │   │   │   │   │   └── washbasin.n.02
+│       │   │   │   │   └── jar.n.01
+│       │   │   │   │       └── vase.n.01
+│       │   │   │   ├── bag.n.01
+│       │   │   │   │   └── backpack.n.01
+│       │   │   │   ├── bag.n.04
+│       │   │   │   ├── glass.n.02
+│       │   │   │   │   └── wineglass.n.01
+│       │   │   │   └── case.n.05
+│       │   │   │       └── baggage.n.01
+│       │   │   ├── implement.n.01
+│       │   │   │   ├── sports_implement.n.01
+│       │   │   │   │   └── racket.n.04
+│       │   │   │   │       └── tennis_racket.n.01
+│       │   │   │   ├── brush.n.02
+│       │   │   │   │   └── toothbrush.n.01
+│       │   │   │   └── tool.n.01
+│       │   │   │       └── cutting_implement.n.01
+│       │   │   │           └── cutter.n.06
+│       │   │   │               └── edge_tool.n.01
+│       │   │   │                   └── scissors.n.01
+│       │   │   ├── equipment.n.01
+│       │   │   │   ├── electronic_equipment.n.01
+│       │   │   │   │   └── telephone.n.01
+│       │   │   │   ├── sports_equipment.n.01
+│       │   │   │   │   └── baseball_equipment.n.01
+│       │   │   │   │       ├── baseball_bat.n.01
+│       │   │   │   │       └── baseball_glove.n.01
+│       │   │   │   └── game_equipment.n.01
+│       │   │   │       └── ball.n.01
+│       │   │   ├── furnishing.n.02
+│       │   │   │   └── furniture.n.01
+│       │   │   │       ├── bedroom_furniture.n.01
+│       │   │   │       │   └── bed.n.01
+│       │   │   │       ├── dining-room_table.n.01
+│       │   │   │       └── seat.n.03
+│       │   │   │           ├── bench.n.01
+│       │   │   │           ├── sofa.n.01
+│       │   │   │           └── chair.n.01
+│       │   │   └── conveyance.n.03
+│       │   │       ├── vehicle.n.01
+│       │   │       │   └── craft.n.02
+│       │   │       │       ├── vessel.n.02
+│       │   │       │       │   └── boat.n.01
+│       │   │       │       └── aircraft.n.01
+│       │   │       │           └── heavier-than-air_craft.n.01
+│       │   │       │               └── airplane.n.01
+│       │   │       └── public_transport.n.01
+│       │   │           ├── train.n.01
+│       │   │           └── bus.n.01
+│       │   ├── article.n.02
+│       │   │   └── tableware.n.01
+│       │   │       ├── cutlery.n.02
+│       │   │       │   ├── fork.n.01
+│       │   │       │   ├── spoon.n.01
+│       │   │       │   └── table_knife.n.01
+│       │   │       └── platter.n.01
+│       │   ├── way.n.06
+│       │   │   └── passage.n.03
+│       │   │       └── conduit.n.01
+│       │   │           └── tube.n.01
+│       │   │               └── pipe.n.02
+│       │   │                   └── discharge_pipe.n.01
+│       │   │                       └── hydrant.n.02
+│       │   │                           └── fireplug.n.01
+│       │   ├── commodity.n.01
+│       │   │   └── consumer_goods.n.01
+│       │   │       ├── appliance.n.02
+│       │   │       │   ├── home_appliance.n.01
+│       │   │       │   │   ├── kitchen_appliance.n.01
+│       │   │       │   │   │   ├── microwave.n.02
+│       │   │       │   │   │   ├── toaster.n.02
+│       │   │       │   │   │   └── oven.n.01
+│       │   │       │   │   └── white_goods.n.01
+│       │   │       │   │       └── refrigerator.n.01
+│       │   │       │   └── dryer.n.01
+│       │   │       │       └── hand_blower.n.01
+│       │   │       └── clothing.n.01
+│       │   │           └── garment.n.01
+│       │   │               └── neckwear.n.01
+│       │   │                   └── necktie.n.01
+│       │   ├── plaything.n.01
+│       │   │   ├── teddy.n.01
+│       │   │   └── sport_kite.n.01
+│       │   ├── sheet.n.06
+│       │   │   └── board.n.03
+│       │   │       ├── aquaplane.n.01
+│       │   │       ├── snowboard.n.01
+│       │   │       └── skateboard.n.01
+│       │   ├── fixture.n.01
+│       │   │   └── plumbing_fixture.n.01
+│       │   │       └── toilet.n.02
+│       │   └── creation.n.02
+│       │       └── product.n.02
+│       │           └── book.n.02
+│       └── living_thing.n.01
+│           └── organism.n.01
+│               ├── animal.n.01
+│               │   └── chordate.n.01
+│               │       └── vertebrate.n.01
+│               │           ├── mammal.n.01
+│               │           │   └── placental.n.01
+│               │           │       ├── carnivore.n.01
+│               │           │       │   ├── procyonid.n.01
+│               │           │       │   │   ├── lesser_panda.n.01
+│               │           │       │   │   └── giant_panda.n.01
+│               │           │       │   ├── feline.n.01
+│               │           │       │   │   ├── big_cat.n.01
+│               │           │       │   │   │   ├── tiger.n.02
+│               │           │       │   │   │   └── lion.n.01
+│               │           │       │   │   └── cat.n.01
+│               │           │       │   │       └── domestic_cat.n.01
+│               │           │       │   ├── canine.n.02
+│               │           │       │   │   ├── fox.n.01
+│               │           │       │   │   └── dog.n.01
+│               │           │       │   └── bear.n.01
+│               │           │       ├── pachyderm.n.01
+│               │           │       │   └── elephant.n.01
+│               │           │       ├── cow.n.02
+│               │           │       ├── ungulate.n.01
+│               │           │       │   ├── even-toed_ungulate.n.01
+│               │           │       │   │   └── ruminant.n.01
+│               │           │       │   │       ├── giraffe.n.01
+│               │           │       │   │       └── bovid.n.01
+│               │           │       │   │           ├── bovine.n.01
+│               │           │       │   │           │   └── cattle.n.01
+│               │           │       │   │           ├── sheep.n.01
+│               │           │       │   │           └── antelope.n.01
+│               │           │       │   └── odd-toed_ungulate.n.01
+│               │           │       │       └── equine.n.01
+│               │           │       │           ├── horse.n.01
+│               │           │       │           └── zebra.n.01
+│               │           │       ├── aquatic_mammal.n.01
+│               │           │       │   └── cetacean.n.01
+│               │           │       │       └── whale.n.02
+│               │           │       ├── primate.n.02
+│               │           │       │   └── monkey.n.01
+│               │           │       ├── lagomorph.n.01
+│               │           │       │   └── leporid.n.01
+│               │           │       │       └── rabbit.n.01
+│               │           │       └── rodent.n.01
+│               │           │           ├── squirrel.n.01
+│               │           │           └── hamster.n.01
+│               │           ├── reptile.n.01
+│               │           │   ├── chelonian.n.01
+│               │           │   │   └── turtle.n.02
+│               │           │   └── diapsid.n.01
+│               │           │       ├── lizard.n.01
+│               │           │       └── snake.n.01
+│               │           └── bird.n.01
+│               ├── person.n.01
+│               └── plant.n.02
+│                   └── houseplant.n.01
+└── matter.n.03
+    ├── solid.n.01
+    │   └── food.n.02
+    │       ├── produce.n.01
+    │       │   ├── edible_fruit.n.01
+    │       │   │   ├── banana.n.02
+    │       │   │   ├── apple.n.01
+    │       │   │   └── citrus.n.01
+    │       │   │       └── orange.n.01
+    │       │   └── vegetable.n.01
+    │       │       ├── root_vegetable.n.01
+    │       │       │   └── carrot.n.03
+    │       │       └── cruciferous_vegetable.n.01
+    │       │           └── broccoli.n.02
+    │       └── baked_goods.n.01
+    │           └── doughnut.n.02
+    └── food.n.01
+        └── nutriment.n.01
+            ├── course.n.07
+            │   └── dessert.n.01
+            │       └── trifle.n.01
+            └── dish.n.02
+                ├── snack_food.n.01
+                │   └── sandwich.n.01
+                │       └── hotdog.n.02
+                └── pizza.n.01
