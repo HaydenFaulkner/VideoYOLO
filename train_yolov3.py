@@ -118,7 +118,7 @@ flags.DEFINE_integer('num_samples', -1,
                      'Training images. Use -1 to automatically get the number.')
 flags.DEFINE_float('every', 25,
                    'do every this many frames')
-flags.DEFINE_list('window', '1, 1',
+flags.DEFINE_list('window', [1, 1],
                   'Temporal window size of frames and the frame gap/stride of the windows samples')
 flags.DEFINE_integer('seed', 233,
                      'Random seed to be fixed.')
@@ -619,18 +619,18 @@ def main(_argv):
     ctx = ctx if ctx else [mx.cpu()]
 
     # training data
-    train_dataset, val_dataset, eval_metric = get_dataset(FLAGS.dataset, os.path.join('models', FLAGS.save_prefix))
+    train_dataset, val_dataset, eval_metric = get_dataset(FLAGS.dataset, os.path.join('models', 'experiments', FLAGS.save_prefix))
 
     trained_on_dataset = train_dataset
     if FLAGS.trained_on:
         # load the model with these classes then reset
-        trained_on_dataset, _, _ = get_dataset(FLAGS.trained_on, os.path.join('models', FLAGS.save_prefix))
+        trained_on_dataset, _, _ = get_dataset(FLAGS.trained_on, os.path.join('models', 'experiments', FLAGS.save_prefix))
 
     # network
     if os.path.exists(os.path.join('models', 'experiments', FLAGS.save_prefix)) and not bool(FLAGS.resume.strip()) \
             and FLAGS.save_prefix != '0000':  # using 0000 for testing
         logging.error("{} exists so won't overwrite and restart training. You can resume training by using "
-                      "--resume".format(os.path.join('models', FLAGS.save_prefix)))
+                      "--resume".format(os.path.join('models', 'experiments', FLAGS.save_prefix)))
         return
     os.makedirs(os.path.join('models', 'experiments', FLAGS.save_prefix), exist_ok=True)
     net_name = '_'.join(('yolo3', FLAGS.network, FLAGS.dataset))
@@ -640,6 +640,7 @@ def main(_argv):
 
     if FLAGS.trained_on:
         net.reset_class(train_dataset.classes)
+        async_net.reset_class(train_dataset.classes)
 
     if FLAGS.motion_stream == 'flownet':
         FLAGS.data_shape = 384  # cause 416 is a nasty shape
