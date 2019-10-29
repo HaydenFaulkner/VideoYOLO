@@ -75,6 +75,8 @@ flags.DEFINE_string('corr_pos', None,
                     "position of correlation features calculation, currently only supports 'early' or 'late")
 flags.DEFINE_integer('corr_d', 4,
                      'The d value for the correlation filter.')
+flags.DEFINE_string('motion_stream', None,
+                    'Add a motion stream? can be flownet or r21d.')
 
 flags.DEFINE_boolean('visualise', False,
                      'Do you want to display the detections?')
@@ -566,6 +568,9 @@ def main(_argv):
     if FLAGS.model_agnostic:
         FLAGS.metric_agnostic = True
 
+    if FLAGS.motion_stream == 'flownet':
+        FLAGS.data_shape = 384  # cause 416 is a nasty shape
+
     if FLAGS.window[0] > 1:
         assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'
 
@@ -612,12 +617,13 @@ def main(_argv):
         net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
                               k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                               block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                              corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, agnostic=FLAGS.model_agnostic)
+                              corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
+                              agnostic=FLAGS.model_agnostic)
     elif FLAGS.network == 'mobilenet1.0':
         net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
                                  k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                  block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                 corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)
+                                 corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream)
     else:
         raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
     net.load_parameters(model_path)
