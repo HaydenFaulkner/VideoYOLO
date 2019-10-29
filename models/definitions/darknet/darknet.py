@@ -106,13 +106,9 @@ class DarknetV3(gluon.HybridBlock):
         return self.output(x)
 
 # default configurations
-darknet_versions = {'v3': DarknetV3}
-darknet_spec = {
-    'v3': {53: ([1, 2, 8, 8, 4], [32, 64, 128, 256, 512, 1024]),}
-}
 
 def get_darknet(darknet_version, num_layers, pretrained=False, ctx=mx.cpu(),
-                root=os.path.join('models', 'definitions', 'darknet', 'weights'), **kwargs):
+                root=os.path.join('models', 'definitions', 'darknet', 'weights'), add_type=None, **kwargs):
     """Get darknet by `version` and `num_layers` info.
 
     Parameters
@@ -146,15 +142,9 @@ def get_darknet(darknet_version, num_layers, pretrained=False, ctx=mx.cpu(),
     >>> print(model)
 
     """
-    assert darknet_version in darknet_versions and darknet_version in darknet_spec, (
-        "Invalid darknet version: {}. Options are {}".format(
-            darknet_version, str(darknet_versions.keys())))
-    specs = darknet_spec[darknet_version]
-    assert num_layers in specs, (
-        "Invalid number of layers: {}. Options are {}".format(num_layers, str(specs.keys())))
-    layers, channels = specs[num_layers]
-    darknet_class = darknet_versions[darknet_version]
-    net = darknet_class(layers, channels, **kwargs)
+    layers = [1, 2, 8, 8, 4]
+    channels = [32, 64, 128, 256, 512, 1024]
+    net = DarknetV3(layers, channels, **kwargs)
     if pretrained:
         from gluoncv.model_zoo.model_store import get_model_file
         net.load_parameters(get_model_file(
