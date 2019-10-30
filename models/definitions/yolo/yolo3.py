@@ -915,11 +915,11 @@ class YOLOV3TS(gluon.HybridBlock):
         Additional `norm_layer` arguments, for example `num_devices=4`
         for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
     """
-    def __init__(self, stages, motion_stream, t, channels, anchors, strides, classes, alloc_size=(128, 128),
+    def __init__(self, ts_model, t, channels, anchors, strides, classes, alloc_size=(128, 128),
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
                  ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None, agnostic=False, **kwargs):
         super(YOLOV3TS, self).__init__(**kwargs)
-        self.motion_stream = motion_stream
+        self.ts_model = ts_model
         self.t = t
         self._classes = classes
         self.nms_thresh = nms_thresh
@@ -934,14 +934,12 @@ class YOLOV3TS(gluon.HybridBlock):
                 "pos_iou_thresh({}) < 1.0 is not implemented!".format(pos_iou_thresh))
         self._loss = YOLOV3Loss()
         with self.name_scope():
-            self.stages = nn.HybridSequential()
             self.transitions = nn.HybridSequential()
             self.yolo_blocks = nn.HybridSequential()
             self.yolo_outputs = nn.HybridSequential()
             # note that anchors and strides should be used in reverse order
-            for i, stage, channel, anchor, stride in zip(
-                    range(len(stages)), stages, channels, anchors[::-1], strides[::-1]):
-                self.stages.add(stage)
+            for i, channel, anchor, stride in zip(range(3), channels, anchors[::-1], strides[::-1]):
+
                 block = YOLODetectionBlockV3(
                     channel, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
                 self.yolo_blocks.add(block)
@@ -1000,26 +998,30 @@ class YOLOV3TS(gluon.HybridBlock):
         all_detections = []
         routes = []
 
-        # split the input array into the individual timesteps
-        input_arr = F.split(x, num_outputs=self.t)
+        # # OLD CODE
+        # # split the input array into the individual timesteps
+        # input_arr = F.split(x, num_outputs=self.t)
+        #
+        # darknet_input = input_arr[int(self.t / 2)]  # b,1,c,w,h
+        # darknet_input = F.squeeze(darknet_input, axis=1)  # b,c,w,h
+        #
+        # # input_list = input_arr[:int(self.t / 2)] + input_arr[int(self.t / 2)+1:]  # todo: doesn't work with symbol seems to cat on channels dim
+        # # motion_input = F.concat(*input_list, dim=1)  # put back into nd array now without the darknet input frame
+        #
+        # motion_input = input_arr[0]
+        # for i in range(1, self.t):
+        #     if i != int(self.t / 2):
+        #         motion_input = F.concat(motion_input, input_arr[i], dim=1)
+        # motion_feats = list(self.motion_stream(motion_input))  # calculate the motion feats and put in list
+        #
+        # darknet_feat = darknet_input
+        # for i, stage, block, output in zip(range(len(self.stages)), self.stages, self.yolo_blocks, self.yolo_outputs):
+        #     darknet_feat = stage(darknet_feat)
+        #     motion_feat = motion_feats[i]
+        #     routes.append(F.concat(darknet_feat, motion_feat))
 
-        darknet_input = input_arr[int(self.t / 2)]  # b,1,c,w,h
-        darknet_input = F.squeeze(darknet_input, axis=1)  # b,c,w,h
-
-        # input_list = input_arr[:int(self.t / 2)] + input_arr[int(self.t / 2)+1:]  # todo: doesn't work with symbol seems to cat on channels dim
-        # motion_input = F.concat(*input_list, dim=1)  # put back into nd array now without the darknet input frame
-
-        motion_input = input_arr[0]
-        for i in range(1, self.t):
-            if i != int(self.t / 2):
-                motion_input = F.concat(motion_input, input_arr[i], dim=1)
-        motion_feats = list(self.motion_stream(motion_input))  # calculate the motion feats and put in list
-
-        darknet_feat = darknet_input
-        for i, stage, block, output in zip(range(len(self.stages)), self.stages, self.yolo_blocks, self.yolo_outputs):
-            darknet_feat = stage(darknet_feat)
-            motion_feat = motion_feats[i]
-            routes.append(F.concat(darknet_feat, motion_feat))
+        # NEW CODE
+        routes = self.ts_model(x)
 
         x = routes[-1]
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
