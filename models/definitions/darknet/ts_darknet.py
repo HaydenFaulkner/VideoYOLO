@@ -147,11 +147,12 @@ class DarknetR21D(gluon.HybridBlock):
         darknet_input = input_arr[int(self.t / 2)]  # b,1,c,w,h
         darknet_input = F.squeeze(darknet_input, axis=1)  # b,c,w,h
 
-        r21d_input = input_arr[0]
-        for i in range(1, self.t):
-            if i != int(self.t / 2):
-                r21d_input = F.concat(r21d_input, input_arr[i], dim=1)
+        # r21d_input = input_arr[0]  # now we also pass in the middle frame so there isn't a jump in middle
+        # for i in range(1, self.t):
+        #     # if i != int(self.t / 2):
+        #     r21d_input = F.concat(r21d_input, input_arr[i], dim=1)
 
+        r21d_input = x
         if self.add_type in ['add', 'mul']:
             r21d_input = F.swapaxes(r21d_input, 1, 2)  # b,t,c,w,h -> b,c,t,w,h
 
