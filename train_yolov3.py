@@ -29,7 +29,7 @@ from datasets.imgnetvid import ImageNetVidDetection
 from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
 
-from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_mobilenet1_0, yolo3_no_backbone
+from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_no_backbone, yolo3_3ddarknet
 from models.definitions.yolo.transforms import YOLO3DefaultTrainTransform, YOLO3DefaultInferenceTransform, \
     YOLO3VideoTrainTransform, YOLO3VideoInferenceTransform, YOLO3NBVideoTrainTransform, YOLO3NBVideoInferenceTransform
 
@@ -41,7 +41,7 @@ os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = '0'
 logging.basicConfig(level=logging.INFO)
 
 flags.DEFINE_string('network', 'darknet53',
-                    'Base network name: darknet53 or mobilenet1.0.')
+                    'Base network name: darknet53')
 flags.DEFINE_string('dataset', 'voc',
                     'Dataset to train on.')
 flags.DEFINE_string('trained_on', '',
@@ -141,6 +141,8 @@ flags.DEFINE_string('motion_stream', None,
                     'Add a motion stream? can be flownet or r21d.')
 flags.DEFINE_string('stream_gating', None,
                     'Use gating on the appearence stream using the motion stream. can be add or mul.')
+flags.DEFINE_list('conv_types', [2, 2, 2, 2, 2, 2],
+                  'Darknet Conv types for layers, either 2, 21, or 3 D')
 
 
 def get_dataset(dataset_name, save_prefix=''):
@@ -283,66 +285,59 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
     elif definition == 'ours':  # our model definition from definitions.py, atm equiv to defaults, but might be useful in future
         if FLAGS.network == 'darknet53':
             if FLAGS.syncbn and len(ctx) > 1:
-                net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                      pretrained_base=FLAGS.pretrained_cnn,
-                                      norm_layer=gluon.contrib.nn.SyncBatchNorm,
-                                      freeze_base=bool(FLAGS.freeze_base),
-                                      norm_kwargs={'num_devices': len(ctx)},
-                                      k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                      block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                      corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                      add_type=FLAGS.stream_gating)
-                async_net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                            pretrained_base=False,
-                                            freeze_base=bool(FLAGS.freeze_base),
-                                            k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                            block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                            corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d,
-                                            motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating)  # used by cpu worker
-            else:
-                net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                                      pretrained_base=FLAGS.pretrained_cnn,
-                                      freeze_base=bool(FLAGS.freeze_base),
-                                      k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                      block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                      corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                      add_type=FLAGS.stream_gating)
-                async_net = net
+                if FLAGS.conv_types[0] is 2:
 
-        elif FLAGS.network == 'mobilenet1.0':
-            if FLAGS.syncbn and len(ctx) > 1:
-                net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                         pretrained_base=FLAGS.pretrained_cnn,
-                                         norm_layer=gluon.contrib.nn.SyncBatchNorm,
-                                         freeze_base=bool(FLAGS.freeze_base),
-                                         norm_kwargs={'num_devices': len(ctx)},
-                                         k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                         block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                         corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)
-                async_net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                               pretrained_base=False,
-                                               freeze_base=bool(FLAGS.freeze_base),
-                                               k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                               block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                               corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)  # used by cpu worker
+                    net = yolo3_darknet53(trained_on_dataset.classes,
+                                          pretrained_base=FLAGS.pretrained_cnn,
+                                          norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                          freeze_base=bool(FLAGS.freeze_base),
+                                          norm_kwargs={'num_devices': len(ctx)},
+                                          k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
+                                          block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
+                                          corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
+                                          add_type=FLAGS.stream_gating)
+                    async_net = yolo3_darknet53(trained_on_dataset.classes,
+                                                pretrained_base=False,
+                                                freeze_base=bool(FLAGS.freeze_base),
+                                                k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
+                                                block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
+                                                corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d,
+                                                motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating)  # used by cpu worker
+                else:
+                    net = yolo3_3ddarknet(trained_on_dataset.classes,
+                                          pretrained_base=FLAGS.pretrained_cnn,
+                                          norm_layer=gluon.contrib.nn.SyncBatchNorm,
+                                          freeze_base=bool(FLAGS.freeze_base),
+                                          norm_kwargs={'num_devices': len(ctx)},
+                                          conv_types=FLAGS.conv_types)
+                    async_net = yolo3_3ddarknet(trained_on_dataset.classes,
+                                                pretrained_base=False,
+                                                freeze_base=bool(FLAGS.freeze_base),
+                                                conv_types=FLAGS.conv_types)  # used by cpu worker
             else:
-                net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                         pretrained_base=FLAGS.pretrained_cnn,
-                                         freeze_base=bool(FLAGS.freeze_base),
-                                         k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                         block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                         corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d)
-                async_net = net
+                if FLAGS.conv_types[0] is 2:
+                    net = yolo3_darknet53(trained_on_dataset.classes,
+                                          pretrained_base=FLAGS.pretrained_cnn,
+                                          freeze_base=bool(FLAGS.freeze_base),
+                                          k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
+                                          block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
+                                          corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
+                                          add_type=FLAGS.stream_gating)
+                    async_net = net
+                else:
+                    net = yolo3_3ddarknet(trained_on_dataset.classes,
+                                          pretrained_base=FLAGS.pretrained_cnn,
+                                          freeze_base=bool(FLAGS.freeze_base),
+                                          conv_types=FLAGS.conv_types)
+                    async_net = net
+
         else:
             raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
 
     else:  # the default definition from gluoncv
-        if FLAGS.network == 'darknet53' or FLAGS.network == 'mobilenet1.0':
+        if FLAGS.network == 'darknet53':
             net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))  # only get custom, use FLAGS.resume to load particular set (voc, coco) weights
-            if FLAGS.network == 'darknet53':
-                root = os.path.join('models', 'definitions', 'darknet', 'weights')
-            else:
-                root = os.path.join('models', 'definitions', 'mobilenet', 'weights')
+            root = os.path.join('models', 'definitions', 'darknet', 'weights')
 
             if FLAGS.syncbn and len(ctx) > 1:
                 net = get_model(net_name, root=root, pretrained_base=FLAGS.pretrained_cnn,
@@ -605,6 +600,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
 
 def main(_argv):
     FLAGS.window = [int(s) for s in FLAGS.window]
+    FLAGS.conv_types = [int(s) for s in FLAGS.conv_types]
 
     if FLAGS.window[0] > 1:
         assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'

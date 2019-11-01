@@ -283,7 +283,8 @@ def get_darknet(pretrained=False, ctx=mx.cpu(), root=os.path.join('models', 'def
 
         # transfer weights from 2D
         base_net = Darknet3D(layers, channels, [2, 2, 2, 2, 2, 2], return_features=return_features, **kwargs)
-        base_net.load_parameters(get_model_file('darknet53', tag=pretrained, root=root), ctx=ctx)
+        base_net.load_parameters(get_model_file('darknet53', tag=pretrained, root=root), ctx=ctx,
+                                 ignore_extra=return_features)  # we won't have the dense layers
 
         base_params = base_net.collect_params()
         net_params = net.collect_params()

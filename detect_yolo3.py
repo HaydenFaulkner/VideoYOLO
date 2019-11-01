@@ -26,7 +26,7 @@ from metrics.mscoco import COCODetectionMetric
 from metrics.imgnetvid import VIDDetectionMetric
 
 from models.definitions.yolo.transforms import YOLO3VideoInferenceTransform
-from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_mobilenet1_0, yolo3_no_backbone
+from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_3ddarknet
 
 from utils.general import as_numpy
 from utils.image import cv_plot_bbox
@@ -40,7 +40,7 @@ logging.basicConfig(level=logging.INFO)
 flags.DEFINE_string('model_path', 'yolo3_darknet53_voc_best.params',
                     'Path to the detection model to use')
 flags.DEFINE_string('network', 'darknet53',
-                    'Base network name: darknet53 or mobilenet1.0.')
+                    'Base network name: darknet53')
 flags.DEFINE_string('dataset', 'voc',
                     'Dataset or .jpg image or .mp4 video or .txt image/video list.')
 flags.DEFINE_string('trained_on', '',
@@ -77,6 +77,8 @@ flags.DEFINE_integer('corr_d', 4,
                      'The d value for the correlation filter.')
 flags.DEFINE_string('motion_stream', None,
                     'Add a motion stream? can be flownet or r21d.')
+flags.DEFINE_list('conv_types', [2, 2, 2, 2, 2, 2],
+                  'Darknet Conv types for layers, either 2, 21, or 3 D')
 
 flags.DEFINE_boolean('visualise', False,
                      'Do you want to display the detections?')
@@ -565,6 +567,7 @@ def get_class_map(trained_on, eval_on):
 def main(_argv):
 
     FLAGS.window = [int(s) for s in FLAGS.window]
+    FLAGS.conv_types = [int(s) for s in FLAGS.conv_types]
     if FLAGS.model_agnostic:
         FLAGS.metric_agnostic = True
 
@@ -614,16 +617,14 @@ def main(_argv):
     # net_name = '_'.join(('yolo3', FLAGS.network, 'custom'))
     # net = get_model(net_name, root='models', pretrained_base=True, classes=trained_on_dataset.classes)
     if FLAGS.network == 'darknet53':
-        net = yolo3_darknet53(trained_on_dataset.classes, FLAGS.dataset,
-                              k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                              block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                              corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                              agnostic=FLAGS.model_agnostic)
-    elif FLAGS.network == 'mobilenet1.0':
-        net = yolo3_mobilenet1_0(trained_on_dataset.classes, FLAGS.dataset,
-                                 k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
-                                 block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
-                                 corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream)
+        if FLAGS.conv_types[0] is 2:
+            net = yolo3_darknet53(trained_on_dataset.classes,
+                                  k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
+                                  block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
+                                  corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
+                                  agnostic=FLAGS.model_agnostic)
+        else:
+            net = yolo3_3ddarknet(trained_on_dataset.classes, conv_types=FLAGS.conv_types)
     else:
         raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
     net.load_parameters(model_path)
