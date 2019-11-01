@@ -78,15 +78,8 @@ class Conv3DRepPad(gluon.HybridBlock):
                               bias_initializer=bias_initializer, in_channels=in_channels, **kwargs)
 
     def hybrid_forward(self, F, x, *args):
-        if self.t_axis == 1:
-            s = x[:, 0, :, :, :]
-            f = x[:, -1, :, :, :]
-        if self.t_axis == 2:
-            s = x[:, :, 0, :, :]
-            f = x[:, :, -1, :, :]
-
-        s = F.expand_dims(s, axis=self.t_axis)
-        f = F.expand_dims(f, axis=self.t_axis)
+        s = F.slice_axis(x, axis=self.t_axis, begin=0, end=1)
+        f = F.slice_axis(x, axis=self.t_axis, begin=-2, end=-1)
 
         if self.padding > 1:
             s = F.repeat(s, repeats=self.padding, axis=self.t_axis)
