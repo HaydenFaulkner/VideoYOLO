@@ -221,7 +221,8 @@ class Darknet3D(gluon.HybridBlock):
                 self.features.add(TemporalGlobalMaxPool3D())
 
             # output
-            self.output = nn.Dense(classes)
+            if not self.return_features:
+                self.output = nn.Dense(classes)
 
     def hybrid_forward(self, F, x):
         if self.return_features:
@@ -253,7 +254,7 @@ class Darknet3D(gluon.HybridBlock):
 
 # default configurations
 def get_darknet(pretrained=False, ctx=mx.cpu(), root=os.path.join('models', 'definitions', 'darknet', 'weights'),
-                conv_types=[2, 2, 2, 2, 2, 2], **kwargs):
+                conv_types=[2, 2, 2, 2, 2, 2], return_features=False, **kwargs):
     """
     get a 2D or 2+1D or 3D darknet model with correct transfer of imagenet pretrained weights
 
@@ -272,15 +273,16 @@ def get_darknet(pretrained=False, ctx=mx.cpu(), root=os.path.join('models', 'def
 
     layers = [1, 2, 8, 8, 4]
     channels = [32, 64, 128, 256, 512, 1024]
-    net = Darknet3D(layers, channels, conv_types, **kwargs)
+    net = Darknet3D(layers, channels, conv_types, return_features=return_features, **kwargs)
     net.initialize()
     if pretrained:
         if 3 not in conv_types and 21 not in conv_types:
-            net.load_parameters(get_model_file('darknet53', tag=pretrained, root=root), ctx=ctx)
+            net.load_parameters(get_model_file('darknet53', tag=pretrained, root=root), ctx=ctx,
+                                ignore_extra=return_features)  # we won't have the dense layers
             return net
 
         # transfer weights from 2D
-        base_net = Darknet3D(layers, channels, [2, 2, 2, 2, 2, 2], **kwargs)
+        base_net = Darknet3D(layers, channels, [2, 2, 2, 2, 2, 2], return_features=return_features, **kwargs)
         base_net.load_parameters(get_model_file('darknet53', tag=pretrained, root=root), ctx=ctx)
 
         base_params = base_net.collect_params()

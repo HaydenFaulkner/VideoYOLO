@@ -1,9 +1,8 @@
-import platform
 import warnings
 from mxnet.gluon.nn import BatchNorm
 from gluoncv.model_zoo import get_model
 
-from .yolo3 import get_yolov3, YOLOV3_noback, YOLOV3, YOLOV3T, YOLOV3TS
+from .yolo3 import YOLOV3_noback, YOLOV3, YOLOV3T, YOLOV3TS, YOLOV3TB
 from ..darknet.three_darknet import get_darknet
 from ..darknet.ts_darknet import get_darknet_flownet, get_darknet_r21d
 from ..mobilenet.mobilenet import get_mobilenet
@@ -40,10 +39,16 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
     if pretrained:
         warnings.warn("Custom models don't provide `pretrained` weights, ignored.")
     if transfer is None:
-        darknet = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+        # OLD CODE
+        # darknet = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+        # if freeze_base:
+        #     for param in darknet.collect_params().values():
+        #         param.grad_req = 'null'
+        # stages = [darknet.features[:15], darknet.features[15:24], darknet.features[24:]]
 
+        darknet_model = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, return_features=True, **kwargs)
         if freeze_base:
-            for param in darknet.collect_params().values():
+            for param in darknet_model.collect_params().values():
                 param.grad_req = 'null'
 
         ts_model = None
@@ -63,7 +68,6 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
                 for param in ts_model.collect_params().values():
                     param.grad_req = 'null'
 
-        stages = [darknet.features[:15], darknet.features[15:24], darknet.features[24:]]
         anchors = [
             [10, 13, 16, 30, 33, 23],
             [30, 61, 62, 45, 59, 119],
@@ -74,7 +78,11 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
             rnn_shapes = [(1024, 13, 13), (512, 26, 26), (256, 52, 52)]  # todo currently hardcoded which will fail for input not = to 416 need to work out better way
 
         if ts_model is None:
-            net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
+            # OLD CODE
+            # net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
+            #               k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
+            #               corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
+            net = YOLOV3TB(darknet_model, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
                           k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
                           corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
         else:
