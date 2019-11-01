@@ -36,18 +36,18 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
         Fully hybrid yolo3 network.
     """
 
-    # OLD CODE
-    # darknet = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
-    # if freeze_base:
-    #     for param in darknet.collect_params().values():
-    #         param.grad_req = 'null'
-    # stages = [darknet.features[:15], darknet.features[15:24], darknet.features[24:]]
-
-    darknet_model = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
-                                return_features=True, **kwargs)
+    # OLD CODE kept for now so models can resume
+    darknet = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
     if freeze_base:
-        for param in darknet_model.collect_params().values():
+        for param in darknet.collect_params().values():
             param.grad_req = 'null'
+    stages = [darknet.features[:15], darknet.features[15:24], darknet.features[24:]]
+
+    # darknet_model = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
+    #                             return_features=True, **kwargs)
+    # if freeze_base:
+    #     for param in darknet_model.collect_params().values():
+    #         param.grad_req = 'null'
 
     ts_model = None
     if motion_stream == 'flownet':
@@ -77,12 +77,12 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
 
     if ts_model is None:
         # OLD CODE
-        # net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
-        #               k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
-        #               corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
-        net = YOLOV3TB(darknet_model, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
+        net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
                       k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
                       corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
+        # net = YOLOV3TB(darknet_model, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
+        #               k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
+        #               corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
     else:
         net = YOLOV3TS(ts_model, k, [512, 256, 128], anchors, strides, classes=classes, agnostic=agnostic,
                        **kwargs)
