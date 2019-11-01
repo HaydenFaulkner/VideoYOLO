@@ -3,12 +3,10 @@ import warnings
 from mxnet.gluon.nn import BatchNorm
 from gluoncv.model_zoo import get_model
 
-from .yolo3 import get_yolov3, YOLOV3_noback, YOLOV3, YOLOV3T, TimeDistributed, YOLOV3TS
-from ..darknet.darknet import darknet53
-from ..darknet.ts_darknet import DarknetFlownet, DarknetR21D
+from .yolo3 import get_yolov3, YOLOV3_noback, YOLOV3, YOLOV3T, YOLOV3TS
+from ..darknet.three_darknet import get_darknet
+from ..darknet.ts_darknet import get_darknet_flownet, get_darknet_r21d
 from ..mobilenet.mobilenet import get_mobilenet
-from ..flownet.flownet import get_flownet
-from ..rdnet.r21d import get_r21d
 
 def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, pretrained=False,
                     norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
@@ -42,37 +40,28 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
     if pretrained:
         warnings.warn("Custom models don't provide `pretrained` weights, ignored.")
     if transfer is None:
-        darknet = darknet53(
-            pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
-
-        motion_net = None
-        if motion_stream == 'flownet':
-            assert k == 3
-            motion_net = get_flownet('S', pretrained=pretrained_base, return_features=True)
-
-        elif motion_stream == 'r21d':
-            assert k in [9, 33]
-            motion_net = get_r21d(34, 400, t=k-1, pretrained=pretrained_base, return_features=True)
+        darknet = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
 
         if freeze_base:
             for param in darknet.collect_params().values():
                 param.grad_req = 'null'
 
-            if motion_net is not None:
-                for param in motion_net.collect_params().values():
+        ts_model = None
+        if motion_stream == 'flownet':
+            assert k == 3
+            ts_model = get_darknet_flownet(pretrained=pretrained_base, add_type=add_type, t=k, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+
+            if freeze_base:
+                for param in ts_model.collect_params().values():
                     param.grad_req = 'null'
 
-        if motion_stream == 'flownet':
-            ts_model = DarknetFlownet(darknet=darknet, flownet=motion_net, t=k, add_type=add_type)
         elif motion_stream == 'r21d':
-            ts_model = DarknetR21D(darknet=darknet, r21d=motion_net, t=k, add_type=add_type)
+            assert k in [9, 33]
+            ts_model = get_darknet_r21d(pretrained=pretrained_base, add_type=add_type, t=k, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
 
-        # if input_channels != 3:
-        #     assert input_channels % 3 == 0
-        #     base_net.collect_params()['darknetv30_conv0_weight']._data = \
-        #         [mx.nd.repeat(base_net.collect_params()['darknetv30_conv0_weight'].data(), int(input_channels/3.0), axis=1)]
-        #     base_net.collect_params()['darknetv30_conv0_weight']._shape = (32, input_channels, 3, 3)
-        #     base_net.collect_params()['darknetv30_conv0_weight'].shape = (32, input_channels, 3, 3)
+            if freeze_base:
+                for param in ts_model.collect_params().values():
+                    param.grad_req = 'null'
 
         stages = [darknet.features[:15], darknet.features[15:24], darknet.features[24:]]
         anchors = [
@@ -84,7 +73,7 @@ def yolo3_darknet53(classes, dataset_name, transfer=None, pretrained_base=True, 
         if rnn_pos is not None:
             rnn_shapes = [(1024, 13, 13), (512, 26, 26), (256, 52, 52)]  # todo currently hardcoded which will fail for input not = to 416 need to work out better way
 
-        if motion_net is None:
+        if ts_model is None:
             net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
                           k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
                           corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)

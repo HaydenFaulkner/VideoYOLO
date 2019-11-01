@@ -8,7 +8,8 @@ from mxnet import gluon
 from mxnet.gluon import nn
 from mxnet.gluon.nn import BatchNorm
 
-__all__ = ['DarknetV3', 'get_darknet', 'darknet53']
+__all__ = ['DarknetV3']
+
 
 def _conv2d(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
     """A common conv-bn-leakyrelu cell"""
@@ -105,24 +106,19 @@ class DarknetV3(gluon.HybridBlock):
         x = F.Pooling(x, kernel=(7, 7), global_pool=True, pool_type='avg')
         return self.output(x)
 
-# default configurations
 
-def get_darknet(darknet_version, num_layers, pretrained=False, ctx=mx.cpu(),
-                root=os.path.join('models', 'definitions', 'darknet', 'weights'), add_type=None, **kwargs):
+def get_darknet(pretrained=False, ctx=mx.cpu(),
+                root=os.path.join('models', 'definitions', 'darknet', 'weights'), **kwargs):
     """Get darknet by `version` and `num_layers` info.
 
     Parameters
     ----------
-    darknet_version : str
-        Darknet version, choices are ['v3'].
-    num_layers : int
-        Number of layers.
     pretrained : bool or str
         Boolean value controls whether to load the default pretrained weights for model.
         String value represents the hashtag for a certain version of pretrained weights.
     ctx : Context, default CPU
         The context in which to load the pretrained weights.
-    root : str, default '~/.mxnet/models'
+    root : str, default 'models/definitions/darknet/weights'
         Location for keeping the model parameters.
     norm_layer : object
         Normalization layer used (default: :class:`mxnet.gluon.nn.BatchNorm`)
@@ -138,7 +134,7 @@ def get_darknet(darknet_version, num_layers, pretrained=False, ctx=mx.cpu(),
 
     Examples
     --------
-    >>> model = get_darknet('v3', 53, pretrained=True)
+    >>> model = get_darknet('v3', pretrained=True)
     >>> print(model)
 
     """
@@ -147,27 +143,12 @@ def get_darknet(darknet_version, num_layers, pretrained=False, ctx=mx.cpu(),
     net = DarknetV3(layers, channels, **kwargs)
     if pretrained:
         from gluoncv.model_zoo.model_store import get_model_file
-        net.load_parameters(get_model_file(
-            'darknet%d'%(num_layers), tag=pretrained, root=root), ctx=ctx)
+        net.load_parameters(get_model_file('darknet53', tag=pretrained, root=root), ctx=ctx)
     return net
 
-def darknet53(**kwargs):
-    """Darknet v3 53 layer network.
-    Reference: https://arxiv.org/pdf/1804.02767.pdf.
 
-    Parameters
-    ----------
-    norm_layer : object
-        Normalization layer used (default: :class:`mxnet.gluon.nn.BatchNorm`)
-        Can be :class:`mxnet.gluon.nn.BatchNorm` or :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
-    norm_kwargs : dict
-        Additional `norm_layer` arguments, for example `num_devices=4`
-        for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
+if __name__ == '__main__':
+    # just for debugging
+    model = get_darknet(pretrained=True)
 
-    Returns
-    -------
-    mxnet.gluon.HybridBlock
-        Darknet network.
-
-    """
-    return get_darknet('v3', 53, **kwargs)
+    model.summary(mx.nd.random_normal(shape=(1, 3, 416, 416)))

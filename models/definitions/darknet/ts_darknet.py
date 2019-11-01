@@ -5,7 +5,7 @@ Just a helper class / model definition for the two stream models with darknet
 import mxnet as mx
 from mxnet import gluon
 from mxnet.gluon.nn import BatchNorm
-from models.definitions.darknet.darknet import darknet53
+from models.definitions.darknet.darknet import get_darknet
 from models.definitions.flownet.flownet import get_flownet
 from models.definitions.rdnet.r21d import get_r21d
 
@@ -16,7 +16,7 @@ class DarknetFlownet(gluon.HybridBlock):
         A two-stream darknet with flownet with communication at 4 levels
 
         Args:
-            darknet: the darknet model
+            darknet: the darknet model (only works with 2D version)
             flownet: the flownet model
             t: the number of timesteps
             add_type: either add or mul
@@ -128,7 +128,7 @@ class DarknetR21D(gluon.HybridBlock):
         A two-stream darknet with R(2+1)D with communication at 4 levels
 
         Args:
-            darknet: the darknet model
+            darknet: the darknet model (only works with 2D version)
             flownet: the flownet model
             t: the number of timesteps
             add_type: either add or mul
@@ -221,26 +221,34 @@ class DarknetR21D(gluon.HybridBlock):
         return F.concat(ret_da, r7), F.concat(ret_db, r13),  F.concat(ret_dc, r16)
 
 
+# default configurations
+def get_darknet_flownet(pretrained=False, add_type=None, t=3, **kwargs):
+    assert add_type in [None, 'add', 'mul']
+    darknet = get_darknet(pretrained=pretrained, **kwargs)
+    flownet = get_flownet('S', pretrained=pretrained, return_features=True)
+    model = DarknetFlownet(darknet=darknet, flownet=flownet, t=t, add_type=add_type)
+    return model
+
+
+def get_darknet_r21d(pretrained=False, add_type=None, t=9, **kwargs):
+    assert add_type in [None, 'add', 'mul']
+    darknet = get_darknet(pretrained=pretrained, **kwargs)
+    r21d = get_r21d(34, 400, t=t-1, pretrained=pretrained, return_features=True)
+    model = DarknetR21D(darknet=darknet, r21d=r21d, t=t, add_type=add_type)
+    return model
+
+
 if __name__ == '__main__':
     # just for debugging
     pretrained_base = True
     add_type = None  # 'add'  # 'mul'
-    darknet = darknet53(pretrained=pretrained_base, norm_layer=BatchNorm, norm_kwargs=None)
 
     print('DarkNet + FlowNet')
     k = 3
-
-    flownet = get_flownet('S', pretrained=pretrained_base, return_features=True)
-
-    model = DarknetFlownet(darknet=darknet, flownet=flownet, t=k, add_type=add_type)
-
+    model = get_darknet_flownet(pretrained=pretrained_base, add_type=add_type, t=k, norm_layer=BatchNorm, norm_kwargs=None)
     model.summary(mx.nd.random_normal(shape=(1, k, 3, 384, 384)))
 
     print('DarkNet + R(2+1)D')
     k = 9
-
-    r21d = get_r21d(34, 400, t=k - 1, pretrained=pretrained_base, return_features=True)
-
-    model = DarknetR21D(darknet=darknet, r21d=r21d, t=k, add_type=add_type)
-
+    model = get_darknet_r21d(pretrained=pretrained_base, add_type=add_type, t=k, norm_layer=BatchNorm, norm_kwargs=None)
     model.summary(mx.nd.random_normal(shape=(1, k, 3, 384, 384)))
