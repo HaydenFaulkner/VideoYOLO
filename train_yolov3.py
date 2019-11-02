@@ -113,6 +113,10 @@ flags.DEFINE_integer('num_workers', -1,
                      'The number of workers should be picked so that it’s equal to number of cores on your machine '
                      'for max parallelization. If this number is bigger than your number of cores it will use up '
                      'a bunch of extra CPU memory. -1 is auto.')
+flags.DEFINE_boolean('thread_pool', False,
+                     'use threading pool instead of multiprocessing pool?'
+                     'Using threadpool can avoid shared memory usage. If DataLoader is more IO bounded or GIL is not '
+                     'a killing problem, threadpool version may achieve better performance than multiprocessing.?')
 
 flags.DEFINE_integer('num_samples', -1,
                      'Training images. Use -1 to automatically get the number.')
@@ -187,13 +191,15 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
         batchify_fn = Tuple(*([Stack() for _ in range(8)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
         train_loader = gluon.data.DataLoader(
             train_dataset.transform(YOLO3NBVideoTrainTransform(FLAGS.window[0], width, height, net, mixup=FLAGS.mixup)),
-            batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
+            batch_size, True, batchify_fn=batchify_fn, last_batch='rollover',
+            num_workers=FLAGS.num_workers, thread_pool=FLAGS.thread_pool)
 
         val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
         val_batchify_fn = Tuple(*([Stack() for _ in range(3)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
         val_loader = gluon.data.DataLoader(
             val_dataset.transform(YOLO3NBVideoInferenceTransform(width, height)),
-            batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
+            batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard',
+            num_workers=FLAGS.num_workers, thread_pool=FLAGS.thread_pool)
 
         return train_loader, val_loader
 
@@ -205,7 +211,8 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
         train_loader = gluon.data.DataLoader(
             train_dataset.transform(YOLO3VideoTrainTransform(FLAGS.window[0], width, height, net, mixup=FLAGS.mixup)),
             # train_dataset.transform(YOLO3DefaultTrainTransform(width, height, net, mixup=FLAGS.mixup)),
-            batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
+            batch_size, True, batchify_fn=batchify_fn, last_batch='rollover',
+            num_workers=FLAGS.num_workers, thread_pool=FLAGS.thread_pool)
     else:
         if FLAGS.motion_stream == 'flownet': # get shape errors for some of the rand shapes as the conv floor messes up on deconv
             transform_fns = [YOLO3VideoTrainTransform(FLAGS.window[0], x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20, 2)]
@@ -214,13 +221,15 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
         # transform_fns = [YOLO3DefaultTrainTransform(x * 32, x * 32, net, mixup=FLAGS.mixup) for x in range(10, 20)]
         train_loader = RandomTransformDataLoader(
             transform_fns, train_dataset, batch_size=batch_size, interval=10, last_batch='rollover',
-            shuffle=True, batchify_fn=batchify_fn, num_workers=FLAGS.num_workers)
+            shuffle=True, batchify_fn=batchify_fn,
+            num_workers=FLAGS.num_workers, thread_pool=FLAGS.thread_pool)
 
     val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
     val_loader = gluon.data.DataLoader(
         val_dataset.transform(YOLO3VideoInferenceTransform(width, height)),
         # val_dataset.transform(YOLO3DefaultInferenceTransform(width, height)),
-        batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
+        batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard',
+        num_workers=FLAGS.num_workers, thread_pool=FLAGS.thread_pool)
     # NOTE for val batch loader last_batch='keep' changed to last_batch='discard' so exception not thrown
     # when last batch size is smaller than the number of GPUS (which throws exception) this is fixed in gluon
     # PR 14607: https://github.com/apache/incubator-mxnet/pull/14607 - but yet to be in official release
