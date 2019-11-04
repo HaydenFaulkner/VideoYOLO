@@ -6,6 +6,7 @@ from GluonCV the ones that are trained. Trained models will be put in a
 subdirectory named with the `args.save-prefix` argument. For example
 our structure looks as follows:
 <\p>
+
 ```
 VidDet/models/README.md
 VidDet/models/definitions/darknet/weights/darknet53-2189ea49.params               <- downloaded by gluoncv
