@@ -9,7 +9,7 @@ from ..mobilenet.mobilenet import get_mobilenet
 
 def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
                     k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None,
-                    corr_pos=None, corr_d=None, motion_stream=None, add_type=None, agnostic=False, old=False, **kwargs):
+                    corr_pos=None, corr_d=None, motion_stream=None, add_type=None, agnostic=False, new_model=False, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -37,19 +37,20 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
     """
 
     # OLD CODE
-    if old:
-        darknet = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
-        if freeze_base:
-            for param in darknet.collect_params().values():
-                param.grad_req = 'null'
-        stages = [darknet.features[:15], darknet.features[15:24], darknet.features[24:]]
-    else:
+    if new_model:
         darknet_model = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
                                     return_features=True, **kwargs)
 
         if freeze_base:
             for param in darknet_model.collect_params().values():
                 param.grad_req = 'null'
+    else:
+        darknet = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+        if freeze_base:
+            for param in darknet.collect_params().values():
+                param.grad_req = 'null'
+        stages = [darknet.features[:15], darknet.features[15:24], darknet.features[24:]]
+
 
     ts_model = None
     if motion_stream == 'flownet':
@@ -78,15 +79,18 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
         rnn_shapes = [(1024, 13, 13), (512, 26, 26), (256, 52, 52)]  # todo currently hardcoded which will fail for input not = to 416 need to work out better way
 
     if ts_model is None:
-        if old:
-        # OLD CODE
+        if new_model:
+            net = YOLOV3TB(darknet_model, [512, 256, 128], anchors, strides, classes=classes, k=k,
+                           k_join_type=k_join_type,
+                           k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes,
+                           rnn_pos=rnn_pos,
+                           corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
+        else:
+            # OLD CODE
             net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
                           k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
                           corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
-        else:
-            net = YOLOV3TB(darknet_model, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
-                          k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
-                          corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
+
     else:
         net = YOLOV3TS(ts_model, k, [512, 256, 128], anchors, strides, classes=classes, agnostic=agnostic,
                        **kwargs)

@@ -113,6 +113,8 @@ flags.DEFINE_integer('num_workers', -1,
                      'The number of workers should be picked so that it’s equal to number of cores on your machine '
                      'for max parallelization. If this number is bigger than your number of cores it will use up '
                      'a bunch of extra CPU memory. -1 is auto.')
+flags.DEFINE_boolean('new_model', False,
+                     'Use features Yolo (new) or stages Yolo (old)?')
 
 flags.DEFINE_integer('num_samples', -1,
                      'Training images. Use -1 to automatically get the number.')
@@ -295,14 +297,15 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                           block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                          add_type=FLAGS.stream_gating)
+                                          add_type=FLAGS.stream_gating, new_model=FLAGS.new_model)
                     async_net = yolo3_darknet53(trained_on_dataset.classes,
                                                 pretrained_base=False,
                                                 freeze_base=bool(FLAGS.freeze_base),
                                                 k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                                 block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                                 corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d,
-                                                motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating)  # used by cpu worker
+                                                motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating,
+                                                new_model=FLAGS.new_model)  # used by cpu worker
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
                                           pretrained_base=FLAGS.pretrained_cnn,
@@ -322,7 +325,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                           block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                          add_type=FLAGS.stream_gating)
+                                          add_type=FLAGS.stream_gating, new_model=FLAGS.new_model)
                     async_net = net
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
