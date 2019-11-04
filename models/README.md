@@ -5,6 +5,7 @@ This directory holds the models, both those downloaded automatically
 from GluonCV the ones that are trained. Trained models will be put in a
 subdirectory named with the `args.save-prefix` argument. For example
 our structure looks as follows:
+<\p>
 ```
 VidDet/models/README.md
 VidDet/models/definitions/darknet/weights/darknet53-2189ea49.params               <- downloaded by gluoncv
@@ -13,7 +14,7 @@ VidDet/models/definitions/darknet/weights/mobilenet/mobilenet1.0-efbb2ca3.params
 VidDet/models/experiments/0001/                                                   <- our own trained models
 
 ```
-<\p>
+
 ## GluonCV ModelZoo
 GluonCV provides a few pre-trained models in their
 [Model Zoo](https://gluon-cv.mxnet.io/model_zoo/detection.html). Such
