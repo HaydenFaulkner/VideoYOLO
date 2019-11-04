@@ -622,7 +622,7 @@ def main(_argv):
                                   k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                   block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                   corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                  agnostic=FLAGS.model_agnostic)
+                                  agnostic=FLAGS.model_agnostic, old=True)
         else:
             net = yolo3_3ddarknet(trained_on_dataset.classes, conv_types=FLAGS.conv_types)
     else:
