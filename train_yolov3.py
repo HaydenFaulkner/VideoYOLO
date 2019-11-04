@@ -552,7 +552,10 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
                         scale_losses.append(scale_loss)
                         cls_losses.append(cls_loss)
                     autograd.backward(sum_losses)
-            trainer.step(batch_size)
+            if FLAGS.motion_stream is None:
+                trainer.step(batch_size)
+            else:
+                trainer.step(batch_size, ignore_stale_grad=True)  # we don't use all layers of each stream
             obj_metrics.update(0, obj_losses)
             center_metrics.update(0, center_losses)
             scale_metrics.update(0, scale_losses)
