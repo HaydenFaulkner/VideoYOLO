@@ -47,9 +47,9 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
         darknet_model = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
                                     return_features=True, **kwargs)
 
-    if freeze_base:
-        for param in darknet_model.collect_params().values():
-            param.grad_req = 'null'
+        if freeze_base:
+            for param in darknet_model.collect_params().values():
+                param.grad_req = 'null'
 
     ts_model = None
     if motion_stream == 'flownet':
