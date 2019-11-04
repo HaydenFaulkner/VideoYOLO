@@ -1,3 +1,11 @@
+<style>
+.content {
+  max-width: 880px;
+  margin: auto;
+}
+</style>
+
+<div class="content">
 # Models
 ## General Structure
 This directory holds the models, both those downloaded automatically
@@ -97,3 +105,4 @@ Evaluated with `vid` metric. Box Area's - **S**mall `<50`,
 |--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
 | `0004` |     VID    |    VID    | .454 | .136 | .328 | .555 | .522 | .442 | .292 |
 </p>
+</div>
