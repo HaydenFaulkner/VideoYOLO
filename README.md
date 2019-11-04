@@ -87,16 +87,13 @@ conda activate viddet-mx
 ### Training
 To train a model you can use something like:
 ```
-python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
+python train_yolov3.py --dataset voc --gpus 0,1,2,3 --save_prefix 0001 --warmup_epochs 3 --syncbn
 ```
 
-If you don't have this much power available you will need to specify a lower batch size:
+If you don't have this much power available you will need to specify a lower batch size (this also will default to one GPU):
 ```
-python train_yolov3.py --batch_size 4 --dataset voc --save_prefix 0001 --warmup_lr 0.0001 --warmup_epochs 3
+python train_yolov3.py --batch_size 4 --dataset voc --save_prefix 0001 --warmup_epochs 3
 ```
-
-Using MobileNet1.0 `--network mobilenet1.0` and batch size of 16
-`--batch_size 16` for `voc` uses **9GB** of GPU memory
 
 ***We found a warmup was necessary for YOLOv3***
 
@@ -105,22 +102,22 @@ To finetune a model you need to specify a `--resume` path to a
  pretrained params model file and specify the `--trained_on` dataset,
  the model will be finetuned on the dataset specified with `--dataset`
 ```
-python train_yolov3.py --dataset voc --trained_on coco --resume models/0003/yolo3_darknet53_coco_best.params --gpus 0,1,2,3 --save_prefix 0006 --num_workers 16 --warmup_lr 0.0001 --warmup_epochs 3 --syncbn
+python train_yolov3.py --dataset voc --trained_on coco --resume models/experiments/0003/yolo3_darknet53_coco_best.params --gpus 0,1,2,3 --save_prefix 0006 --warmup_epochs 3 --syncbn
 ```
 
 ### Detection, Testing & Visualisation
 To evaluate a model you can use something like:
 ```
-python detect_yolov3.py --batch_size 1 --model_path models/0001/yolo3_darknet53_voc_best.params --metrics voc --dataset voc --save_prefix 0001
+python detect_yolov3.py --batch_size 1 --model_path models/experiments/0001/yolo3_darknet53_voc_best.params --metrics voc --dataset voc --save_prefix 0001
 ```
 
 You can also evaluate on different data than the model was trained on
 (voc trained model on vid set):
 ```
-python detect_yolov3.py --trained_on voc --batch_size 1 --model_path models/0001/yolo3_darknet53_voc_best.params --metrics voc,coco,vid --dataset vid --save_prefix 0001
+python detect_yolov3.py --trained_on voc --batch_size 1 --model_path models/experiments/0001/yolo3_darknet53_voc_best.params --metrics voc,coco,vid --dataset vid --save_prefix 0001
 ```
 
-Visualisation is **off** by default use `--visualise True` to write out images with boxes displayed.
+Visualisation is **off** by default add `--visualise` to write out images with boxes displayed.
 
 ## Results
 
