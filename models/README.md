@@ -37,6 +37,7 @@ Trained on [MSCoco](http://cocodataset.org/#download) `train 17`
 
 
 ## Our Models
+<p align=center>
 Our models, log files, and evaluation results are available for download
 by clicking on each model ID below.
 
@@ -74,7 +75,6 @@ Trained on [ImageNetVID](http://bvisionweb1.cs.unc.edu/ILSVRC2017/download-video
 python train_yolov3.py --dataset vid --gpus 0,1,2,3 --save_prefix 0004 --num_workers 16 --warmup_epochs 3 --epochs 280 --lr_decay_epoch 220,250 --every 25 --syncbn 
 ```
 
-
 ## Results
 Evaluated with `voc` and `coco` metrics. Box Area's - **S**mall `<32`,
  **M**edium `32-96`, **L**arge `>96`
@@ -96,3 +96,4 @@ Evaluated with `vid` metric. Box Area's - **S**mall `<50`,
 | Model  | Trained On | Tested On | mAP | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>L</sub> | AP<sub>SL</sub> | AP<sub>MO</sub> | AP<sub>FA</sub> |
 |--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
 | `0004` |     VID    |    VID    | .454 | .136 | .328 | .555 | .522 | .442 | .292 |
+</p>
