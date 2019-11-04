@@ -25,12 +25,19 @@ appropriate `gluoncv.model_zoo.get_model()` function call, *however*
 we present these models for download and organise them similarly to
 our trained models.
 
-#### GCV1 (0001 Alternative)
-[**Download**](http://hf.id.au/models/VidDet/GCV1.tar.gz)
+<div align=center>
+<h5>GCV1 (0001 Alternative)</h5> <a href="http://hf.id.au/models/VidDet/GCV1.tar.gz">Download</a>
 
 Trained on [PascalVOC](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/index.html#devkit) `trainval 07+12`
 
 `yolo3_darknet53_voc`
+</div>
+
+<div style="display: flex; flex: 1;">
+  <div>Left div</div>
+  <div>Middle div</div>  
+  <div>Right div</div>
+</div>
 
 #### GCV2 (0003 Alternative)
 [**Download**](http://hf.id.au/models/VidDet/GCV2.tar.gz)
