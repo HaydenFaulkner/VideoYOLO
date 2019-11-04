@@ -1,13 +1,6 @@
-<style>
-.content {
-  max-width: 880px;
-  margin: auto;
-}
-</style>
-
-<div class="content">
-# Models
-## General Structure
+<h1 align='center'>Models</h1>
+<h2 align='center'>General Structure</h2>
+<p align=center>
 This directory holds the models, both those downloaded automatically
 from GluonCV the ones that are trained. Trained models will be put in a
 subdirectory named with the `args.save-prefix` argument. For example
@@ -20,7 +13,7 @@ VidDet/models/definitions/darknet/weights/mobilenet/mobilenet1.0-efbb2ca3.params
 VidDet/models/experiments/0001/                                                   <- our own trained models
 
 ```
-
+<\p>
 ## GluonCV ModelZoo
 GluonCV provides a few pre-trained models in their
 [Model Zoo](https://gluon-cv.mxnet.io/model_zoo/detection.html). Such
@@ -45,7 +38,6 @@ Trained on [MSCoco](http://cocodataset.org/#download) `train 17`
 
 
 ## Our Models
-<p align=center>
 Our models, log files, and evaluation results are available for download
 by clicking on each model ID below.
 
@@ -104,5 +96,4 @@ Evaluated with `vid` metric. Box Area's - **S**mall `<50`,
 | Model  | Trained On | Tested On | mAP | AP<sub>S</sub> | AP<sub>M</sub> | AP<sub>L</sub> | AP<sub>SL</sub> | AP<sub>MO</sub> | AP<sub>FA</sub> |
 |--------|------------|-----------|------------------|---------------------|-----------|------------------|----------------|----------------|----------------|
 | `0004` |     VID    |    VID    | .454 | .136 | .328 | .555 | .522 | .442 | .292 |
-</p>
-</div>
+
