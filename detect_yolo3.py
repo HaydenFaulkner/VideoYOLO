@@ -99,6 +99,8 @@ flags.DEFINE_list('gpus', [0],
 flags.DEFINE_integer('num_workers', 8,
                      'The number of workers should be picked so that it’s equal to number of cores on your machine'
                      ' for max parallelization.')
+flags.DEFINE_boolean('new_model', False,
+                     'Use features Yolo (new) or stages Yolo (old)?')
 
 
 def get_dataset(dataset_name):
@@ -622,7 +624,7 @@ def main(_argv):
                                   k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                   block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                   corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                  agnostic=FLAGS.model_agnostic, old=True)
+                                  agnostic=FLAGS.model_agnostic, new_model=FLAGS.new_model)
         else:
             net = yolo3_3ddarknet(trained_on_dataset.classes, conv_types=FLAGS.conv_types)
     else:
