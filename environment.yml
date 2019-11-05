@@ -15,7 +15,7 @@ dependencies:
       - requests
       - eventlet
       - lxml
-      - Pillow==5.4.1
+      - Pillow
       - contextlib2
       - nltk
       - absl-py
