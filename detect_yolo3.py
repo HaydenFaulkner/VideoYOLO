@@ -77,6 +77,8 @@ flags.DEFINE_integer('corr_d', 4,
                      'The d value for the correlation filter.')
 flags.DEFINE_string('motion_stream', None,
                     'Add a motion stream? can be flownet or r21d.')
+flags.DEFINE_string('stream_gating', None,
+                    'Use gating on the appearence stream using the motion stream. can be add or mul.')
 flags.DEFINE_list('conv_types', [2, 2, 2, 2, 2, 2],
                   'Darknet Conv types for layers, either 2, 21, or 3 D')
 
@@ -624,11 +626,16 @@ def main(_argv):
                                   k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                   block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                   corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                  agnostic=FLAGS.model_agnostic, new_model=FLAGS.new_model)
+                                  agnostic=FLAGS.model_agnostic, add_type=FLAGS.stream_gating, new_model=FLAGS.new_model)
         else:
             net = yolo3_3ddarknet(trained_on_dataset.classes, conv_types=FLAGS.conv_types)
     else:
         raise NotImplementedError('Backbone CNN model {} not implemented.'.format(FLAGS.network))
+    net.initialize()
+    if FLAGS.window[0] > 1:
+        net.summary(mx.nd.random_normal(shape=(1, FLAGS.window[0], 3, FLAGS.data_shape, FLAGS.data_shape)))
+    else:
+        net.summary(mx.nd.random_normal(shape=(1, 3, FLAGS.data_shape, FLAGS.data_shape)))
     net.load_parameters(model_path)
 
     max_do = FLAGS.max_do
