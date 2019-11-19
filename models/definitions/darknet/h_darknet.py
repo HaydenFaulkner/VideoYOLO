@@ -11,26 +11,26 @@ from mxnet.gluon.nn import BatchNorm
 __all__ = ['DarknetV3']
 
 
-class SelfAtt(gluon.HybridBlock):
-    def __init__(self, **kwargs):
-        super(SelfAtt, self).__init__(**kwargs)
-
-        self.d = 256
-        self.r = 1
-
-        with self.name_scope():
-            self.w_1 = nn.Dense(self.d, use_bias=False)
-            self.w_2 = nn.Dense(self.r, use_bias=False)
-
-    def hybrid_forward(self, F, x):
-        _h = x.reshape((0, 0, -1))
-        _w = self.w_1(_h)
-        _w = F.tanh(_w)
-        w = self.w_2(_w)
-        _att = w.reshape((-1, 3, self.r))  # Batch * Timestep * r
-        att = F.softmax(_att, axis=1)
-
-        return x, att
+# class SelfAtt(gluon.HybridBlock):
+#     def __init__(self, **kwargs):
+#         super(SelfAtt, self).__init__(**kwargs)
+#
+#         self.d = 256
+#         self.r = 1
+#
+#         with self.name_scope():
+#             self.w_1 = nn.Dense(self.d, use_bias=False)
+#             self.w_2 = nn.Dense(self.r, use_bias=False)
+#
+#     def hybrid_forward(self, F, x):
+#         _h = x.reshape((0, 0, -1))
+#         _w = self.w_1(_h)
+#         _w = F.tanh(_w)
+#         w = self.w_2(_w)
+#         _att = w.reshape((-1, 3, self.r))  # Batch * Timestep * r
+#         att = F.softmax(_att, axis=1)
+#
+#         return x, att
 
 
 class TimeDistributed(gluon.HybridBlock):
@@ -189,7 +189,6 @@ class DarknetV3(gluon.HybridBlock):
         x = TimeDistributed(self.features[0])(x)
         x = F.expand_dims(x, axis=1)
         x = F.reshape(x, shape=(0, self.windows[0], -1, 0, 0, 0))
-        x = SelfAtt()(x)
         x = F.max(x, axis=1)
 
         if self.windows[1] == 1:
