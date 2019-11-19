@@ -11,26 +11,17 @@ from mxnet.gluon.nn import BatchNorm
 __all__ = ['DarknetV3']
 
 
-# class SelfAtt(gluon.HybridBlock):
-#     def __init__(self, **kwargs):
-#         super(SelfAtt, self).__init__(**kwargs)
-#
-#         self.d = 256
-#         self.r = 1
-#
-#         with self.name_scope():
-#             self.w_1 = nn.Dense(self.d, use_bias=False)
-#             self.w_2 = nn.Dense(self.r, use_bias=False)
-#
-#     def hybrid_forward(self, F, x):
-#         _h = x.reshape((0, 0, -1))
-#         _w = self.w_1(_h)
-#         _w = F.tanh(_w)
-#         w = self.w_2(_w)
-#         _att = w.reshape((-1, 3, self.r))  # Batch * Timestep * r
-#         att = F.softmax(_att, axis=1)
-#
-#         return x, att
+def _conv1d(out_channels, kernel, padding, strides, norm_layer=BatchNorm, norm_kwargs=None):
+    """1D over t*c for joining temps"""
+    cell = nn.HybridSequential(prefix='1D')
+
+    cell.add(nn.Conv3D(out_channels, kernel_size=(kernel, 1, 1), strides=(strides, 1, 1),
+                       padding=(padding, 0, 0), use_bias=False, groups=out_channels, weight_initializer='zeros'))
+
+    cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
+    cell.add(nn.LeakyReLU(0.1))
+
+    return cell
 
 
 class TimeDistributed(gluon.HybridBlock):
@@ -132,8 +123,8 @@ class DarknetBasicBlockV3(gluon.HybridBlock):
         return x + residual
 
 
-class DarknetV3(gluon.HybridBlock):
-    """Darknet v3.
+class HDarknet(gluon.HybridBlock):
+    """Hierarchical Darknet v3.
 
     Parameters
     ----------
@@ -143,6 +134,10 @@ class DarknetV3(gluon.HybridBlock):
         Description of parameter `channels`.
     classes : int, default is 1000
         Number of classes, which determines the dense layer output channels.
+    return_features : bool, default is True
+        Do we return the three features for yolo
+    type : str, either max of conv, default is max
+        How to merge across time? max pool or temporal-channel conv
     norm_layer : object
         Normalization layer used (default: :class:`mxnet.gluon.nn.BatchNorm`)
         Can be :class:`mxnet.gluon.nn.BatchNorm` or :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
@@ -150,20 +145,16 @@ class DarknetV3(gluon.HybridBlock):
         Additional `norm_layer` arguments, for example `num_devices=4`
         for :class:`mxnet.gluon.contrib.nn.SyncBatchNorm`.
 
-    Attributes
-    ----------
-    features : mxnet.gluon.nn.HybridSequential
-        Feature extraction layers.
-    output : mxnet.gluon.nn.Dense
-        A classes(1000)-way Fully-Connected Layer.
 
     """
-    def __init__(self, layers, channels, windows, classes=1000, return_features=True,
+    def __init__(self, layers, channels, windows, classes=1000, return_features=True, type='max',
                  norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
-        super(DarknetV3, self).__init__(**kwargs)
+        super(HDarknet, self).__init__(**kwargs)
         assert len(layers) == len(channels) - 1, (
             "len(channels) should equal to len(layers) + 1, given {} vs {}".format(
                 len(channels), len(layers)))
+        assert type in ['conv', 'max']
+        self.type = type
         self.windows = windows
         self.return_features = return_features
         with self.name_scope():
@@ -184,12 +175,28 @@ class DarknetV3(gluon.HybridBlock):
             # output
             self.output = nn.Dense(classes)
 
-    def hybrid_forward(self, F, x):
-        # x = TimeDistributed(self.features[:7])(x)
-        x = TimeDistributed(self.features[0])(x)
-        x = F.expand_dims(x, axis=1)
-        x = F.reshape(x, shape=(0, self.windows[0], -1, 0, 0, 0))
-        x = F.max(x, axis=1)
+            self.convs1d = nn.HybridSequential()
+            for w, c in zip(windows, channels):
+                if w > 1:
+                    self.convs1d.add(_conv1d(c, w, 0, 1))
+
+    def hybrid_forward(self, F, x):  # b,t,c,w,h
+
+        if self.windows[0] == 1:
+            x = self.features(x)
+            return x
+
+        x = TimeDistributed(self.features[0])(x)  # b,t,c,w,h
+
+        x = mx.nd.swapaxes(x, 1, 2)  # b,c,t,w,h
+        x = mx.nd.expand_dims(x, axis=2)  # b,c,1,t,w,h
+        x = mx.nd.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
+        x = mx.nd.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
+
+        if self.type == 'max':
+            x = F.max(x, axis=-3)
+        else:
+            x = F.squeeze(TimeDistributed(self.convs1d[0])(x), axis=3)
 
         if self.windows[1] == 1:
             x = F.squeeze(x, axis=1)
@@ -199,25 +206,18 @@ class DarknetV3(gluon.HybridBlock):
                 c = self.features[24:](b)
             return a, b, c
 
-        x = TimeDistributed(self.features[1])(x)
-        x = F.expand_dims(x, axis=1)
-        x = F.reshape(x, shape=(0, self.windows[1], -1, 0, 0, 0))
-        x = F.max(x, axis=1)
+        x = TimeDistributed(self.features[1:3])(x)  # b,t,c,w,h
+        x = mx.nd.swapaxes(x, 1, 2)  # b,c,t,w,h
+        x = mx.nd.expand_dims(x, axis=2)  # b,c,1,t,w,h
+        x = mx.nd.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
+        x = mx.nd.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
+
+        if self.type == 'max':
+            x = F.max(x, axis=-3)
+        else:
+            x = F.squeeze(TimeDistributed(self.convs1d[1])(x), axis=3)
 
         if self.windows[2] == 1:
-            x = F.squeeze(x, axis=1)
-            if self.return_features:
-                a = self.features[2:15](x)
-                b = self.features[15:24](a)
-                c = self.features[24:](b)
-            return a, b, c
-
-        x = TimeDistributed(self.features[2])(x)
-        x = F.expand_dims(x, axis=1)
-        x = F.reshape(x, shape=(0, self.windows[2], -1, 0, 0, 0))
-        x = F.max(x, axis=1)
-
-        if self.windows[3] == 1:
             x = F.squeeze(x, axis=1)
             if self.return_features:
                 a = self.features[3:15](x)
@@ -226,27 +226,41 @@ class DarknetV3(gluon.HybridBlock):
             return a, b, c
 
         x = TimeDistributed(self.features[3:6])(x)
-        x = F.expand_dims(x, axis=1)
-        x = F.reshape(x, shape=(0, self.windows[3], -1, 0, 0, 0))
-        x = F.max(x, axis=1)
+        x = mx.nd.swapaxes(x, 1, 2)  # b,c,t,w,h
+        x = mx.nd.expand_dims(x, axis=2)  # b,c,1,t,w,h
+        x = mx.nd.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
+        x = mx.nd.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
 
-        if self.windows[4] == 1:
+        if self.type == 'max':
+            x = F.max(x, axis=-3)
+        else:
+            x = F.squeeze(TimeDistributed(self.convs1d[2])(x), axis=3)
+
+        if self.windows[3] == 1:
             x = F.squeeze(x, axis=1)
             if self.return_features:
-                a = self.features[7:15](x)
+                a = self.features[6:15](x)
                 b = self.features[15:24](a)
                 c = self.features[24:](b)
             return a, b, c
 
-        x = TimeDistributed(self.features[7:15])(x)
-        x = F.expand_dims(x, axis=1)
-        x = F.reshape(x, shape=(0, self.windows[3], -1, 0, 0, 0))
-        x = F.max(x, axis=1)
+        x = TimeDistributed(self.features[6:15])(x)
+        x = mx.nd.swapaxes(x, 1, 2)  # b,c,t,w,h
+        x = mx.nd.expand_dims(x, axis=2)  # b,c,1,t,w,h
+        x = mx.nd.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
+        x = mx.nd.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
 
-        if self.return_features:
-            a = x
-            b = self.features[15:24](a)
-            c = self.features[24:](b)
+        if self.type == 'max':
+            x = F.max(x, axis=-3)
+        else:
+            x = F.squeeze(TimeDistributed(self.convs1d[3])(x), axis=3)
+
+        if self.windows[4] == 1:
+            x = F.squeeze(x, axis=1)
+            if self.return_features:
+                a = x
+                b = self.features[15:24](a)
+                c = self.features[24:](b)
             return a, b, c
 
         x = self.features[15:](x)
@@ -254,8 +268,8 @@ class DarknetV3(gluon.HybridBlock):
         return x  # self.output(x)
 
 
-def get_darknet(pretrained=False, ctx=mx.cpu(),
-                root=os.path.join('models', 'definitions', 'darknet', 'weights'), **kwargs):
+def get_hdarknet(pretrained=False, windows=[3, 1, 1, 1, 1], ctx=mx.cpu(),
+                 root=os.path.join('models', 'definitions', 'darknet', 'weights'), **kwargs):
     """Get darknet by `version` and `num_layers` info.
 
     Parameters
@@ -287,17 +301,19 @@ def get_darknet(pretrained=False, ctx=mx.cpu(),
     """
     layers = [1, 2, 8, 8, 4]
     channels = [32, 64, 128, 256, 512, 1024]
-    windows = [3, 3, 3, 1, 1]
-    net = DarknetV3(layers, channels, windows, **kwargs)
+
+    net = HDarknet(layers, channels, windows, **kwargs)
     net.initialize()
     if pretrained:
         from gluoncv.model_zoo.model_store import get_model_file
-        net.load_parameters(get_model_file('darknet53', tag=pretrained, root=root), ctx=ctx, ignore_extra=True)
+        net.load_parameters(get_model_file('darknet53',tag=pretrained, root=root),
+                            ctx=ctx, ignore_extra=True, allow_missing=True)
     return net
 
 
 if __name__ == '__main__':
     # just for debugging
-    model = get_darknet(pretrained=True)
+    model = get_hdarknet(pretrained=True, windows=[3, 3, 3, 3, 1])
 
-    model.summary(mx.nd.random_normal(shape=(2, 27, 3, 416, 416)))
+    model.summary(mx.nd.random_normal(shape=(2, 81, 3, 416, 416)))  # b,t,c,w,h
+

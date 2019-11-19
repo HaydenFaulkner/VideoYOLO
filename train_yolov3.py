@@ -145,6 +145,10 @@ flags.DEFINE_string('stream_gating', None,
                     'Use gating on the appearence stream using the motion stream. can be add or mul.')
 flags.DEFINE_list('conv_types', [2, 2, 2, 2, 2, 2],
                   'Darknet Conv types for layers, either 2, 21, or 3 D')
+flags.DEFINE_string('h_join_type', None,
+                    'Type to join hierarchical darknet. can be max or conv.')
+flags.DEFINE_list('hier', [1, 1, 1, 1, 1],
+                  'the hierarchical factors, the input must be temporally equal to all these multiplied together')
 
 
 def get_dataset(dataset_name, save_prefix=''):
@@ -297,7 +301,8 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                           block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                          add_type=FLAGS.stream_gating, new_model=FLAGS.new_model)
+                                          add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
+                                          hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type)
                     async_net = yolo3_darknet53(trained_on_dataset.classes,
                                                 pretrained_base=False,
                                                 freeze_base=bool(FLAGS.freeze_base),
@@ -305,7 +310,8 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                                 block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                                 corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d,
                                                 motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating,
-                                                new_model=FLAGS.new_model)  # used by cpu worker
+                                                new_model=FLAGS.new_model,
+                                                hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type)  # used by cpu worker
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
                                           pretrained_base=FLAGS.pretrained_cnn,
@@ -325,7 +331,8 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                           block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                          add_type=FLAGS.stream_gating, new_model=FLAGS.new_model)
+                                          add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
+                                          hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type)
                     async_net = net
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
@@ -607,6 +614,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
 def main(_argv):
     FLAGS.window = [int(s) for s in FLAGS.window]
     FLAGS.conv_types = [int(s) for s in FLAGS.conv_types]
+    FLAGS.hier = [int(s) for s in FLAGS.hier]
 
     if FLAGS.window[0] > 1:
         assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'

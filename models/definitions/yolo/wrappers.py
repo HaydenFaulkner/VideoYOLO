@@ -4,12 +4,14 @@ from gluoncv.model_zoo import get_model
 
 from .yolo3 import YOLOV3_noback, YOLOV3, YOLOV3T, YOLOV3TS, YOLOV3TB
 from ..darknet.three_darknet import get_darknet
+from ..darknet.h_darknet import get_hdarknet
 from ..darknet.ts_darknet import get_darknet_flownet, get_darknet_r21d
 from ..mobilenet.mobilenet import get_mobilenet
 
 def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
                     k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None,
-                    corr_pos=None, corr_d=None, motion_stream=None, add_type=None, agnostic=False, new_model=False, **kwargs):
+                    corr_pos=None, corr_d=None, motion_stream=None, add_type=None, agnostic=False, new_model=False,
+                    hierarchical=[1,1,1,1,1], h_join_type=None, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -38,8 +40,14 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
 
     # OLD CODE
     if new_model:
-        darknet_model = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
-                                    return_features=True, **kwargs)
+        if hierarchical[0] > 1:
+            darknet_model = get_hdarknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
+                                         return_features=True, windows=hierarchical, type=h_join_type, **kwargs)
+            k = 1
+
+        else:
+            darknet_model = get_darknet(pretrained=pretrained_base, norm_layer=norm_layer, norm_kwargs=norm_kwargs,
+                                        return_features=True, **kwargs)
 
         if freeze_base:
             for param in darknet_model.collect_params().values():
