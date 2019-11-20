@@ -188,10 +188,10 @@ class HDarknet(gluon.HybridBlock):
 
         x = TimeDistributed(self.features[0])(x)  # b,t,c,w,h
 
-        x = mx.nd.swapaxes(x, 1, 2)  # b,c,t,w,h
-        x = mx.nd.expand_dims(x, axis=2)  # b,c,1,t,w,h
-        x = mx.nd.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
-        x = mx.nd.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
+        x = F.swapaxes(x, 1, 2)  # b,c,t,w,h
+        x = F.expand_dims(x, axis=2)  # b,c,1,t,w,h
+        x = F.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
+        x = F.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
 
         if self.type == 'max':
             x = F.max(x, axis=-3)
@@ -207,10 +207,10 @@ class HDarknet(gluon.HybridBlock):
             return a, b, c
 
         x = TimeDistributed(self.features[1:3])(x)  # b,t,c,w,h
-        x = mx.nd.swapaxes(x, 1, 2)  # b,c,t,w,h
-        x = mx.nd.expand_dims(x, axis=2)  # b,c,1,t,w,h
-        x = mx.nd.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
-        x = mx.nd.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
+        x = F.swapaxes(x, 1, 2)  # b,c,t,w,h
+        x = F.expand_dims(x, axis=2)  # b,c,1,t,w,h
+        x = F.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
+        x = F.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
 
         if self.type == 'max':
             x = F.max(x, axis=-3)
@@ -226,10 +226,10 @@ class HDarknet(gluon.HybridBlock):
             return a, b, c
 
         x = TimeDistributed(self.features[3:6])(x)
-        x = mx.nd.swapaxes(x, 1, 2)  # b,c,t,w,h
-        x = mx.nd.expand_dims(x, axis=2)  # b,c,1,t,w,h
-        x = mx.nd.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
-        x = mx.nd.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
+        x = F.swapaxes(x, 1, 2)  # b,c,t,w,h
+        x = F.expand_dims(x, axis=2)  # b,c,1,t,w,h
+        x = F.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
+        x = F.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
 
         if self.type == 'max':
             x = F.max(x, axis=-3)
@@ -245,10 +245,10 @@ class HDarknet(gluon.HybridBlock):
             return a, b, c
 
         x = TimeDistributed(self.features[6:15])(x)
-        x = mx.nd.swapaxes(x, 1, 2)  # b,c,t,w,h
-        x = mx.nd.expand_dims(x, axis=2)  # b,c,1,t,w,h
-        x = mx.nd.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
-        x = mx.nd.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
+        x = F.swapaxes(x, 1, 2)  # b,c,t,w,h
+        x = F.expand_dims(x, axis=2)  # b,c,1,t,w,h
+        x = F.reshape(x, shape=(0, 0, -1, 3, 0, 0))  # correctly ordered # b,c,t',win=3,w,h
+        x = F.swapaxes(x, 1, 2)  # b,t',c,win=3,w,h
 
         if self.type == 'max':
             x = F.max(x, axis=-3)
