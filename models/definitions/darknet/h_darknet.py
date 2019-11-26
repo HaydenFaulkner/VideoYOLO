@@ -173,12 +173,12 @@ class HDarknet(gluon.HybridBlock):
                                                           norm_layer=BatchNorm,
                                                           norm_kwargs=None))
             # output
-            self.output = nn.Dense(classes)
-
-            self.convs1d = nn.HybridSequential()
-            for w, c in zip(windows, channels):
-                if w > 1:
-                    self.convs1d.add(_conv1d(c, w, 0, 1))
+            # self.output = nn.Dense(classes)
+            if type != 'max':
+                self.convs1d = nn.HybridSequential()
+                for w, c in zip(windows, channels):
+                    if w > 1:
+                        self.convs1d.add(_conv1d(c, w, 0, 1))
 
     def hybrid_forward(self, F, x):  # b,t,c,w,h
 
