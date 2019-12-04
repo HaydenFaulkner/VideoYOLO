@@ -81,6 +81,10 @@ flags.DEFINE_string('stream_gating', None,
                     'Use gating on the appearence stream using the motion stream. can be add or mul.')
 flags.DEFINE_list('conv_types', [2, 2, 2, 2, 2, 2],
                   'Darknet Conv types for layers, either 2, 21, or 3 D')
+flags.DEFINE_string('h_join_type', None,
+                    'Type to join hierarchical darknet. can be max or conv.')
+flags.DEFINE_list('hier', [1, 1, 1, 1, 1],
+                  'the hierarchical factors, the input must be temporally equal to all these multiplied together')
 
 flags.DEFINE_boolean('visualise', False,
                      'Do you want to display the detections?')
@@ -572,6 +576,7 @@ def main(_argv):
 
     FLAGS.window = [int(s) for s in FLAGS.window]
     FLAGS.conv_types = [int(s) for s in FLAGS.conv_types]
+    FLAGS.hier = [int(s) for s in FLAGS.hier]
     if FLAGS.model_agnostic:
         FLAGS.metric_agnostic = True
 
@@ -626,7 +631,8 @@ def main(_argv):
                                   k=FLAGS.window[0], k_join_type=FLAGS.k_join_type, k_join_pos=FLAGS.k_join_pos,
                                   block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                   corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
-                                  agnostic=FLAGS.model_agnostic, add_type=FLAGS.stream_gating, new_model=FLAGS.new_model)
+                                  agnostic=FLAGS.model_agnostic, add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
+                                  hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type)
         else:
             net = yolo3_3ddarknet(trained_on_dataset.classes, conv_types=FLAGS.conv_types)
     else:
