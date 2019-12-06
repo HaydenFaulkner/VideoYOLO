@@ -106,6 +106,8 @@ flags.DEFINE_boolean('freeze_base', False,
                      'Freeze the base network?')
 flags.DEFINE_boolean('allow_empty', True,
                      'Allow samples that contain 0 boxes as [-1s * 6]?')
+flags.DEFINE_boolean('mult_out', False,
+                     'Have one or multiple outs for timeseries data')
 
 flags.DEFINE_list('gpus', [0],
                   'GPU IDs to use. Use comma for multiple eg. 0,1.')
@@ -170,9 +172,11 @@ def get_dataset(dataset_name, save_prefix=''):
 
     elif dataset_name.lower() == 'vid':
         train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty,
-                                             every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir)
+                                             every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir,
+                                             mult_out=FLAGS.mult_out)
         val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty,
-                                           every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir)
+                                           every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir,
+                                           mult_out=FLAGS.mult_out)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     else:

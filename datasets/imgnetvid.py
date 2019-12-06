@@ -20,7 +20,7 @@ class ImageNetVidDetection(VisionDataset):
     def __init__(self, root=os.path.join('datasets', 'ImageNetVID', 'ILSVRC'),
                  splits=[(2017, 'train')], allow_empty=True, videos=False,
                  transform=None, index_map=None, every=1, inference=False,
-                 window=[1, 1], features_dir=None):
+                 window=[1, 1], features_dir=None, mult_out=False):
 
         """
         Args:
@@ -45,6 +45,7 @@ class ImageNetVidDetection(VisionDataset):
         self._inference = inference
         self._window_size = window[0]
         self._window_step = window[1]
+        self._mult_out = mult_out
         if videos or self._window_size > 1:
             allow_empty = True  # allow true if getting video volumes, prevent empties when doing framewise only
         self._allow_empty = allow_empty
@@ -188,26 +189,30 @@ class ImageNetVidDetection(VisionDataset):
 
             if self._window_size > 1:  # lets load the temporal window
                 imgs = None
+                lbls = None
                 window_sample_ids = self._windows[self.sample_ids[idx]]
 
                 # go through the sample ids for the window
                 for sid in window_sample_ids:
                     img_path = self._image_path.format(*self.all_samples[sid])
                     img = mx.image.imread(img_path)
+                    lbl = self._load_label(self.sample_ids.index(sid))[:, :-1]
 
                     if self._transform is not None:  # transform each image in the window
-                        img, _ = self._transform(img, label)
+                        img, lbl = self._transform(img, lbl)
 
                     if imgs is None:
                         # imgs = img  # is the first frame in the window
                         imgs = mx.ndarray.expand_dims(img, axis=0)  # is the first frame in the window
+                        lbls = mx.ndarray.expand_dims(lbl, axis=0)
                     else:
                         # imgs = mx.ndarray.concatenate([imgs, img], axis=2)  # isn't first frame, concat to the window
                         imgs = mx.ndarray.concatenate([imgs, mx.ndarray.expand_dims(img, axis=0)], axis=0)
+                        lbls = mx.ndarray.concatenate([lbls, mx.ndarray.expand_dims(lbl, axis=0)], axis=0)
                 img = imgs
-
-                # transform the label
-                if self._transform is not None:
+                if self._mult_out:
+                    label = lbls
+                elif self._transform is not None:
                     _, label = self._transform(img, label)
 
             else:  # window size is 1, so just load one image
