@@ -169,7 +169,7 @@ class Darknet3D(gluon.HybridBlock):
         A classes(1000)-way Fully-Connected Layer.
 
     """
-    def __init__(self, layers, channels, conv_types, classes=1000, return_features=False,
+    def __init__(self, layers, channels, conv_types, classes=1000, return_features=False, funnel_time=False,
                  norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
         super(Darknet3D, self).__init__(**kwargs)
         assert len(layers) == len(channels) - 1, (
@@ -195,13 +195,18 @@ class Darknet3D(gluon.HybridBlock):
                     self.conv_swap = i+1
                     self.features.add(TemporalGlobalMaxPool3D())  # note this breaks the feature indices
 
-                # add downsample conv with  spatial stride=2
+                # add downsample conv with spatial stride=2
+                temp_stride = 1  # keep temproal stride = 1 for constant temporal dimension
+                if funnel_time:
+                    temp_stride = 2  # temproal stride = 2 for reduced temporal dimension
                 if conv_type == 2:
                     self.features.add(_conv2d(channel, 3, 1, 2, norm_layer=norm_layer, norm_kwargs=norm_kwargs))
                 elif conv_type == 3:  # keep temproal stride = 1 for constant temporal dimension
-                    self.features.add(_conv3d(channel, 3, 1, (1, 2, 2), norm_layer=norm_layer, norm_kwargs=norm_kwargs))
-                elif conv_type == 21:  # keep temproal stride = 1 for constant temporal dimension
-                    self.features.add(_conv21d(channel, 3, 1, (1, 2, 2), norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                    self.features.add(_conv3d(channel, 3, 1, (temp_stride, 2, 2),
+                                              norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                elif conv_type == 21:
+                    self.features.add(_conv21d(channel, 3, 1, (temp_stride, 2, 2),
+                                               norm_layer=norm_layer, norm_kwargs=norm_kwargs))
 
                 # add nlayer basic blocks
                 for _ in range(nlayer):
@@ -247,7 +252,7 @@ class Darknet3D(gluon.HybridBlock):
 
 # default configurations
 def get_darknet(pretrained=False, ctx=mx.cpu(), root=os.path.join('models', 'definitions', 'darknet', 'weights'),
-                conv_types=[2, 2, 2, 2, 2, 2], return_features=False, **kwargs):
+                conv_types=[2, 2, 2, 2, 2, 2], return_features=False, channels_factor=1, **kwargs):
     """
     get a 2D or 2+1D or 3D darknet model with correct transfer of imagenet pretrained weights
 
@@ -265,7 +270,11 @@ def get_darknet(pretrained=False, ctx=mx.cpu(), root=os.path.join('models', 'def
     """
 
     layers = [1, 2, 8, 8, 4]
-    channels = [32, 64, 128, 256, 512, 1024]
+    assert channels_factor in [1, 2, 4, 8, 16]
+    if channels_factor > 1:
+        pretrained=False
+
+    channels = [int(n / channels_factor) for n in [32, 64, 128, 256, 512, 1024]]
     net = Darknet3D(layers, channels, conv_types, return_features=return_features, **kwargs)
     net.initialize()
     if pretrained:
@@ -336,14 +345,14 @@ if __name__ == '__main__':
     # just for debugging
 
     darknet2D = get_darknet(pretrained=True, norm_layer=BatchNorm, norm_kwargs=None, return_features=True)
-    darknet3D = get_darknet(pretrained=True, norm_layer=BatchNorm, norm_kwargs=None, conv_types=[21, 21, 21, 21, 2, 2], return_features=True)
+    darknet3D = get_darknet(pretrained=True, norm_layer=BatchNorm, norm_kwargs=None, conv_types=[21, 21, 21, 21, 21, 2], return_features=True, channels_factor=4, funnel_time=True)
     # darknet3D = get_darknet(pretrained=True, norm_layer=BatchNorm, norm_kwargs=None, conv_types=[3, 2, 2, 2, 2, 2], return_features=True)
     # conv_types layers => [2, 5, 10, 27, 44, 53-1]
 
     darknet2D.summary(mx.nd.random_normal(shape=(1, 3, 384, 384)))
-    darknet3D.summary(mx.nd.random_normal(shape=(1, 3, 3, 384, 384)))
+    darknet3D.summary(mx.nd.random_normal(shape=(1, 3, 16, 384, 384)))
 
-    inp = mx.nd.repeat(mx.nd.random_normal(shape=(1, 3, 1, 416, 416)), 3, axis=2)
+    inp = mx.nd.repeat(mx.nd.random_normal(shape=(1, 3, 1, 416, 416)), 128, axis=2)
     o2 = darknet2D.forward(inp[:, :, 1, :, :])
     o3 = darknet3D.forward(inp)
 
