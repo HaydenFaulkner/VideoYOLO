@@ -322,19 +322,19 @@ class VOCMApMetricTemporal(mx.metric.EvalMetric):
                     values.append(self.sum_metric[t] / self.num_inst[t])
             else:
 
-                names += ['%s %d' % (self.name[i], t) for i in range(self.num)]
+                names += ['%s t=%d/%d' % (self.name[i], t, self.t) for i in range(self.num)]
 
                 if self.class_map:
                     for i in range(self.num):
                         if i == self.num-1:  # handle the mAP
-                            values.append(self.sum_metric[i] / self.num_inst[i] if self.num_inst[i] != 0 else float('nan'))
+                            values.append(self.sum_metric[t][i] / self.num_inst[t][i] if self.num_inst[t][i] != 0 else float('nan'))
                         elif self.class_map[i] < 0:
                             values.append(float('nan'))
                         else:
                             values.append(self.sum_metric[self.class_map[i]] / self.num_inst[self.class_map[i]]
                                           if self.num_inst[self.class_map[i]] != 0 else float('nan'))
                 else:
-                    values += [x / y if y != 0 else float('nan') for x, y in zip(self.sum_metric, self.num_inst)]
+                    values += [x / y if y != 0 else float('nan') for x, y in zip(self.sum_metric[t], self.num_inst[t])]
 
         return names, values
 
@@ -453,7 +453,7 @@ class VOCMApMetricTemporal(mx.metric.EvalMetric):
                 aps.append(ap)
                 if self.num is not None and l < (self.num - 1):
                     self.sum_metric[t][l] = ap
-                    self.num_instp[t][l] = 1
+                    self.num_inst[t][l] = 1
             if self.num is None:
                 self.num_inst[t] = 1
                 self.sum_metric[t] = np.nanmean(aps)
