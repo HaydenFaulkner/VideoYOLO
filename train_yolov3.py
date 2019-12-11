@@ -26,7 +26,7 @@ from datasets.mscoco import COCODetection
 from datasets.imgnetdet import ImageNetDetection
 from datasets.imgnetvid import ImageNetVidDetection
 
-from metrics.pascalvoc import VOCMApMetric
+from metrics.pascalvoc import VOCMApMetric, VOCMApMetricTemporal
 from metrics.mscoco import COCODetectionMetric
 
 from models.definitions.yolo.wrappers import yolo3_darknet53, yolo3_no_backbone, yolo3_3ddarknet
@@ -139,7 +139,7 @@ flags.DEFINE_string('rnn_pos', None,
                     "position of RNN, currently only supports 'late' or 'out")
 flags.DEFINE_string('corr_pos', None,
                     "position of correlation features calculation, currently only supports 'early' or 'late")
-flags.DEFINE_integer('corr_d', 4,
+flags.DEFINE_integer('corr_d', 0,
                      'The d value for the correlation filter.')
 flags.DEFINE_string('motion_stream', None,
                     'Add a motion stream? can be flownet or r21d.')
@@ -177,7 +177,10 @@ def get_dataset(dataset_name, save_prefix=''):
         val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty,
                                            every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir,
                                            mult_out=FLAGS.mult_out)
-        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+        if FLAGS.mult_out:
+            val_metric = VOCMApMetricTemporal(t=int(FLAGS.window[0]), iou_thresh=0.5, class_names=val_dataset.classes)
+        else:
+            val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     else:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset_name))
@@ -206,7 +209,6 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
             batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
 
         return train_loader, val_loader
-
 
     # stack image, all targets generated
     batchify_fn = Tuple(*([Stack() for _ in range(6)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
@@ -306,7 +308,8 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
-                                          hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type)
+                                          hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
+                                          temporal=FLAGS.mult_out)
                     async_net = yolo3_darknet53(trained_on_dataset.classes,
                                                 pretrained_base=False,
                                                 freeze_base=bool(FLAGS.freeze_base),
@@ -315,7 +318,8 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                                 corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d,
                                                 motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating,
                                                 new_model=FLAGS.new_model,
-                                                hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type)  # used by cpu worker
+                                                hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
+                                                temporal=FLAGS.mult_out)  # used by cpu worker
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
                                           pretrained_base=FLAGS.pretrained_cnn,
@@ -336,7 +340,8 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
-                                          hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type)
+                                          hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
+                                          temporal=FLAGS.mult_out)
                     async_net = net
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
@@ -574,6 +579,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
             center_metrics.update(0, center_losses)
             scale_metrics.update(0, scale_losses)
             cls_metrics.update(0, cls_losses)
+
             if FLAGS.log_interval and not (i + 1) % FLAGS.log_interval:
                 name1, loss1 = obj_metrics.get()
                 name2, loss2 = center_metrics.get()
