@@ -211,7 +211,10 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
         return train_loader, val_loader
 
     # stack image, all targets generated
-    batchify_fn = Tuple(*([Stack() for _ in range(6)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
+    if FLAGS.mult_out:
+        batchify_fn = Tuple(*([Stack() for _ in range(6)] + [Pad(axis=1, pad_val=-1) for _ in range(1)]))  # pad the 1st dim
+    else:
+        batchify_fn = Tuple(*([Stack() for _ in range(6)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
 
     if FLAGS.no_random_shape:
         train_loader = gluon.data.DataLoader(
