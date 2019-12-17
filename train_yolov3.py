@@ -203,7 +203,10 @@ def get_dataloader(net, train_dataset, val_dataset, batch_size):
             batch_size, True, batchify_fn=batchify_fn, last_batch='rollover', num_workers=FLAGS.num_workers)
 
         val_batchify_fn = Tuple(Stack(), Pad(pad_val=-1))
-        val_batchify_fn = Tuple(*([Stack() for _ in range(3)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
+        if FLAGS.mult_out:
+            val_batchify_fn = Tuple(*([Stack() for _ in range(3)] + [Pad(axis=1, pad_val=-1) for _ in range(1)]))
+        else:
+            val_batchify_fn = Tuple(*([Stack() for _ in range(3)] + [Pad(axis=0, pad_val=-1) for _ in range(1)]))
         val_loader = gluon.data.DataLoader(
             val_dataset.transform(YOLO3NBVideoInferenceTransform(width, height)),
             batch_size, False, batchify_fn=val_batchify_fn, last_batch='discard', num_workers=FLAGS.num_workers)
