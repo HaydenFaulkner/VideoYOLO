@@ -317,7 +317,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
                                           hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                          temporal=FLAGS.temp, t_out=mult_out)
+                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out)
                     async_net = yolo3_darknet53(trained_on_dataset.classes,
                                                 pretrained_base=False,
                                                 freeze_base=bool(FLAGS.freeze_base),
