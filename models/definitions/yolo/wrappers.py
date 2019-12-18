@@ -91,7 +91,7 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
                            k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes,
                            rnn_pos=rnn_pos,
                            corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
-        elif temporal:
+        elif temporal or t_out:
             net = YOLOV3Temporal(stages, [512, 256, 128], anchors, strides,
                                  classes=classes, t=k, conv=int(block_conv_type), corr_d=corr_d, t_out=t_out, **kwargs)
         else:
