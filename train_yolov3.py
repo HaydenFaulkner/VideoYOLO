@@ -108,6 +108,8 @@ flags.DEFINE_boolean('allow_empty', True,
                      'Allow samples that contain 0 boxes as [-1s * 6]?')
 flags.DEFINE_boolean('mult_out', False,
                      'Have one or multiple outs for timeseries data')
+flags.DEFINE_boolean('temp', False,
+                     'Use new temporal model')
 
 flags.DEFINE_list('gpus', [0],
                   'GPU IDs to use. Use comma for multiple eg. 0,1.')
@@ -315,7 +317,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
                                           hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                          temporal=FLAGS.mult_out)
+                                          temporal=FLAGS.temp, t_out=mult_out)
                     async_net = yolo3_darknet53(trained_on_dataset.classes,
                                                 pretrained_base=False,
                                                 freeze_base=bool(FLAGS.freeze_base),
@@ -325,7 +327,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                                 motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating,
                                                 new_model=FLAGS.new_model,
                                                 hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                                temporal=FLAGS.mult_out)  # used by cpu worker
+                                                temporal=FLAGS.temp, t_out=FLAGS.mult_out)  # used by cpu worker
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
                                           pretrained_base=FLAGS.pretrained_cnn,
@@ -347,7 +349,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
                                           hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                          temporal=FLAGS.mult_out)
+                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out)
                     async_net = net
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
