@@ -85,6 +85,10 @@ flags.DEFINE_string('h_join_type', None,
                     'Type to join hierarchical darknet. can be max or conv.')
 flags.DEFINE_list('hier', [1, 1, 1, 1, 1],
                   'the hierarchical factors, the input must be temporally equal to all these multiplied together')
+flags.DEFINE_boolean('mult_out', False,
+                     'Have one or multiple outs for timeseries data')
+flags.DEFINE_boolean('temp', False,
+                     'Use new temporal model')
 
 flags.DEFINE_boolean('visualise', False,
                      'Do you want to display the detections?')
@@ -632,7 +636,7 @@ def main(_argv):
                                   block_conv_type=FLAGS.block_conv_type, rnn_pos=FLAGS.rnn_pos,
                                   corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                   agnostic=FLAGS.model_agnostic, add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
-                                  hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type)
+                                  hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type, temporal=FLAGS.temp, t_out=FLAGS.mult_out)
         else:
             net = yolo3_3ddarknet(trained_on_dataset.classes, conv_types=FLAGS.conv_types)
     else:
