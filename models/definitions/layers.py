@@ -91,15 +91,15 @@ def _conv21d(channel, t, d, m, padding, stride, norm_layer=BatchNorm, norm_kwarg
 
 # HybridBlocks
 class Corr(gluon.HybridBlock):
-    def __init__(self, d, t, kernal_size=1, stride=1, full_t='keep', comp_mid=False, **kwargs):
+    def __init__(self, d, t, kernal_size=1, stride=1, keep='all', comp_mid=False, **kwargs):
         """
         Correlation helper layer, can perform over t time-steps
         """
         super(Corr, self).__init__(**kwargs)
 
         # used for determining whether to also concat the k features of just the middle with the corr filters
-        assert full_t in ['keep', 'discard']
-        self._full_t = full_t
+        assert keep in ['all', 'mid', 'none']
+        self._keep = keep
         self._d = d
         self._t = t
         self._kernal_size = kernal_size
@@ -109,17 +109,24 @@ class Corr(gluon.HybridBlock):
     def hybrid_forward(self, F, x):
         xs = F.split(x, self._t, axis=1)
         middle_index = int(self._t/2)
-        if self._full_t == 'keep':  # keep all t features
-            x = F.reshape(x,(0,-3,-2))
-        else:  # just keep the middle feature
+        if self._keep == 'all':  # keep all t features
+            x = F.reshape(x, (0, -3, -2))
+        elif self._keep == 'mid':  # just keep the middle feature
             x = F.squeeze(xs[middle_index], axis=1)
 
         for i, t in enumerate(xs):  # calculate the correlation features across all t
             if not self._comp_mid and i == middle_index:  # but skip comparing the middle one
                 continue
             c = F.Correlation(F.squeeze(t, axis=1), F.squeeze(xs[middle_index], axis=1),
-                              kernel_size=self._kernal_size, max_displacement=self._d, pad_size=self._d,
+                              kernel_size=self._kernal_size, max_displacement=self._d, pad_size=self._d+int(self._kernal_size/2),
                               stride1=self._stride, stride2=self._stride)
+            if self._keep == 'none':
+                if i == 0:  # just keep the correlation feats throwing away the x
+                    x = F.expand_dims(c, axis=1)
+                    continue
+                else:
+                    c = F.expand_dims(c, axis=1)
+
             x = F.concat(x, c, dim=1)
 
         return x

@@ -1388,7 +1388,7 @@ class YOLOV3TB(gluon.HybridBlock):
                 self.pool = TemporalPooling(k=k, type=k_join_type)
 
             if k > 1 and corr_pos is not None:
-                self.corr = Corr(corr_d, k, kernal_size=1, stride=1, full_k='keep')
+                self.corr = Corr(corr_d, k, kernal_size=1, stride=1, keep='all')
 
             self.stages = nn.HybridSequential()
             self.transitions = nn.HybridSequential()

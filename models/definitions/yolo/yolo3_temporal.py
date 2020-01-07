@@ -312,9 +312,17 @@ class YOLOV3Temporal(gluon.HybridBlock):
             self.transitions = nn.HybridSequential()
             self.yolo_blocks = nn.HybridSequential()
             self.yolo_outputs = nn.HybridSequential()
-            if self.t_out and self.corr_d:
-                pass
-                # self.corr = Corr(corr_d, t=5, kernal_size=3, stride=2, full_t='keep', comp_mid=True)
+            if t_out and corr_d:
+                self.corr = Corr(corr_d, t=5, kernal_size=3, stride=1, keep='none', comp_mid=True)
+                self.convs1 = nn.HybridSequential()
+                self.convs1.add(_conv2d(channel=128, kernel=3, stride=1, padding=1,
+                                        norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                self.convs2 = nn.HybridSequential()
+                self.convs2.add(_conv2d(channel=128, kernel=3, stride=2, padding=1,
+                                        norm_layer=norm_layer, norm_kwargs=norm_kwargs))
+                self.convs3 = nn.HybridSequential()
+                self.convs3.add(_conv2d(channel=128, kernel=3, stride=2, padding=1,
+                                        norm_layer=norm_layer, norm_kwargs=norm_kwargs))
             if not t_out:
                 self.convs1 = nn.HybridSequential()
                 self.convs2 = nn.HybridSequential()
@@ -395,12 +403,33 @@ class YOLOV3Temporal(gluon.HybridBlock):
                 if self.corr_d:
                     x = TimeDistributed(self.stages[0])(x)
 
+                    # get middle feature for further Darknet processing
+                    mid = F.squeeze(x.slice_axis(axis=1, begin=int(self.t / 2), end=int(self.t / 2)+1), axis=1)
+
+                    x = self.corr(x)  # perform correlations across all timesteps
+
+                    x = TimeDistributed(self.convs1)(x)  # do first conv
+                    mid_rep = F.repeat(F.expand_dims(mid, axis=1), axis=1, repeats=self.t)  # repeat the mid feats t times
+                    routes.append(F.concat(mid_rep, x, dim=2))  # concat and pass to YOLO (a,d)
+
+                    mid = self.stages[1](mid)  # pass middle frame through more darknet
+                    mid_rep = F.repeat(F.expand_dims(mid, axis=1), axis=1, repeats=self.t)  # repeat the mid feats t times
+                    x = TimeDistributed(self.convs2)(x)  # downscale x with another conv
+                    routes.append(F.concat(mid_rep, x, dim=2))  # concat and pass to YOLO (b,e)
+
+                    mid = self.stages[2](mid)  # pass middle frame through last bit of darknet
+                    mid_rep = F.repeat(F.expand_dims(mid, axis=1), axis=1, repeats=self.t)  # repeat the mid feats t times
+                    x = TimeDistributed(self.convs3)(x)  # downscale x with another conv
+                    x = F.concat(mid_rep, x, dim=2)
+                    routes.append(x)  # concat and pass to YOLO (c,f)
                 else:
                     x = TimeDistributed(self.stages[0])(x)
                     routes.append(x)
-                    x = TimeDistributed(self.stages[1])(x.slice_axis(axis=1, begin=1, end=4))
+                    x = TimeDistributed(self.stages[1])(x)
+                    # x = TimeDistributed(self.stages[1])(x.slice_axis(axis=1, begin=1, end=4))  # old code when did heir
                     routes.append(x)
-                    x = TimeDistributed(self.stages[2])(x.slice_axis(axis=1, begin=1, end=2))
+                    x = TimeDistributed(self.stages[2])(x)
+                    # x = TimeDistributed(self.stages[2])(x.slice_axis(axis=1, begin=1, end=2))  # old code when did heir
                     routes.append(x)
             else:
                 x = TimeDistributed(self.stages[0])(x)
@@ -415,18 +444,12 @@ class YOLOV3Temporal(gluon.HybridBlock):
                 x = x.squeeze(axis=1)
                 routes.append(x)
 
-
         # the YOLO output layers are used in reverse order, i.e., from very deep layers to shallow
         for i, block, output in zip(range(len(routes)), self.yolo_blocks, self.yolo_outputs):
             if self.t > 1 and self.conv == 2 and self.t_out:
                 x, tip = TimeDistributed(block)(x)
             else:
                 x, tip = block(x)
-
-            if i == 0 and self.first_gap > 0 and self.t_out:
-                tip = _temp_pad(F, tip, padding=int(self.first_gap/2)+int(self.second_gap/2), zeros=False)  # pad on temp dim
-            elif i == 1 and self.second_gap > 0 and self.t_out:
-                tip = _temp_pad(F, tip, padding=int(self.second_gap/2), zeros=False)  # pad on temp dim
 
             if self.t > 1 and self.t_out:
                 if autograd.is_training():
@@ -475,18 +498,7 @@ class YOLOV3Temporal(gluon.HybridBlock):
 
             route_now = routes[::-1][i + 1]
 
-            if i == 0 and self.first_gap > 0 and self.t_out:
-                upsample = _temp_pad(F, upsample, padding=int(self.first_gap/2), zeros=False)  # pad on temp dim
-                x = F.concat(F.slice_like(upsample, route_now * 0, axes=(3, 4)), route_now, dim=2)  # concat to darknet
-
-                # if self.corr_d > 0:
-                #     x = F.concat(x, F.Correlation())
-
-            elif i == 1 and self.second_gap > 0 and self.t_out:
-                upsample = _temp_pad(F, upsample, padding=int(self.second_gap/2), zeros=False)  # pad on temp dim
-                x = F.concat(F.slice_like(upsample, route_now * 0, axes=(3, 4)), route_now, dim=2)  # concat to darknet
-            else:  # 2D
-                x = F.concat(F.slice_like(upsample, route_now * 0, axes=(2, 3)), route_now, dim=1)  # concat to darknet
+            x = F.concat(F.slice_like(upsample, route_now * 0, axes=(-2, -1)), route_now, dim=-3)  # concat to darknet
 
         if autograd.is_training():
             # during training, the network behaves differently since we don't need detection results
@@ -502,28 +514,6 @@ class YOLOV3Temporal(gluon.HybridBlock):
 
                 losses = [[], [], [], []]
                 for t in range(self.t):
-                    # generate losses and return them directly
-                    # if t == int(self.t / 2):
-                    #     box_preds = F.concat(all_detections[0],
-                    #                          F.slice_axis(all_detections[1], axis=1, begin=t-int(self.first_gap / 2), end=1+t-int(self.first_gap / 2)),
-                    #                          F.slice_axis(all_detections[2], axis=1, begin=t, end=t+1), dim=-2)
-                    #     all_preds = [F.concat(p[0],
-                    #                           F.slice_axis(p[1], axis=1, begin=t-int(self.first_gap / 2), end=t-int(self.first_gap / 2)+1),
-                    #                           F.slice_axis(p[2], axis=1, begin=t, end=t+1), dim=-2).squeeze(axis=1)
-                    #                  for p in [all_objectness, all_box_centers, all_box_scales, all_class_pred]]
-                    #
-                    # elif t < int(self.first_gap / 2) or t >= self.t - int(self.first_gap / 2):
-                    #     box_preds = F.slice_axis(all_detections[2], axis=1, begin=t, end=t+1)
-                    #     all_preds = [F.slice_axis(p[2], axis=1, begin=t, end=t+1).squeeze(axis=1) for p in [
-                    #         all_objectness, all_box_centers, all_box_scales, all_class_pred]]
-                    #
-                    # elif t < int(self.first_gap / 2) + int(self.second_gap / 2) or t >= self.t - \
-                    #         int(self.first_gap / 2) - int(self.second_gap / 2):
-                    #     box_preds = F.concat(F.slice_axis(all_detections[1], axis=1, begin=t-int(self.first_gap / 2), end=t-int(self.first_gap / 2)+1),
-                    #                          F.slice_axis(all_detections[2], axis=1, begin=t, end=t+1), dim=-2)
-                    #     all_preds = [F.concat(F.slice_axis(p[1], axis=1, begin=t-int(self.first_gap / 2), end=t-int(self.first_gap / 2)+1),
-                    #                           F.slice_axis(p[2], axis=1, begin=t, end=t+1), dim=-2).squeeze(axis=1)
-                    #                  for p in [all_objectness, all_box_centers, all_box_scales, all_class_pred]]
 
                     all_preds = [F.slice_axis(F.concat(*p, dim=-2), axis=1, begin=t, end=t + 1).squeeze(axis=1)
                                  for p in [all_objectness, all_box_centers, all_box_scales, all_class_pred]]
@@ -537,61 +527,6 @@ class YOLOV3Temporal(gluon.HybridBlock):
 
                 return [F.sum(F.concat(*l, dim=0)) for l in losses]
 
-            # # return raw predictions, this is only used in DataLoader transform function.
-            # # l = list()
-            # all_anchors_t = list()
-            # all_offsets_t = list()
-            # all_feat_maps_t = list()
-            # for t in range(self.t):
-            #     if t == int(self.t / 2):
-            #         pr = [[p[0].squeeze(axis=1),
-            #                F.slice_axis(p[1], axis=1, begin=t-int(self.first_gap / 2), end=t-int(self.first_gap / 2)+1).squeeze(axis=1),
-            #                F.slice_axis(p[2], axis=1, begin=t, end=t+1).squeeze(axis=1)]
-            #               for p in [all_anchors, all_offsets, all_feat_maps]]
-            #
-            #     elif t < int(self.first_gap / 2) or t >= self.t - int(self.first_gap / 2):
-            #         pr = [[F.slice_axis(p[2], axis=1, begin=t, end=t+1).squeeze(axis=1)]
-            #               for p in [all_anchors, all_offsets, all_feat_maps]]
-            #
-            #     elif t < int(self.first_gap / 2) + int(self.second_gap / 2) or t >= self.t - \
-            #             int(self.first_gap / 2) - int(self.second_gap / 2):
-            #         pr = [[F.slice_axis(p[1], axis=1, begin=t-int(self.first_gap / 2), end=t-int(self.first_gap / 2)+1).squeeze(axis=1),
-            #                F.slice_axis(p[2], axis=1, begin=t, end=t+1).squeeze(axis=1)]
-            #               for p in [all_anchors, all_offsets, all_feat_maps]]
-            #
-            #     all_anchors_t.append(pr[0])
-            #     all_offsets_t.append(pr[1])
-            #     all_feat_maps_t.append(pr[2])
-            #
-            # #     if t == int(self.t / 2):
-            # #         pr = [F.concat(p[0],
-            # #                        F.slice_axis(p[1], axis=1, begin=t-int(self.first_gap / 2), end=t-int(self.first_gap / 2)+1),
-            # #                        F.slice_axis(p[2], axis=1, begin=t, end=t+1), dim=2)
-            # #               for p in [all_detections, all_box_centers, all_box_scales, all_objectness, all_class_pred]]
-            # #
-            # #     elif t < int(self.first_gap / 2) or t >= self.t - int(self.first_gap / 2):
-            # #         pr = [F.slice_axis(p[2], axis=1, begin=t, end=t+1)
-            # #               for p in [all_detections, all_box_centers, all_box_scales, all_objectness, all_class_pred]]
-            # #
-            # #     elif t < int(self.first_gap / 2) + int(self.second_gap / 2) or t >= self.t - \
-            # #             int(self.first_gap / 2) - int(self.second_gap / 2):
-            # #         pr = [F.concat(F.slice_axis(p[1], axis=1, begin=t-int(self.first_gap / 2), end=t-int(self.first_gap / 2)+1),
-            # #                        F.slice_axis(p[2], axis=1, begin=t, end=t+1), dim=2)
-            # #               for p in [all_detections, all_box_centers, all_box_scales, all_objectness, all_class_pred]]
-            # #
-            # #     l.append((pr[0], all_anchors, all_offsets, all_feat_maps, pr[1], pr[2], pr[3], pr[4]))
-            # #     # all_anchors, all_offsets, all_feat_maps don't change across the timesteps here and pr isn't used
-            # #     # hence why we can take [0] on the exit of this function, but should we split them across the t's?
-            # #     # all_anchors etc is list of 3 NDArrays (1 for each spatial scale), with shapes:
-            # #     # (1,1,1,3,2), (1,3,1,3,2), (1,5,1,3,2) with the data repeated across the t (1) axis
-            # #     # so could probably just pass the standard non-temoral output and temporalise it later? leave for now
-            #
-            #
-            # return (None, all_anchors_t, all_offsets_t, all_feat_maps_t, None, None, None, None)
-            #
-            # # return list of len t... unnecessary as pr not used in transform
-            # # return l
-
             if self.t > 1 and self.t_out:
                 all_anchors = [F.slice_axis(a, axis=1, begin=1, end=2).squeeze(axis=1) for a in all_anchors]
                 all_offsets = [F.slice_axis(a, axis=1, begin=1, end=2).squeeze(axis=1) for a in all_offsets]
@@ -602,55 +537,9 @@ class YOLOV3Temporal(gluon.HybridBlock):
                     F.concat(*all_box_centers, dim=-2), F.concat(*all_box_scales, dim=-2),
                     F.concat(*all_objectness, dim=-2), F.concat(*all_class_pred, dim=-2))
 
-        # # concat all detection results from different stages
-        # ids = list()
-        # scores = list()
-        # bboxes = list()
-        # for t in range(self.t):
-        #     if t == int(self.t/2):
-        #         result = F.concat(F.slice_axis(all_detections[0], axis=1, begin=0, end=1),
-        #                           F.slice_axis(all_detections[1], axis=1, begin=t-int(self.first_gap/2), end=t-int(self.first_gap/2)+1),
-        #                           F.slice_axis(all_detections[2], axis=1, begin=t, end=t+1), dim=2)
-        #     elif t < int(self.first_gap / 2) or t >= self.t - int(self.first_gap / 2):
-        #         result = F.slice_axis(all_detections[2], axis=1, begin=t, end=t+1)
-        #     elif t < int(self.first_gap/2) + int(self.second_gap/2) or t >= self.t - int(self.first_gap / 2) - int(self.second_gap / 2):
-        #         result = F.concat(F.slice_axis(all_detections[1], axis=1, begin=t-int(self.first_gap/2), end=t-int(self.first_gap/2)+1),
-        #                           F.slice_axis(all_detections[2], axis=1, begin=t, end=t+1), dim=2)
-        #
-        #     result = F.squeeze(result, axis=1)  # remove temporal dim
-        #
-        #     # todo could add a temporal NMS or relationnets style thing...
-        #     # apply nms per class
-        #     if 0 < self.nms_thresh < 1:
-        #         result = F.contrib.box_nms(
-        #             result, overlap_thresh=self.nms_thresh, valid_thresh=0.01,
-        #             topk=self.nms_topk, id_index=0, score_index=1, coord_start=2, force_suppress=False)
-        #         if self.post_nms > 0:
-        #             result = result.slice_axis(axis=1, begin=0, end=self.post_nms)
-        #     ids.append(F.expand_dims(result.slice_axis(axis=-1, begin=0, end=1), axis=1))
-        #     scores.append(F.expand_dims(result.slice_axis(axis=-1, begin=1, end=2), axis=1))
-        #     bboxes.append(F.expand_dims(result.slice_axis(axis=-1, begin=2, end=None), axis=1))
-        #
-        # ids = F.concat(*ids, dim=1)
-        # scores = F.concat(*scores, dim=1)
-        # bboxes = F.concat(*bboxes, dim=1)
-        # return ids, scores, bboxes
 
         # concat all detection results from different stages
         result = F.concat(*all_detections, dim=-2)
-        # apply nms per class
-        # r = []
-        # for t in range(self.t):
-        #     result_t = result.slice_axis(axis=-3, begin=t, end=t+1)
-        #     if self.nms_thresh > 0 and self.nms_thresh < 1:  # todo check this works for the extra dim
-        #         result_t = F.contrib.box_nms(
-        #             result_t, overlap_thresh=self.nms_thresh, valid_thresh=0.01,
-        #             topk=self.nms_topk, id_index=0, score_index=1, coord_start=2, force_suppress=False)
-        #
-        #         if self.post_nms > 0:
-        #             result_t = result_t.slice_axis(axis=-2, begin=0, end=self.post_nms)
-        #         r.append(result_t)
-        # resultb = F.concat(*r, dim=-3)
 
         if self.nms_thresh > 0 and self.nms_thresh < 1:  # todo check this works for the extra dim
             result = F.contrib.box_nms(
@@ -844,7 +733,7 @@ class YOLOV3Temporal(gluon.HybridBlock):
 #                 self.pool = TemporalPooling(k=k, type=k_join_type)
 #
 #             if k > 1 and corr_pos is not None:
-#                 self.corr = Corr(corr_d, k, kernal_size=1, stride=1, full_k='keep')
+#                 self.corr = Corr(corr_d, k, kernal_size=1, stride=1, keep='all')
 #
 #             self.stages = nn.HybridSequential()
 #             self.transitions = nn.HybridSequential()
