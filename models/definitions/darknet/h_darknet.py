@@ -8,89 +8,9 @@ from mxnet import gluon
 from mxnet.gluon import nn
 from mxnet.gluon.nn import BatchNorm
 
-__all__ = ['DarknetV3']
+from models.definitions.layers import _conv1d, _conv2d, TimeDistributed
 
-
-def _conv1d(out_channels, kernel, padding, strides, norm_layer=BatchNorm, norm_kwargs=None):
-    """1D over t*c for joining temps"""
-    cell = nn.HybridSequential(prefix='1D')
-
-    cell.add(nn.Conv3D(out_channels, kernel_size=(kernel, 1, 1), strides=(strides, 1, 1),
-                       padding=(padding, 0, 0), use_bias=False, groups=out_channels, weight_initializer='zeros'))
-
-    cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
-    cell.add(nn.LeakyReLU(0.1))
-
-    return cell
-
-
-class TimeDistributed(gluon.HybridBlock):
-    def __init__(self, model, style='reshape1', **kwargs):
-        """
-        A time distributed layer like that seen in Keras
-        Args:
-            model: the backbone model that will be repeated over time
-            style (str): either 'reshape1', 'reshape2' or 'for' for the implementation to use (default is reshape1)
-                         NOTE!!: Only reshape1 works with hybrid models
-        """
-        super(TimeDistributed, self).__init__(**kwargs)
-        assert style in ['reshape1', 'reshape2', 'for']
-
-        # if style != 'reshape1':
-        #     print("WARNING: net can't be hybridized if {} is used for the TimeDistributed layer style".format(style))
-
-        self._style = style
-        with self.name_scope():
-            self.model = model
-
-    def apply_model(self, x, _):
-        return self.model(x), []
-
-    def hybrid_forward(self, F, x):
-        if self._style == 'for':
-            # For loop style
-            x = F.swapaxes(x, 0, 1)  # swap batch and seqlen channels
-            x, _ = F.contrib.foreach(self.apply_model, x, [])  # runs on first channel, which is now seqlen
-            if isinstance(x, tuple):  # for handling multiple outputs
-                x = (F.swapaxes(xi, 0, 1) for xi in x)
-            elif isinstance(x, list):
-                x = [F.swapaxes(xi, 0, 1) for xi in x]
-            else:
-                x = F.swapaxes(x, 0, 1)  # swap seqlen and batch channels
-        elif self._style == 'reshape1':
-            shp = x  # can use this to keep shapes for reshape back to (batch, timesteps, ...)
-            x = F.reshape(x, (-3, -2))  # combines batch and timesteps dims
-            x = self.model(x)
-            if isinstance(x, tuple):  # for handling multiple outputs
-                x = (F.reshape_like(xi, shp, lhs_end=1, rhs_end=2) for xi in x)
-            elif isinstance(x, list):
-                x = [F.reshape_like(xi, shp, lhs_end=1, rhs_end=2) for xi in x]
-            else:
-                x = F.reshape_like(x, shp, lhs_end=1, rhs_end=2)  # (num_samples, timesteps, ...)
-        else:
-            # Reshape style, doesn't work with symbols cause no shape
-            batch_size = x.shape[0]
-            input_length = x.shape[1]
-            x = F.reshape(x, (-3, -2))  # combines batch and timesteps dims
-            x = self.model(x)
-            if isinstance(x, tuple):  # for handling multiple outputs
-                x = (F.reshape(xi, (batch_size, input_length,) + xi.shape[1:]) for xi in x)
-            elif isinstance(x, list):
-                x = [F.reshape(xi, (batch_size, input_length,) + xi.shape[1:]) for xi in x]
-            else:
-                x = F.reshape(x, (batch_size, input_length,) + x.shape[1:])  # (num_samples, timesteps, ...)
-
-        return x
-
-
-def _conv2d(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
-    """A common conv-bn-leakyrelu cell"""
-    cell = nn.HybridSequential(prefix='')
-    cell.add(nn.Conv2D(channel, kernel_size=kernel,
-                       strides=stride, padding=padding, use_bias=False))
-    cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
-    cell.add(nn.LeakyReLU(0.1))
-    return cell
+__all__ = ['HDarknet']
 
 
 class DarknetBasicBlockV3(gluon.HybridBlock):

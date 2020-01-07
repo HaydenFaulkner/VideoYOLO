@@ -10,30 +10,10 @@ from mxnet.gluon.nn import BatchNorm
 
 from gluoncv.model_zoo.model_store import get_model_file
 
+from models.definitions.layers import _conv2d, _conv3d
+
 __all__ = ['Darknet3D', 'get_darknet']
 
-
-def _conv2d(channel, kernel, padding, strides, norm_layer=BatchNorm, norm_kwargs=None):
-    """A common conv-bn-leakyrelu cell"""
-    cell = nn.HybridSequential(prefix='')
-    cell.add(nn.Conv2D(channel, kernel_size=kernel, strides=strides, padding=padding, use_bias=False))
-    cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
-    cell.add(nn.LeakyReLU(0.1))
-    return cell
-
-
-def _conv3d(out_channels, kernel, padding, strides, groups=1, norm_layer=BatchNorm, norm_kwargs=None):
-    """A common 3dconv-bn-leakyrelu cell"""
-    cell = nn.HybridSequential(prefix='3D')
-    if kernel == 3:  # we need to do a special repeat pad as the zeros effect the middle correct 2d pathway
-        cell.add(Conv3DRepPad(out_channels, kernel_size=kernel, strides=strides, padding=padding, use_bias=False,
-                              groups=groups))
-    else:
-        cell.add(nn.Conv3D(out_channels, kernel_size=kernel, strides=strides, padding=padding, use_bias=False,
-                           groups=groups))
-    cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
-    cell.add(nn.LeakyReLU(0.1))
-    return cell
 
 
 def _conv21d(out_channels, kernel, padding, strides, norm_layer=BatchNorm, norm_kwargs=None):

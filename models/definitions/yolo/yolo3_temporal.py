@@ -12,238 +12,15 @@ from mxnet import gluon
 from mxnet import autograd
 from mxnet.gluon import nn
 from mxnet.gluon.nn import BatchNorm
-from models.definitions.darknet.darknet import _conv2d, get_darknet
+from models.definitions.darknet.darknet import get_darknet
 from models.definitions.yolo.yolo_target import YOLOV3TargetMerger
+
+from models.definitions.layers import TimeDistributed, Conv, Corr, _upsample, _temp_pad, _conv2d, _conv21d
 from gluoncv.loss import YOLOV3Loss
 
-__all__ = ['YOLOV3',
-           'YOLOV3T',
+__all__ = ['YOLOV3Temporal',
            'get_yolov3'
            ]
-
-class TimeDistributed(gluon.HybridBlock):
-    def __init__(self, model, style='reshape1', **kwargs):
-        """
-        A time distributed layer like that seen in Keras
-        Args:
-            model: the backbone model that will be repeated over time
-            style (str): either 'reshape1', 'reshape2' or 'for' for the implementation to use (default is reshape1)
-                         NOTE!!: Only reshape1 works with hybrid models
-        """
-        super(TimeDistributed, self).__init__(**kwargs)
-        assert style in ['reshape1', 'reshape2', 'for']
-
-        # if style != 'reshape1':
-        #     print("WARNING: net can't be hybridized if {} is used for the TimeDistributed layer style".format(style))
-
-        self._style = style
-        with self.name_scope():
-            self.model = model
-
-    def apply_model(self, x, _):
-        return self.model(x), []
-
-    def hybrid_forward(self, F, x):
-        if self._style == 'for':
-            # For loop style
-            x = F.swapaxes(x, 0, 1)  # swap batch and seqlen channels
-            x, _ = F.contrib.foreach(self.apply_model, x, [])  # runs on first channel, which is now seqlen
-            if isinstance(x, tuple):  # for handling multiple outputs
-                x = (F.swapaxes(xi, 0, 1) for xi in x)
-            elif isinstance(x, list):
-                x = [F.swapaxes(xi, 0, 1) for xi in x]
-            else:
-                x = F.swapaxes(x, 0, 1)  # swap seqlen and batch channels
-        elif self._style == 'reshape1':
-            shp = x  # can use this to keep shapes for reshape back to (batch, timesteps, ...)
-            x = F.reshape(x, (-3, -2))  # combines batch and timesteps dims
-            x = self.model(x)
-            if isinstance(x, tuple):  # for handling multiple outputs
-                x = (F.reshape_like(xi, shp, lhs_end=1, rhs_end=2) for xi in x)
-            elif isinstance(x, list):
-                x = [F.reshape_like(xi, shp, lhs_end=1, rhs_end=2) for xi in x]
-            else:
-                x = F.reshape_like(x, shp, lhs_end=1, rhs_end=2)  # (num_samples, timesteps, ...)
-        else:
-            # Reshape style, doesn't work with symbols cause no shape
-            batch_size = x.shape[0]
-            input_length = x.shape[1]
-            x = F.reshape(x, (-3, -2))  # combines batch and timesteps dims
-            x = self.model(x)
-            if isinstance(x, tuple):  # for handling multiple outputs
-                x = (F.reshape(xi, (batch_size, input_length,) + xi.shape[1:]) for xi in x)
-            elif isinstance(x, list):
-                x = [F.reshape(xi, (batch_size, input_length,) + xi.shape[1:]) for xi in x]
-            else:
-                x = F.reshape(x, (batch_size, input_length,) + x.shape[1:])  # (num_samples, timesteps, ...)
-
-        return x
-
-def _upsample(x, stride=2):
-    """Simple upsampling layer by stack pixel alongside horizontal and vertical directions.
-    Parameters
-    ----------
-    x : mxnet.nd.NDArray or mxnet.symbol.Symbol
-        The input array.
-    stride : int, default is 2
-        Upsampling stride
-    """
-    return x.repeat(axis=-1, repeats=stride).repeat(axis=-2, repeats=stride)
-
-
-def _temp_pad(F, x, padding=1, zeros=True):
-    """
-    Pads a 3D input along temporal axis by repeating edges or zeros
-    Args:
-        x: dim 5 b,t,c,w,h
-        padding: the number of dim to add on each side
-        zeros: pad with zeros?
-
-    Returns: padded x
-
-    """
-    first = x.slice_axis(axis=1, begin=0, end=1)  # symbol compatible indexing
-    last = x.slice_axis(axis=1, begin=-1, end=None)
-    if zeros:
-        first = first * 0
-        last = last * 0
-    if padding > 1:
-        first = first.repeat(repeats=padding, axis=1)
-        last = last.repeat(repeats=padding, axis=1)
-
-    x = F.concat(first, x, dim=1)
-    x = F.concat(x, last, dim=1)
-
-    return x
-
-
-def _conv3d(channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
-    """A common 3dconv-bn-leakyrelu cell"""
-    cell = nn.HybridSequential(prefix='3D')
-    cell.add(nn.Conv3D(channel, kernel_size=kernel, strides=stride, padding=padding, use_bias=False))
-    cell.add(norm_layer(epsilon=1e-5, momentum=0.9, **({} if norm_kwargs is None else norm_kwargs)))
-    cell.add(nn.LeakyReLU(0.1))
-    return cell
-
-
-def _conv21d(channel, t, d, m, padding, stride, norm_layer=BatchNorm, norm_kwargs=None):
-    """R(2+1)D from 'A Closer Look at Spatiotemporal Convolutions for Action Recognition'"""
-    cell = nn.HybridSequential(prefix='R(2+1)D')
-
-    cell.add(_conv3d(m, (1, d, d), (0, padding[0], padding[0]), stride[0], norm_layer=norm_layer, norm_kwargs=norm_kwargs))
-    cell.add(_conv3d(channel, (t, 1, 1), (padding[1], 0, 0), stride[1], norm_layer=norm_layer, norm_kwargs=norm_kwargs))
-
-    return cell
-
-
-class TemporalPooling(gluon.HybridBlock):
-    def __init__(self, k, type='max', pool_size=None, strides=None, padding=0, style='direct', **kwargs):
-        """
-        A Temporal Pooling Layer
-        """
-        super(TemporalPooling, self).__init__(**kwargs)
-
-        assert type in ['max', 'mean']
-        assert style in ['direct', 'layer']
-
-        self._type = type
-        self._style = style
-
-        if pool_size is None:
-            pool_size = k
-        else:
-            print("Particular pool size specified, so need to use 'layer' style")
-            style = 'layer'
-
-        if style == 'layer':
-            with self.name_scope():
-                if type == 'max':
-                    self.pool = gluon.nn.MaxPool1D(pool_size=pool_size,
-                                                   strides=strides,
-                                                   padding=padding,
-                                                   layout='NWC')
-                else:
-                    self.pool = gluon.nn.AvgPool1D(pool_size=pool_size,
-                                                   strides=strides,
-                                                   padding=padding,
-                                                   layout='NWC')
-
-
-    def hybrid_forward(self, F, x):
-        if self._style == 'layer':
-            shp = x
-            x = F.reshape(x, (0, 0, -1))
-            x = self.pool(x)
-            x = F.reshape_like(x, shp, lhs_begin=2, rhs_begin=2)
-            x = F.squeeze(x, axis=1)
-            return x
-        else:
-            if self._type == 'max':
-                return F.squeeze(F.max(x, axis=1, keepdims=True), axis=1)
-            else:
-                return F.squeeze(F.mean(x, axis=1, keepdims=True), axis=1)
-
-
-class Conv(gluon.HybridBlock):
-    def __init__(self, type, channel, kernel, padding, stride, norm_layer=BatchNorm, norm_kwargs=None, **kwargs):
-        """
-        Convolution helper layer, can perform 2d, 3d and 2+1d
-        """
-        super(Conv, self).__init__(**kwargs)
-
-        assert type in ['2', '3', '21']
-
-        self._type = type
-
-        with self.name_scope():
-            if type == '2':
-                self.conv = _conv2d(channel=channel, kernel=kernel, padding=padding, stride=stride,
-                                    norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
-            elif type == '3':
-                self.conv = _conv3d(channel=channel, kernel=kernel, padding=padding, stride=stride,
-                                    norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
-            else:
-                self.conv = _conv21d(channel=channel, t=kernel, d=kernel, m=channel, padding=[padding, padding],
-                                     stride=[stride, stride], norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
-
-    def hybrid_forward(self, F, x):
-            return self.conv(x)
-
-
-class Corr(gluon.HybridBlock):
-    def __init__(self, d, k, kernal_size=1, stride=1, full_k='keep', **kwargs):
-        """
-        Correlation helper layer, can perform over k time-steps
-        """
-        super(Corr, self).__init__(**kwargs)
-
-        # used for determining whether to also concat the k features of just the middle with the corr filters
-        assert full_k in ['keep', 'discard']
-        self._full_k = full_k
-        self._d = d
-        self._k = k
-        self._kernal_size = kernal_size
-        self._stride = stride
-
-
-    def hybrid_forward(self, F, x):
-        xs = F.split(x, self._k, axis=1)
-        middle_index = int(self._k/2)
-        if self._full_k == 'keep':  # keep all k features
-            x = F.reshape(x,(0,-3,-2))
-        else:  # just keep the middle feature
-            x = F.squeeze(xs[middle_index], axis=1)
-
-        for i, t in enumerate(xs):  # calculate the correlation features across all k
-            if i == middle_index: # but skip comparing the middle one
-                continue
-            c = F.Correlation(F.squeeze(t, axis=1), F.squeeze(xs[middle_index], axis=1),
-                              kernel_size=self._kernal_size, max_displacement=self._d, pad_size=self._d,
-                              stride1=self._stride, stride2=self._stride)
-            x = F.concat(x,c,dim=1)
-
-        return x
-
 
 class YOLOOutputV3(gluon.HybridBlock):
     """YOLO output layer V3.
@@ -535,6 +312,9 @@ class YOLOV3Temporal(gluon.HybridBlock):
             self.transitions = nn.HybridSequential()
             self.yolo_blocks = nn.HybridSequential()
             self.yolo_outputs = nn.HybridSequential()
+            if self.t_out and self.corr_d:
+                pass
+                # self.corr = Corr(corr_d, t=5, kernal_size=3, stride=2, full_t='keep', comp_mid=True)
             if not t_out:
                 self.convs1 = nn.HybridSequential()
                 self.convs2 = nn.HybridSequential()
@@ -612,12 +392,16 @@ class YOLOV3Temporal(gluon.HybridBlock):
             assert self.t == 5, 'Currently only support t=5 but will increase to more later'
 
             if self.t_out:
-                x = TimeDistributed(self.stages[0])(x)
-                routes.append(x)
-                x = TimeDistributed(self.stages[1])(x.slice_axis(axis=1, begin=1, end=4))
-                routes.append(x)
-                x = TimeDistributed(self.stages[2])(x.slice_axis(axis=1, begin=1, end=2))
-                routes.append(x)
+                if self.corr_d:
+                    x = TimeDistributed(self.stages[0])(x)
+
+                else:
+                    x = TimeDistributed(self.stages[0])(x)
+                    routes.append(x)
+                    x = TimeDistributed(self.stages[1])(x.slice_axis(axis=1, begin=1, end=4))
+                    routes.append(x)
+                    x = TimeDistributed(self.stages[2])(x.slice_axis(axis=1, begin=1, end=2))
+                    routes.append(x)
             else:
                 x = TimeDistributed(self.stages[0])(x)
                 routes.append(x.slice_axis(axis=1, begin=2, end=3).squeeze(axis=1))
