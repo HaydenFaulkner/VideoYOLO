@@ -154,6 +154,9 @@ flags.DEFINE_string('h_join_type', None,
 flags.DEFINE_list('hier', [1, 1, 1, 1, 1],
                   'the hierarchical factors, the input must be temporally equal to all these multiplied together')
 
+flags.DEFINE_integer('max_epoch_time', 240,
+                     'Max minutes an epoch can run for before we cut it off')
+
 
 def get_dataset(dataset_name, save_prefix=''):
     if dataset_name.lower() == 'voc':
@@ -541,6 +544,11 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
         btic = time.time()
         net.hybridize()
         for i, batch in enumerate(train_data):
+            if (time.time()-st)/60 > FLAGS.max_epoch_time:
+                logger.info('Max epoch time of %d minutes reached after completing %d%% of epoch. '
+                            'Moving on to next epoch' % (FLAGS.max_epoch_time, int(100*(i/num_batches))))
+                break
+
             batch_size = batch[0].shape[0]
             if FLAGS.features_dir is not None:
                 f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
