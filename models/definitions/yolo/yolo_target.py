@@ -122,6 +122,7 @@ class YOLOV3PrefetchTargetGenerator(gluon.Block):
                     objectness[b, index, match, 0] = (
                         np_gt_mixratios[b, m, 0] if np_gt_mixratios is not None else 1)
                     class_targets[b, index, match, :] = 0
+                    # class_targets[b, index, match, int(np_gt_ids[b, m, :])] = 1  # todo fix for multi classes
                     class_targets[b, index, match, int(np_gt_ids[b, m, 0])] = 1
             # since some stages won't see partial anchors, so we have to slice the correct targets
             objectness = self._slice(objectness, num_anchors, num_offsets)

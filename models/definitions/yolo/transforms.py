@@ -10,6 +10,8 @@ from gluoncv.data.transforms import experimental
 from ...transforms import bbox as tbbox
 from ...transforms import video as tvideo
 
+from models.definitions.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
+
 
 class YOLO3DefaultTrainTransform(object):
     """Default YOLO training transform which includes tons of image augmentations.
@@ -51,7 +53,7 @@ class YOLO3DefaultTrainTransform(object):
         net.collect_params().reset_ctx(None)
         with autograd.train_mode():
             _, self._anchors, self._offsets, self._feat_maps, _, _, _, _ = net(self._fake_x)
-        from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
+        # from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
         self._target_generator = YOLOV3PrefetchTargetGenerator(
             num_class=len(net.classes), **kwargs)
 
@@ -93,7 +95,7 @@ class YOLO3DefaultTrainTransform(object):
 
         # generate training target so cpu workers can help reduce the workload on gpu
         gt_bboxes = mx.nd.array(bbox[np.newaxis, :, :4])
-        gt_ids = mx.nd.array(bbox[np.newaxis, :, 4:5])
+        gt_ids = mx.nd.array(bbox[np.newaxis, :, 4:5])  # make the one-hot here
         if self._mixup:
             gt_mixratio = mx.nd.array(bbox[np.newaxis, :, -1:])
         else:
@@ -185,7 +187,7 @@ class YOLO3VideoTrainTransformOld(object):  # todo delete... new one allows both
             _, self._anchors, self._offsets, self._feat_maps, _, _, _, _ = net(self._fake_x)
 
         self._fake_x = mx.nd.zeros((1, 3, height, width))
-        from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
+        # from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
         self._target_generator = YOLOV3PrefetchTargetGenerator(num_class=len(net.classes), **kwargs)
 
     def __call__(self, src, label):
@@ -301,7 +303,7 @@ class YOLO3VideoTrainTransform(object):
             _, self._anchors, self._offsets, self._feat_maps, _, _, _, _ = net(self._fake_x)
 
         self._fake_x = mx.nd.zeros((1, 3, height, width))
-        from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
+        # from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
         self._target_generator = YOLOV3PrefetchTargetGenerator(num_class=len(net.classes), **kwargs)
 
     def __call__(self, src, label):
@@ -498,7 +500,7 @@ class YOLO3NBVideoTrainTransform(object):
         net.collect_params().reset_ctx(None)
         with autograd.train_mode():
             _, self._anchors, self._offsets, self._feat_maps, _, _, _, _ = net(*self._fake_x)
-        from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
+        # from gluoncv.model_zoo.yolo.yolo_target import YOLOV3PrefetchTargetGenerator
         self._target_generator = YOLOV3PrefetchTargetGenerator(num_class=len(net.classes), **kwargs)
 
     def __call__(self, img, f1, f2, f3, bbox):

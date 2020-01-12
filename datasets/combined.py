@@ -3,11 +3,17 @@
 from gluoncv.data.base import VisionDataset
 import os
 
+from nltk.corpus import wordnet as wn
+
+
+def id_to_name(id):
+    return wn.synset_from_pos_and_offset('n', int(id[1:]))._name
+
 
 class CombinedDetection(VisionDataset):
     """Combined detection Dataset."""
 
-    def __init__(self, datasets, root=os.path.join('datasets', 'combined'), index_map=None):
+    def __init__(self, datasets, root=os.path.join('datasets', 'combined'), class_tree=False):
         """
         :param datasets: list of dataset objects
         :param root: root path to store the dataset, str, default '/datasets/combined/'
@@ -20,6 +26,7 @@ class CombinedDetection(VisionDataset):
         self._datasets = datasets
 
         self._root = os.path.expanduser(root)
+        self._class_tree = class_tree
         self._samples = self._load_samples()
         _, _, self._dataset_class_map = self._get_classes()
 
@@ -31,18 +38,30 @@ class CombinedDetection(VisionDataset):
         Take the classes from each dataset and reassign for the combined dataset
         :return:
         """
-        unique_classes = list()
-        unique_wn_classes = list()
+        classes = list()
+        classes_wn = list()
         dataset_class_maps = list()
-        for dataset_idx, dataset in enumerate(self._datasets):
-            dataset_class_map = list()
-            for cls, wn_cls in zip(dataset.classes, dataset.wn_classes):
-                if wn_cls not in unique_wn_classes:
-                    unique_wn_classes.append(wn_cls)
-                    unique_classes.append(cls)
-                dataset_class_map.append(unique_wn_classes.index(wn_cls))
-            dataset_class_maps.append(dataset_class_map)
-        return unique_classes, unique_wn_classes, dataset_class_maps
+        parents = None
+        if self._class_tree:
+            with open(os.path.join('datasets', 'trees', 'filtered_det.tree'), 'r') as f:
+                lines = f.readlines()
+            lines = [l.rstrip().split for l in lines]
+            parents = dict()
+            for cls in lines:
+                classes_wn.append(cls[0])
+                classes.append(id_to_name(cls[0]))
+                parents[cls[0]] = cls[1]
+
+            for dataset_idx, dataset in enumerate(self._datasets):
+                dataset_class_map = list()
+                for wn_cls in dataset.wn_classes:
+                    if wn_cls not in classes_wn:
+                        classes_wn.append(wn_cls)
+                        classes.append(cls)
+
+                    dataset_class_map.append(classes_wn.index(wn_cls))
+                dataset_class_maps.append(dataset_class_map)
+        return classes, classes_wn, dataset_class_maps, parents
 
     @property
     def classes(self):
@@ -137,6 +156,7 @@ class CombinedDetection(VisionDataset):
 
 
 if __name__ == '__main__':
+
     from datasets.pascalvoc import VOCDetection
     from datasets.mscoco import COCODetection
     from datasets.imgnetdet import ImageNetDetection
