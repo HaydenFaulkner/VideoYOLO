@@ -89,7 +89,7 @@ class CombinedDetection(VisionDataset):
     def _load_samples(self):
         samples = []
         for dataset_idx, dataset in enumerate(self._datasets):
-            for idx, item in enumerate(dataset):
+            for idx in range(len(dataset)):
                 samples.append((dataset_idx, idx, len(samples)))
         return samples
 
