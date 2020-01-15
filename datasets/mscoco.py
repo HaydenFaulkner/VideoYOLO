@@ -113,7 +113,7 @@ class COCODetection(VisionDataset):
 
         """
         dirname, filename = entry['coco_url'].split('/')[-2:]
-        abs_path = os.path.join(self.root, dirname, filename)
+        abs_path = os.path.join(self.root, 'images', dirname, filename)
         return abs_path
 
     def __len__(self):
