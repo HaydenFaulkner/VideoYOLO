@@ -25,6 +25,7 @@ from datasets.pascalvoc import VOCDetection
 from datasets.mscoco import COCODetection
 from datasets.imgnetdet import ImageNetDetection
 from datasets.imgnetvid import ImageNetVidDetection
+from datasets.combined import CombinedDetection
 
 from metrics.pascalvoc import VOCMApMetric, VOCMApMetricTemporal
 from metrics.mscoco import COCODetectionMetric
@@ -42,8 +43,8 @@ logging.basicConfig(level=logging.INFO)
 
 flags.DEFINE_string('network', 'darknet53',
                     'Base network name: darknet53')
-flags.DEFINE_string('dataset', 'voc',
-                    'Dataset to train on.')
+flags.DEFINE_list('dataset', ['voc'],
+                  'Datasets to train on.')
 flags.DEFINE_string('trained_on', '',
                     'Used for finetuning, specify the dataset the original model was trained on.')
 flags.DEFINE_string('save_prefix', '0001',
@@ -57,6 +58,8 @@ flags.DEFINE_integer('val_interval', 1,
                      'Epoch interval for validation.')
 flags.DEFINE_string('resume', '',
                     'Resume from previously saved parameters if not None.')
+flags.DEFINE_boolean('nd_only', False,
+                     'Do not hybridize the model.')
 
 flags.DEFINE_integer('batch_size', 64,
                      'Batch size for detection: higher faster, but more memory intensive.')
@@ -159,36 +162,48 @@ flags.DEFINE_integer('max_epoch_time', 240,
 
 
 def get_dataset(dataset_name, save_prefix=''):
-    if dataset_name.lower() == 'voc':
-        train_dataset = VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')], features_dir=FLAGS.features_dir)
-        val_dataset = VOCDetection(splits=[(2007, 'test')], features_dir=FLAGS.features_dir)
-        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+    train_datasets = list()
+    val_datasets = list()
 
-    elif dataset_name.lower() == 'coco':
-        train_dataset = COCODetection(splits=['instances_train2017'], use_crowd=False)
-        val_dataset = COCODetection(splits=['instances_val2017'], allow_empty=True)
-        val_metric = COCODetectionMetric(val_dataset, save_prefix + '_eval', cleanup=True,
+    # if dataset_name.lower() == 'voc':
+    if 'voc' in dataset_name:
+        train_datasets.append(VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')],
+                                           features_dir=FLAGS.features_dir))
+        val_datasets.append(VOCDetection(splits=[(2007, 'test')], features_dir=FLAGS.features_dir))
+        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_datasets[-1].classes)
+
+    if 'coco' in dataset_name:
+        train_datasets.append(COCODetection(splits=['instances_train2017'], use_crowd=False))
+        val_datasets.append(COCODetection(splits=['instances_val2017'], allow_empty=True))
+        val_metric = COCODetectionMetric(val_datasets[-1], save_prefix + '_eval', cleanup=True,
                                          data_shape=(FLAGS.data_shape, FLAGS.data_shape))
 
-    elif dataset_name.lower() == 'det':
-        train_dataset = ImageNetDetection(splits=['train'], allow_empty=FLAGS.allow_empty)
-        val_dataset = ImageNetDetection(splits=['val'], allow_empty=FLAGS.allow_empty)
-        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+    if 'det' in dataset_name:
+        train_datasets.append(ImageNetDetection(splits=['train'], allow_empty=FLAGS.allow_empty))
+        val_datasets.append(ImageNetDetection(splits=['val'], allow_empty=FLAGS.allow_empty))
+        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_datasets[-1].classes)
 
-    elif dataset_name.lower() == 'vid':
-        train_dataset = ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty,
+    if 'vid' in dataset_name:
+        train_datasets.append(ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty,
                                              every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir,
-                                             mult_out=FLAGS.mult_out)
-        val_dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty,
+                                             mult_out=FLAGS.mult_out))
+        val_datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty,
                                            every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir,
-                                           mult_out=FLAGS.mult_out)
+                                           mult_out=FLAGS.mult_out))
         if FLAGS.mult_out:
-            val_metric = VOCMApMetricTemporal(t=int(FLAGS.window[0]), iou_thresh=0.5, class_names=val_dataset.classes)
+            val_metric = VOCMApMetricTemporal(t=int(FLAGS.window[0]), iou_thresh=0.5, class_names=val_datasets[-1].classes)
         else:
-            val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
+            val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_datasets[-1].classes)
 
-    else:
+    if len(train_datasets) == 0:
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset_name))
+    elif len(train_datasets) == 1:
+        train_dataset = train_datasets[0]
+        val_dataset = val_datasets[0]
+    else:
+        train_dataset = CombinedDetection(train_datasets, class_tree=True)
+        val_dataset = CombinedDetection(val_datasets, class_tree=True)
+        val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     if FLAGS.mixup:
         from gluoncv.data import MixupDetection
@@ -296,6 +311,12 @@ def resume(net, async_net, resume, start_epoch):
 
 
 def get_net(trained_on_dataset, ctx, definition='ours'):
+    # handle hierarchical classes, need to pass through a list of lists to the model used for masking classes for NMS
+    # only used during testing/inference
+    hier_info = None
+    if hasattr(trained_on_dataset, 'leaves'):
+        hier_info = [trained_on_dataset.class_levels, trained_on_dataset.leaves]
+
     if FLAGS.features_dir is not None:
         if FLAGS.syncbn and len(ctx) > 1:
             net = yolo3_no_backbone(trained_on_dataset.classes,
@@ -305,6 +326,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
         else:
             net = yolo3_no_backbone(trained_on_dataset.classes)
             async_net = net
+
     elif definition == 'ours':  # our model definition from definitions.py, atm equiv to defaults, but might be useful in future
         if FLAGS.network == 'darknet53':
             if FLAGS.syncbn and len(ctx) > 1:
@@ -320,7 +342,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
                                           hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out)
+                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out, hier_info=hier_info)
                     async_net = yolo3_darknet53(trained_on_dataset.classes,
                                                 pretrained_base=False,
                                                 freeze_base=bool(FLAGS.freeze_base),
@@ -330,7 +352,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                                 motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating,
                                                 new_model=FLAGS.new_model,
                                                 hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                                temporal=FLAGS.temp, t_out=FLAGS.mult_out)  # used by cpu worker
+                                                temporal=FLAGS.temp, t_out=FLAGS.mult_out, hier_info=hier_info)  # used by cpu worker
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
                                           pretrained_base=FLAGS.pretrained_cnn,
@@ -352,7 +374,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
                                           hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out)
+                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out, hier_info=hier_info)
                     async_net = net
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
@@ -400,7 +422,8 @@ def validate(net, val_data, ctx, eval_metric):
     # set nms threshold and topk constraint
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     mx.nd.waitall()
-    net.hybridize()
+    if not FLAGS.nd_only:
+        net.hybridize()
     for batch in val_data:
         if FLAGS.features_dir is not None:
             f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
@@ -542,7 +565,8 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
 
         tic = time.time()
         btic = time.time()
-        net.hybridize()
+        if not FLAGS.nd_only:
+            net.hybridize()
         for i, batch in enumerate(train_data):
             if (time.time()-st)/60 > FLAGS.max_epoch_time:
                 logger.info('Max epoch time of %d minutes reached after completing %d%% of epoch. '
@@ -587,6 +611,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
                         scale_losses.append(scale_loss)
                         cls_losses.append(cls_loss)
                     autograd.backward(sum_losses)
+
             if FLAGS.motion_stream is None:
                 trainer.step(batch_size)
             else:
@@ -643,7 +668,7 @@ def main(_argv):
     FLAGS.hier = [int(s) for s in FLAGS.hier]
 
     if FLAGS.window[0] > 1:
-        assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'
+        assert 'vid' in FLAGS.dataset, 'If using window size >1 you can only use the vid dataset'
     else:
         FLAGS.k_join_type = None  # can't pool 1 frame..
         FLAGS.k_join_pos = None
@@ -673,6 +698,8 @@ def main(_argv):
                       "--resume".format(os.path.join('models', 'experiments', FLAGS.save_prefix)))
         return
     os.makedirs(os.path.join('models', 'experiments', FLAGS.save_prefix), exist_ok=True)
+    if isinstance(FLAGS.dataset, list):
+        FLAGS.dataset = '-'.join(FLAGS.dataset)
     net_name = '_'.join(('yolo3', FLAGS.network, FLAGS.dataset))
     save_prefix = os.path.join('models', 'experiments', FLAGS.save_prefix, net_name)
 
