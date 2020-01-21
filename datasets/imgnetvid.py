@@ -188,7 +188,7 @@ class ImageNetVidDetection(VisionDataset):
             label = self._load_label(self.sample_ids[idx])[:, :-1]  # remove track id
 
             if self._window_size > 1:  # lets load the temporal window
-                imgs = None
+                imgs = list()
                 lbls = list()
                 window_sample_ids = self._windows[self.sample_ids[idx]]
 
@@ -202,14 +202,15 @@ class ImageNetVidDetection(VisionDataset):
                         img, lbl = self._transform(img, lbl)
 
                     lbls.append(lbl)
-                    if imgs is None:
-                        # imgs = img  # is the first frame in the window
-                        imgs = mx.nd.expand_dims(img, axis=0)  # is the first frame in the window
-                    else:
-                        # imgs = mx.ndarray.concatenate([imgs, img], axis=2)  # isn't first frame, concat to the window
-                        imgs = mx.nd.concatenate([imgs, mx.nd.expand_dims(img, axis=0)], axis=0)
+                    imgs.append(img)  # speedup using list instead of concat
+                    # if imgs is None:
+                    #     # imgs = img  # is the first frame in the window
+                    #     imgs = mx.nd.expand_dims(img, axis=0)  # is the first frame in the window
+                    # else:
+                    #     # imgs = mx.ndarray.concatenate([imgs, img], axis=2)  # isn't first frame, concat to the window
+                    #     imgs = mx.nd.concatenate([imgs, mx.nd.expand_dims(img, axis=0)], axis=0)
 
-                img = imgs
+                img = mx.nd.stack(*imgs)
                 if self._mult_out:
                     label = lbls
                 elif self._transform is not None:
@@ -236,8 +237,8 @@ class ImageNetVidDetection(VisionDataset):
         else:
             sample_id = self.sample_ids[idx]
             sample = self.samples[sample_id]
-            vid = None
-            labels = None
+            vid = list()
+            labels = list()
             for frame_id in sample[2]:  # for each frame in the video
                 # load the frame and the label
                 img_id = (sample[0], sample[1], frame_id)
@@ -252,14 +253,18 @@ class ImageNetVidDetection(VisionDataset):
                 # pad label to ensure all same size for concatenation
                 label = self._pad_to_dense(label, 20)
 
-                # concatenate the data to make video and label volumes
-                if labels is None:
-                    vid = mx.ndarray.expand_dims(img, axis=0)
-                    labels = np.expand_dims(label, axis=0)
-                else:
-                    vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, axis=0)], axis=0)
-                    labels = np.concatenate((labels, np.expand_dims(label, axis=0)), axis=0)
+                # # concatenate the data to make video and label volumes
+                vid.append(img)
+                labels.append(label)
+                # if labels is None:
+                #     vid = mx.ndarray.expand_dims(img, axis=0)
+                #     labels = np.expand_dims(label, axis=0)
+                # else:
+                #     vid = mx.ndarray.concatenate([vid, mx.ndarray.expand_dims(img, axis=0)], axis=0)
+                #     labels = np.concatenate((labels, np.expand_dims(label, axis=0)), axis=0)
 
+            vid = mx.nd.stack(*vid)
+            labels = np.array(labels)
             # necessary to prevent asynchronous operation overload and memory issue
             # https://discuss.mxnet.io/t/memory-leak-when-running-cpu-inference/3256
             mx.nd.waitall()
