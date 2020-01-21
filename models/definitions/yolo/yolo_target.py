@@ -95,7 +95,9 @@ class YOLOV3PrefetchTargetGenerator(gluon.Block):
             valid_gts = (gt_boxes >= 0).asnumpy().prod(axis=-1)  # (B, M)
             np_gtx, np_gty, np_gtw, np_gth = [x.asnumpy() for x in [gtx, gty, gtw, gth]]
             np_anchors = all_anchors.asnumpy()
-            np_gt_ids = gt_ids.asnumpy()
+            np_gt_ids = None
+            if gt_ids.shape[-1] == 1:
+                np_gt_ids = gt_ids.asnumpy()
             np_gt_mixratios = gt_mixratio.asnumpy() if gt_mixratio is not None else None
             # TODO(zhreshold): the number of valid gt is not a big number, therefore for loop
             # should not be a problem right now. Switch to better solution is needed.
@@ -122,8 +124,10 @@ class YOLOV3PrefetchTargetGenerator(gluon.Block):
                     objectness[b, index, match, 0] = (
                         np_gt_mixratios[b, m, 0] if np_gt_mixratios is not None else 1)
                     class_targets[b, index, match, :] = 0
-                    # class_targets[b, index, match, int(np_gt_ids[b, m, :])] = 1  # todo fix for multi classes
-                    class_targets[b, index, match, int(np_gt_ids[b, m, 0])] = 1
+                    if np_gt_ids is not None:
+                        class_targets[b, index, match, int(np_gt_ids[b, m, 0])] = 1
+                    else:
+                        class_targets[b, index, match, :] = gt_ids[b, m, :]  # add for all of them
             # since some stages won't see partial anchors, so we have to slice the correct targets
             objectness = self._slice(objectness, num_anchors, num_offsets)
             center_targets = self._slice(center_targets, num_anchors, num_offsets)

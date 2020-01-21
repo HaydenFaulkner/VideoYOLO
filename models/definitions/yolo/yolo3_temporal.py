@@ -525,7 +525,7 @@ class YOLOV3Temporal(gluon.HybridBlock):
                     for i, l in enumerate(ls):
                         losses[i].append(l)
 
-                return [F.sum(F.concat(*l, dim=0)) for l in losses]
+                return [F.mean(F.concat(*l, dim=0)) for l in losses]
 
             if self.t > 1 and self.t_out:
                 all_anchors = [F.slice_axis(a, axis=1, begin=1, end=2).squeeze(axis=1) for a in all_anchors]
