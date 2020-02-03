@@ -111,6 +111,8 @@ flags.DEFINE_integer('num_workers', 8,
                      ' for max parallelization.')
 flags.DEFINE_boolean('new_model', False,
                      'Use features Yolo (new) or stages Yolo (old)?')
+flags.DEFINE_integer('offset', 0,
+                     'If mult_out specified this selects the offset to test. Can be -2, -1, 0, 1, 2')
 
 
 def get_dataset(dataset_name):
@@ -189,6 +191,8 @@ def detect(net, dataset, loader, ctx, max_do=-1):
     net.set_nms(nms_thresh=0.45, nms_topk=400)
     # net.hybridize()
     boxes = dict()
+    if FLAGS.mult_out:
+        boxes = [dict(), dict(), dict(), dict(), dict()]
     if max_do < 0:
         max_do = len(dataset)
     c = 0
@@ -219,18 +223,37 @@ def detect(net, dataset, loader, ctx, max_do=-1):
 
             for id, score, box, sidx in zip(*[as_numpy(x) for x in [det_ids, det_scores, det_bboxes, sidxs]]):
 
-                file = dataset.sample_path(int(sidx))
+                if FLAGS.mult_out:
+                    files = dataset.window_paths(int(sidx))
 
-                valid_pred = np.where(id.flat >= 0)[0]  # get the boxes that have a class assigned
-                box = box[valid_pred, :] / batch[0].shape[-1]  # normalise boxes
-                id = id.flat[valid_pred].astype(int)
-                score = score.flat[valid_pred]
+                    for offset, file in enumerate(files):
+                        if offset != 2 and file == files[2]:
+                            continue  # we skip the offset frames if they are the same as the central frame, prevents repeating the boundary frames
 
-                for id_, box_, score_ in zip(id, box, score):
-                    if file in boxes:
-                        boxes[file].append([id_, score_]+list(box_))
-                    else:
-                        boxes[file] = [[id_, score_]+list(box_)]
+                        valid_pred = np.where(id[offset].flat >= 0)[0]  # get the boxes that have a class assigned
+                        box_o = box[offset, valid_pred, :] / batch[0].shape[-1]  # normalise boxes
+                        id_o = id[offset].flat[valid_pred].astype(int)
+                        score_o = score[offset].flat[valid_pred]
+
+                        for id_, box_, score_ in zip(id_o, box_o, score_o):
+                            if file in boxes:
+                                boxes[offset][file].append([id_, score_] + list(box_))
+                            else:
+                                boxes[offset][file] = [[id_, score_] + list(box_)]
+
+                else:
+                    file = dataset.sample_path(int(sidx))
+
+                    valid_pred = np.where(id.flat >= 0)[0]  # get the boxes that have a class assigned
+                    box = box[valid_pred, :] / batch[0].shape[-1]  # normalise boxes
+                    id = id.flat[valid_pred].astype(int)
+                    score = score.flat[valid_pred]
+
+                    for id_, box_, score_ in zip(id, box, score):
+                        if file in boxes:
+                            boxes[file].append([id_, score_]+list(box_))
+                        else:
+                            boxes[file] = [[id_, score_]+list(box_)]
 
             pbar.update(batch[0].shape[0])
             c += batch[0].shape[0]
@@ -255,17 +278,34 @@ def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1, agnost
         max_do = len(dataset)
 
     for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out prediction .txts"):
-        img_path = dataset.sample_path(idx)
 
-        file_id = img_path.split('/')[-1][:-4]
-        if FLAGS.dataset == 'vid':
-            file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
-            os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
+        if FLAGS.temp:
+            img_paths = dataset.window_paths(idx)
 
-        with open(os.path.join(save_dir, file_id + '.txt'), 'w') as f:
-            if img_path in boxes:
-                for box in boxes[img_path]:  # sid, class, score, box
-                    f.write("{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5]))
+            for offset, img_path in enumerate(img_paths):
+
+                file_id = img_path.split('/')[-1][:-4]
+                if FLAGS.dataset == 'vid':
+                    file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+                    os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
+
+                with open(os.path.join(save_dir, file_id + '_' + str(offset-2) + '.txt'), 'w') as f:
+                    if img_path in boxes[offset]:
+                        for box in boxes[offset][img_path]:  # sid, class, score, box
+                            f.write(
+                                "{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5]))
+        else:
+            img_path = dataset.sample_path(idx)
+
+            file_id = img_path.split('/')[-1][:-4]
+            if FLAGS.dataset == 'vid':
+                file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+                os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
+
+            with open(os.path.join(save_dir, file_id + '.txt'), 'w') as f:
+                if img_path in boxes:
+                    for box in boxes[img_path]:  # sid, class, score, box
+                        f.write("{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5]))
 
 
 def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
@@ -283,44 +323,90 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
             logging.error("Predictions directory does not exist {}".format(os.path.join(save_dir, 'metric')))
             return None
 
-    boxes = dict()
-    for idx in tqdm(range(min(len(dataset), max_do)), desc="Loading in prediction .txts"):
-        img_path = dataset.sample_path(idx)
+    if FLAGS.mult_out:
+        boxes = [dict(), dict(), dict(), dict(), dict()]
+        for idx in tqdm(range(min(len(dataset), max_do)), desc="Loading in prediction .txts"):
+            img_paths = dataset.window_paths(idx)
 
-        file_id = img_path.split('/')[-1][:-4]
-        if FLAGS.dataset == 'vid':
-            file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+            for offset, img_path in enumerate(img_paths):
 
-        add_metrics = False
-        if metric is None:
-            file_path = os.path.join(save_dir, file_id + '.txt')
-            if not os.path.exists(file_path):
-                logging.error("Prediction file does not exist {}".format(file_path))
-                return None
-        else:  # todo allow specific metrics
-            file_path = os.path.join(save_dir, 'metric', file_id + '.txt')
-            if not os.path.exists(file_path):
-                if not os.path.exists(os.path.join(save_dir, 'pred', file_id + '.txt')):
+                file_id = img_path.split('/')[-1][:-4]
+                if FLAGS.dataset == 'vid':
+                    file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+
+                add_metrics = False
+                if metric is None:
+                    file_path = os.path.join(save_dir, file_id + '_' + str(offset-2) + '.txt')
+                    if not os.path.exists(file_path):
+                        logging.error("Prediction file does not exist {}".format(file_path))
+                        return None
+                else:  # todo allow specific metrics
+                    file_path = os.path.join(save_dir, 'metric', file_id + '_' + str(offset-2) + '.txt')
+                    if not os.path.exists(file_path):
+                        if not os.path.exists(os.path.join(save_dir, 'pred', file_id + '.txt')):
+                            logging.error("Prediction file does not exist {}".format(file_path))
+                            return None
+                        else:
+                            add_metrics = True
+
+                with open(file_path, 'r') as f:
+                    bb = [line.rstrip().split(',') for line in f.readlines()]
+
+                if metric is not None and not add_metrics:
+                    for box in bb:
+                        if box[0] in boxes[offset]:
+                            boxes[offset][box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6]), float(box[7])])
+                        else:
+                            boxes[offset][box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6]), float(box[7])]]
+                else:
+                    for box in bb:
+                        if box[0] in boxes[offset]:
+                            boxes[offset][box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])])
+                        else:
+                            boxes[offset][box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])]]
+
+    else:
+        boxes = dict()
+
+        for idx in tqdm(range(min(len(dataset), max_do)), desc="Loading in prediction .txts"):
+            img_path = dataset.sample_path(idx)
+
+            file_id = img_path.split('/')[-1][:-4]
+            if FLAGS.dataset == 'vid':
+                file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+
+            add_metrics = False
+            if metric is None:
+                file_path = os.path.join(save_dir, file_id + '.txt')
+                if not os.path.exists(file_path):
                     logging.error("Prediction file does not exist {}".format(file_path))
                     return None
-                else:
-                    add_metrics = True
+            else:  # todo allow specific metrics
+                file_path = os.path.join(save_dir, 'metric', file_id + '.txt')
+                if not os.path.exists(file_path):
+                    if not os.path.exists(os.path.join(save_dir, 'pred', file_id + '.txt')):
+                        logging.error("Prediction file does not exist {}".format(file_path))
+                        return None
+                    else:
+                        add_metrics = True
 
-        with open(file_path, 'r') as f:
-            bb = [line.rstrip().split(',') for line in f.readlines()]
+            with open(file_path, 'r') as f:
+                bb = [line.rstrip().split(',') for line in f.readlines()]
 
-        if metric is not None and not add_metrics:
-            for box in bb:
-                if box[0] in boxes:
-                    boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6]), float(box[7])])
-                else:
-                    boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6]), float(box[7])]]
-        else:
-            for box in bb:
-                if box[0] in boxes:
-                    boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])])
-                else:
-                    boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])]]
+            if metric is not None and not add_metrics:
+                for box in bb:
+                    if box[0] in boxes:
+                        boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6]), float(box[7])])
+                    else:
+                        boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6]), float(box[7])]]
+            else:
+                for box in bb:
+                    if box[0] in boxes:
+                        boxes[box[0]].append([int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])])
+                    else:
+                        boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])]]
+
+
 
     if add_metrics:
         boxes = add_metrics_to_predictions(save_dir, dataset, metric)
@@ -673,6 +759,9 @@ def main(_argv):
     if predictions is None:  # id not exist detect and make
         predictions = detect(net, dataset, loader, ctx, max_do=max_do)  # todo fix det thresh
         save_predictions(save_dir, dataset, predictions, agnostic=FLAGS.model_agnostic)
+
+    if FLAGS.mult_out:
+        predictions = predictions[FLAGS.offset+2]
 
     if FLAGS.visualise:
         visualise_predictions(save_dir, dataset, trained_on_dataset, predictions,

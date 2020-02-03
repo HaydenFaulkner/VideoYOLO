@@ -231,6 +231,8 @@ class ImageNetVidDetection(VisionDataset):
             mx.nd.waitall()
 
             if self._inference:  # in inference we want to return the idx also
+                if self._mult_out:
+                    return img, label, idx
                 return img, label, idx
             else:
                 return img, label
@@ -280,6 +282,12 @@ class ImageNetVidDetection(VisionDataset):
             return os.path.join(sample[0], sample[1], sample[2])
 
         return self._image_path.format(*self.samples[self.sample_ids[idx]])
+
+    def window_paths(self, idx):
+        window_sample_ids = self._windows[self.sample_ids[idx]]
+
+        paths = [self._image_path.format(*self.all_samples[sid])for sid in window_sample_ids]
+        return paths
 
     def _only_every(self, samples, every):
         if self._videos:
