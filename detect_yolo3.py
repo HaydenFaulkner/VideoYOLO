@@ -205,9 +205,9 @@ def detect(net, dataset, loader, ctx, max_do=-1):
             det_bboxes = []
             det_ids = []
             det_scores = []
-            gt_bboxes = []
-            gt_ids = []
-            gt_difficults = []
+            # gt_bboxes = []
+            # gt_ids = []
+            # gt_difficults = []
             sidxs = []
             for x, y, sidx in zip(data, label, idxs):
                 ids, scores, bboxes = net(x)
@@ -216,9 +216,9 @@ def detect(net, dataset, loader, ctx, max_do=-1):
                 # clip to image size
                 det_bboxes.append(bboxes.clip(0, batch[0].shape[-1]))
                 # split ground truths
-                gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
-                gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
-                gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
+                # gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
+                # gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
+                # gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
                 sidxs.append(sidx)
 
             for id, score, box, sidx in zip(*[as_numpy(x) for x in [det_ids, det_scores, det_bboxes, sidxs]]):
@@ -236,7 +236,7 @@ def detect(net, dataset, loader, ctx, max_do=-1):
                         score_o = score[offset].flat[valid_pred]
 
                         for id_, box_, score_ in zip(id_o, box_o, score_o):
-                            if file in boxes:
+                            if file in boxes[offset]:
                                 boxes[offset][file].append([id_, score_] + list(box_))
                             else:
                                 boxes[offset][file] = [[id_, score_] + list(box_)]
@@ -279,7 +279,7 @@ def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1, agnost
 
     for idx in tqdm(range(min(len(dataset), max_do)), desc="Saving out prediction .txts"):
 
-        if FLAGS.temp:
+        if FLAGS.mult_out:
             img_paths = dataset.window_paths(idx)
 
             for offset, img_path in enumerate(img_paths):
@@ -624,7 +624,7 @@ def video_of_worst(video_path, frames_dir, summary_file=None, fps=4):
 
 def evaluate(metrics, dataset, predictions):
     for idx in tqdm(range(len(dataset)), desc="Evaluating with metrics"):
-
+        # todo for offset != 0 we need to get appropriate img_path and gt
         img_path = dataset.sample_path(idx)
 
         # get the gt boxes : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
