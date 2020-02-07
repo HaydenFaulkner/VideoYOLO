@@ -191,6 +191,7 @@ class ImageNetVidDetection(VisionDataset):
                 imgs = list()
                 lbls = list()
                 window_sample_ids = self._windows[self.sample_ids[idx]]
+                window_sample_ids = window_sample_ids[:self._window_size]
 
                 # go through the sample ids for the window
                 for sid in window_sample_ids:
