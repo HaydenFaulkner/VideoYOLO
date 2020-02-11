@@ -45,6 +45,8 @@ flags.DEFINE_string('network', 'darknet53',
                     'Base network name: darknet53')
 flags.DEFINE_list('dataset', ['voc'],
                   'Datasets to train on.')
+flags.DEFINE_list('dataset_val', ['voc'],
+                  'Datasets to test on.')
 flags.DEFINE_string('trained_on', '',
                     'Used for finetuning, specify the dataset the original model was trained on.')
 flags.DEFINE_string('save_prefix', '0001',
@@ -161,7 +163,7 @@ flags.DEFINE_integer('max_epoch_time', 240,
                      'Max minutes an epoch can run for before we cut it off')
 
 
-def get_dataset(dataset_name, save_prefix=''):
+def get_dataset(dataset_name, dataset_val_name, save_prefix=''):
     train_datasets = list()
     val_datasets = list()
 
@@ -169,17 +171,23 @@ def get_dataset(dataset_name, save_prefix=''):
     if 'voc' in dataset_name:
         train_datasets.append(VOCDetection(splits=[(2007, 'trainval'), (2012, 'trainval')],
                                            features_dir=FLAGS.features_dir))
+
+    if 'voc' in dataset_val_name:
         val_datasets.append(VOCDetection(splits=[(2007, 'test')], features_dir=FLAGS.features_dir))
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_datasets[-1].classes)
 
     if 'coco' in dataset_name:
         train_datasets.append(COCODetection(splits=['instances_train2017'], use_crowd=False))
+
+    if 'coco' in dataset_val_name:
         val_datasets.append(COCODetection(splits=['instances_val2017'], allow_empty=True))
         val_metric = COCODetectionMetric(val_datasets[-1], save_prefix + '_eval', cleanup=True,
                                          data_shape=(FLAGS.data_shape, FLAGS.data_shape))
 
     if 'det' in dataset_name:
         train_datasets.append(ImageNetDetection(splits=['train'], allow_empty=FLAGS.allow_empty))
+
+    if 'det' in dataset_val_name:
         val_datasets.append(ImageNetDetection(splits=['val'], allow_empty=FLAGS.allow_empty))
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_datasets[-1].classes)
 
@@ -187,6 +195,8 @@ def get_dataset(dataset_name, save_prefix=''):
         train_datasets.append(ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=FLAGS.allow_empty,
                                              every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir,
                                              mult_out=FLAGS.mult_out))
+
+    if 'vid' in dataset_val_name:
         val_datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=FLAGS.allow_empty,
                                            every=FLAGS.every, window=FLAGS.window, features_dir=FLAGS.features_dir,
                                            mult_out=FLAGS.mult_out))
@@ -199,9 +209,14 @@ def get_dataset(dataset_name, save_prefix=''):
         raise NotImplementedError('Dataset: {} not implemented.'.format(dataset_name))
     elif len(train_datasets) == 1:
         train_dataset = train_datasets[0]
-        val_dataset = val_datasets[0]
     else:
         train_dataset = CombinedDetection(train_datasets, class_tree=True)
+
+    if len(val_datasets) == 0:
+        raise NotImplementedError('Dataset: {} not implemented.'.format(dataset_name))
+    elif len(val_datasets) == 1 and len(train_datasets) == 1:
+            val_dataset = val_datasets[0]
+    else:
         val_dataset = CombinedDetection(val_datasets, class_tree=True)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
@@ -689,7 +704,8 @@ def main(_argv):
     ctx = ctx if ctx else [mx.cpu()]
 
     # training data
-    train_dataset, val_dataset, eval_metric = get_dataset(FLAGS.dataset, os.path.join('models', 'experiments', FLAGS.save_prefix))
+    train_dataset, val_dataset, eval_metric = get_dataset(FLAGS.dataset, FLAGS.dataset_val,
+                                                          os.path.join('models', 'experiments', FLAGS.save_prefix))
 
     trained_on_dataset = train_dataset
     if FLAGS.trained_on:
