@@ -443,11 +443,11 @@ def validate(net, val_data, ctx, eval_metric):
     if not FLAGS.nd_only:
         net.hybridize()
     st = time.time()
-    for batch in val_data:
-        if (time.time() - st) / 60 > FLAGS.max_epoch_time:
-            print('Max validation time of %d minutes reached after completing %d%% of epoch. '
-                  'Moving on to next epoch' % (FLAGS.max_epoch_time, int(100 * (batch / len(val_data)))))
-            break
+    for bi, batch in enumerate(val_data):
+        # if (time.time() - st) / 60 > FLAGS.max_epoch_time:
+        #     print('Max validation time of %d minutes reached after completing %d%% of val data. '
+        #           'Moving on to next epoch' % (FLAGS.max_epoch_time, int(100 * (bi / len(val_data)))))
+        #     break
         if FLAGS.features_dir is not None:
             f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
             f2 = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
