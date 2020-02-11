@@ -45,7 +45,7 @@ flags.DEFINE_string('network', 'darknet53',
                     'Base network name: darknet53')
 flags.DEFINE_list('dataset', ['voc'],
                   'Datasets to train on.')
-flags.DEFINE_list('dataset_val', ['voc'],
+flags.DEFINE_list('dataset_val', [],
                   'Datasets to test on.')
 flags.DEFINE_string('trained_on', '',
                     'Used for finetuning, specify the dataset the original model was trained on.')
@@ -166,6 +166,9 @@ flags.DEFINE_integer('max_epoch_time', 240,
 def get_dataset(dataset_name, dataset_val_name, save_prefix=''):
     train_datasets = list()
     val_datasets = list()
+
+    if len(dataset_val_name) == 0:
+        dataset_val_name = dataset_name
 
     # if dataset_name.lower() == 'voc':
     if 'voc' in dataset_name:
