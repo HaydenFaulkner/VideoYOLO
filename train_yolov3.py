@@ -706,6 +706,8 @@ def main(_argv):
     ctx = [mx.gpu(int(i)) for i in FLAGS.gpus]
     ctx = ctx if ctx else [mx.cpu()]
 
+    print(ctx)
+
     # training data
     train_dataset, val_dataset, eval_metric = get_dataset(FLAGS.dataset, FLAGS.dataset_val,
                                                           os.path.join('models', 'experiments', FLAGS.save_prefix))
