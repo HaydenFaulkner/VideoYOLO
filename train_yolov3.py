@@ -9,6 +9,7 @@ import multiprocessing
 import time
 import warnings
 import numpy as np
+from tqdm import tqdm
 
 from gluoncv import utils as gutils
 from gluoncv.data.batchify import Tuple, Stack, Pad
@@ -443,7 +444,7 @@ def validate(net, val_data, ctx, eval_metric):
     if not FLAGS.nd_only:
         net.hybridize()
     st = time.time()
-    for bi, batch in enumerate(val_data):
+    for bi, batch in tqdm(enumerate(val_data), total=len(val_data), desc='testing'):
         # if (time.time() - st) / 60 > FLAGS.max_epoch_time:
         #     print('Max validation time of %d minutes reached after completing %d%% of val data. '
         #           'Moving on to next epoch' % (FLAGS.max_epoch_time, int(100 * (bi / len(val_data)))))
@@ -658,6 +659,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
                 tb_sw.add_scalar(tag='Training_' + name3, scalar_value=loss3, global_step=(epoch * len(train_data) + i))
                 tb_sw.add_scalar(tag='Training_' + name4, scalar_value=loss4, global_step=(epoch * len(train_data) + i))
             btic = time.time()
+            break
 
         name1, loss1 = obj_metrics.get()
         name2, loss2 = center_metrics.get()
