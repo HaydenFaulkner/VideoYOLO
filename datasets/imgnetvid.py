@@ -282,6 +282,20 @@ class ImageNetVidDetection(VisionDataset):
             sample = self.samples[self.sample_ids[idx]]
             return os.path.join(sample[0], sample[1], sample[2])
 
+        if self._mult_out:
+            img_paths = list()
+
+            assert self._window_size > 1
+
+            window_sample_ids = self._windows[self.sample_ids[idx]]
+            window_sample_ids = window_sample_ids[:self._window_size]
+
+            # go through the sample ids for the window
+            for sid in window_sample_ids:
+                img_paths.append(self._image_path.format(*self.all_samples[sid]))
+
+            return img_paths
+
         return self._image_path.format(*self.samples[self.sample_ids[idx]])
 
     def window_paths(self, idx):

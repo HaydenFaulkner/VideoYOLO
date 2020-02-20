@@ -127,7 +127,7 @@ def get_dataset(dataset_name):
 
     elif dataset_name.lower() == 'vid':
         dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=FLAGS.every,
-                                       window=FLAGS.window, inference=True)
+                                       window=FLAGS.window, inference=True, mult_out=FLAGS.mult_out)
 
     elif dataset_name[-4:] == '.txt':  # list of images or list of videos
         with open(dataset_name, 'r') as f:
@@ -406,8 +406,6 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
                     else:
                         boxes[box[0]] = [[int(box[1]), float(box[2]), float(box[3]), float(box[4]), float(box[5]), float(box[6])]]
 
-
-
     if add_metrics:
         boxes = add_metrics_to_predictions(save_dir, dataset, metric)
 
@@ -624,17 +622,21 @@ def video_of_worst(video_path, frames_dir, summary_file=None, fps=4):
 
 def evaluate(metrics, dataset, predictions):
     for idx in tqdm(range(len(dataset)), desc="Evaluating with metrics"):
-        # todo for offset != 0 we need to get appropriate img_path and gt
         img_path = dataset.sample_path(idx)
+        if FLAGS.mult_out:
+            img_path = img_path[FLAGS.offset + 2]
 
-        # get the gt boxes : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
-        img, y, _ = dataset[idx]
-        gt_bboxes = [np.expand_dims(y[:, :4], axis=0)]
-        gt_ids = [np.expand_dims(y[:, 4], axis=0)]
-        gt_difficults = [np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None]
-
-        # get the predictions : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
         if img_path in predictions:
+            # get the gt boxes : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
+            img, y, _ = dataset[idx]
+            if FLAGS.mult_out:
+                img = img[FLAGS.offset+2]
+                y = y[FLAGS.offset+2]
+            gt_bboxes = [np.expand_dims(y[:, :4], axis=0)]
+            gt_ids = [np.expand_dims(y[:, 4], axis=0)]
+            gt_difficults = [np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None]
+
+            # get the predictions : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
             det_bboxes = [[[[b[2]*img.shape[-2],  # change pred box dims to match image (unnormalise them)
                              b[3]*img.shape[-3],
                              b[4]*img.shape[-2],
@@ -642,8 +644,8 @@ def evaluate(metrics, dataset, predictions):
             det_ids = [[[[b[0]] for b in predictions[img_path]]]]
             det_scores = [[[[b[1]] for b in predictions[img_path]]]]
 
-        for metric in metrics:
-            metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+            for metric in metrics:
+                metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
 
     return [metric.get() for metric in metrics]
 
