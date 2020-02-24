@@ -595,6 +595,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
         if not FLAGS.nd_only:
             net.hybridize()
         for i, batch in enumerate(train_data):
+            batch_size = batch[0].shape[0]
             if FLAGS.val_only:
                 break
             if (time.time()-st)/60 > FLAGS.max_epoch_time:
@@ -602,7 +603,6 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
                             'Moving on to next epoch' % (FLAGS.max_epoch_time, int(100*(i/num_batches))))
                 break
 
-            batch_size = batch[0].shape[0]
             if FLAGS.features_dir is not None:
                 f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
                 f2 = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0)
