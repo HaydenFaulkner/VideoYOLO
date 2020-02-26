@@ -163,8 +163,6 @@ flags.DEFINE_list('hier', [1, 1, 1, 1, 1],
 flags.DEFINE_integer('max_epoch_time', 240,
                      'Max minutes an epoch can run for before we cut it off')
 
-flags.DEFINE_boolean('val_only', False,
-                     'For 0200 to not do train loop only val')
 
 def get_dataset(dataset_name, dataset_val_name, save_prefix=''):
     train_datasets = list()
@@ -592,8 +590,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
             net.hybridize()
         for i, batch in enumerate(train_data):
             batch_size = batch[0].shape[0]
-            if FLAGS.val_only:
-                break
+
             if (time.time()-st)/60 > FLAGS.max_epoch_time:
                 logger.info('Max epoch time of %d minutes reached after completing %d%% of epoch. '
                             'Moving on to next epoch' % (FLAGS.max_epoch_time, int(100*(i/num_batches))))
