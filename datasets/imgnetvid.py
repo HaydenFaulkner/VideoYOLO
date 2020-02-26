@@ -116,8 +116,9 @@ class ImageNetVidDetection(VisionDataset):
             motion_ious = json.load(f)
         
         # filter only the samples in the set
-        motion_ious = np.array([v for k, v in motion_ious.items() if int(k) in self.sample_ids])
-        
+        # motion_ious = np.array([v for k, v in motion_ious.items() if int(k) in self.sample_ids])
+        motion_ious = np.array([motion_ious[str(k)] for k in self.sample_ids])
+
         return motion_ious
 
     def __len__(self):
@@ -276,6 +277,17 @@ class ImageNetVidDetection(VisionDataset):
                 return vid, labels, idx
             else:
                 return vid, labels
+
+    def get_sample_ids(self):
+        if self._window_size > 1:
+            sids = list()
+            for sid in self.sample_ids:
+                window_sample_ids = self._windows[sid]
+                window_sample_ids = window_sample_ids[:self._window_size]
+                sids.append(window_sample_ids)
+            return sids
+        else:
+            return self.sample_ids
 
     def sample_path(self, idx):
         if self._videos:

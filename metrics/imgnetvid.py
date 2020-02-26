@@ -5,7 +5,7 @@ import mxnet as mx
 import numpy as np
 
 
-def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10):
+def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10, offset=None):
     """
     parse ImageNet VID dataset into a list of dictionarys
 
@@ -19,8 +19,14 @@ def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10):
     """
 
     res = list()
-    ids = dataset.sample_ids
+    ids = dataset.get_sample_ids()
     for idx, (_, frame, _) in enumerate(dataset):
+
+        if offset is not None:
+            frame = frame[offset+2]
+            id_ = ids[idx][offset+2]
+        else:
+            id_ = ids[idx]
         w = frame[:, 2] - frame[:, 0] + 1
         h = frame[:, 3] - frame[:, 1] + 1
         thr = (w*h)/((w+pixel_tolerance)*(h+pixel_tolerance))
@@ -28,7 +34,7 @@ def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10):
         res.append({'bbox': frame[:, :4],
                     'label': frame[:, 4].astype(int),
                     'thr': thr,  # this is the iou threshold that needs to be met to be GT
-                    'img_ids': ids[idx]})
+                    'img_ids': id_})
 
     return res
 
@@ -61,7 +67,7 @@ def vid_ap(rec, prec):
     return ap
 
 
-def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, class_map=None, agnostic=False):
+def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, class_map=None, agnostic=False, offset=None):
     """
     Do the evaluation
 
@@ -77,12 +83,14 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
         list: average precision array with shapes (# motion ranges, # area ranges, # classes)
     """
     classname_map = dataset.wn_classes
-    gt_img_ids = dataset.sample_ids
+    gt_img_ids = dataset.get_sample_ids()
+    if isinstance(gt_img_ids[0], list):
+        gt_img_ids = [w[offset+2] for w in gt_img_ids]
 
     if agnostic:
         classname_map = ['agnostic']
 
-    recs = parse_set(dataset, iou_thr=iou_threshold, pixel_tolerance=10)
+    recs = parse_set(dataset, iou_thr=iou_threshold, pixel_tolerance=10, offset=offset)
 
     dt = np.array(dt)
     img_ids = dt[:, 0].astype(int)
@@ -99,6 +107,7 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
         obj_bboxes = obj_bboxes[sorted_inds, :]
 
     num_imgs = max(max(gt_img_ids), max(img_ids)) + 1  # maybe len not max?
+    # num_imgs = len(gt_img_ids)  # maybe len not max?
     obj_labels_cell = [None] * num_imgs
     obj_confs_cell = [None] * num_imgs
     obj_bboxes_cell = [None] * num_imgs
@@ -346,7 +355,7 @@ def calculate_ap(tp_cell, fp_cell, gt_img_ids, obj_labels_cell, obj_confs_cell, 
 class VIDDetectionMetric(mx.metric.EvalMetric):
 
     def __init__(self, dataset, conf_score_thresh=0.05, iou_thresh=0.5, data_shape=None, class_map=None,
-                 agnostic=False):
+                 agnostic=False, offset=None):
         """
         Detection metric for ImageNet VID task - does standard and motion evaluation
 
@@ -360,13 +369,17 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
         """
         super(VIDDetectionMetric, self).__init__('ImgNetVIDMeanAP')
         self.dataset = dataset
-        self._img_ids = sorted(dataset.sample_ids)
+        if isinstance(dataset.get_sample_ids()[0], list):
+            self._img_ids = sorted([w[offset+2] for w in dataset.get_sample_ids()])
+        else:
+            self._img_ids = sorted(dataset.get_sample_ids())
         self._current_id = 0
         self._results = []
         self._conf_score_thresh = conf_score_thresh
         self._iou_thresh = iou_thresh
         self._class_map = class_map  # for use when model preds are diff to eval set classes
         self._agnostic = agnostic
+        self._offset = offset
 
         # hard set of the motion and area ranges
         self._motion_ranges = [[0.0, 1.0], [0.0, 0.7], [0.7, 0.9], [0.9, 1.0]]
@@ -396,7 +409,7 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
             return ['mAP', ], ['0.0', ]
 
         ap = vid_eval_motion(self.dataset, self._results, self._motion_ranges, self._area_ranges,
-                             iou_threshold=self._iou_thresh, class_map=self._class_map, agnostic=self._agnostic)
+                             iou_threshold=self._iou_thresh, class_map=self._class_map, agnostic=self._agnostic, offset=self._offset)
 
         names, values = [], []
         names.append('~~~~ Summary metrics ~~~~\n')
