@@ -9,7 +9,7 @@ from ..darknet.ts_darknet import get_darknet_flownet, get_darknet_r21d
 def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kwargs=None, freeze_base=False,
                     k=None, k_join_type=None, k_join_pos=None, block_conv_type='2', rnn_pos=None,
                     corr_pos=None, corr_d=None, motion_stream=None, add_type=None, agnostic=False, new_model=False,
-                    hierarchical=[1,1,1,1,1], h_join_type=None, temporal=False, t_out=False, hier_info=None, **kwargs):
+                    hierarchical=[1,1,1,1,1], h_join_type=None, temporal=False, t_out=False, **kwargs):
     """YOLO3 multi-scale with darknet53 base network on any dataset. Modified from:
     https://github.com/dmlc/gluon-cv/blob/0dbd05c5eb8537c25b64f0e87c09be979303abf2/gluoncv/model_zoo/yolo/yolo3.py
 
@@ -98,7 +98,7 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
             # OLD CODE
             net = YOLOV3T(stages, [512, 256, 128], anchors, strides, classes=classes, k=k, k_join_type=k_join_type,
                           k_join_pos=k_join_pos, block_conv_type=block_conv_type, rnn_shapes=rnn_shapes, rnn_pos=rnn_pos,
-                          corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, hier_info=hier_info, **kwargs)
+                          corr_pos=corr_pos, corr_d=corr_d, agnostic=agnostic, **kwargs)
 
     else:
         net = YOLOV3TS(ts_model, k, [512, 256, 128], anchors, strides, classes=classes, agnostic=agnostic,

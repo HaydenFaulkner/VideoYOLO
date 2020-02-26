@@ -223,7 +223,7 @@ def get_dataset(dataset_name, dataset_val_name, save_prefix=''):
     elif len(val_datasets) == 1 and len(train_datasets) == 1:
             val_dataset = val_datasets[0]
     else:
-        val_dataset = CombinedDetection(val_datasets, class_tree=True)
+        val_dataset = CombinedDetection(val_datasets, class_tree=True, validation=True)
         val_metric = VOCMApMetric(iou_thresh=0.5, class_names=val_dataset.classes)
 
     if FLAGS.mixup:
@@ -334,10 +334,6 @@ def resume(net, async_net, resume, start_epoch):
 def get_net(trained_on_dataset, ctx, definition='ours'):
     # handle hierarchical classes, need to pass through a list of lists to the model used for masking classes for NMS
     # only used during testing/inference
-    hier_info = None
-    if hasattr(trained_on_dataset, 'leaves'):
-        hier_info = [trained_on_dataset.class_levels, trained_on_dataset.leaves]
-
     if FLAGS.features_dir is not None:
         if FLAGS.syncbn and len(ctx) > 1:
             net = yolo3_no_backbone(trained_on_dataset.classes,
@@ -363,7 +359,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
                                           hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out, hier_info=hier_info)
+                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out)
                     async_net = yolo3_darknet53(trained_on_dataset.classes,
                                                 pretrained_base=False,
                                                 freeze_base=bool(FLAGS.freeze_base),
@@ -373,7 +369,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                                 motion_stream=FLAGS.motion_stream, add_type=FLAGS.stream_gating,
                                                 new_model=FLAGS.new_model,
                                                 hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                                temporal=FLAGS.temp, t_out=FLAGS.mult_out, hier_info=hier_info)  # used by cpu worker
+                                                temporal=FLAGS.temp, t_out=FLAGS.mult_out)  # used by cpu worker
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
                                           pretrained_base=FLAGS.pretrained_cnn,
@@ -395,7 +391,7 @@ def get_net(trained_on_dataset, ctx, definition='ours'):
                                           corr_pos=FLAGS.corr_pos, corr_d=FLAGS.corr_d, motion_stream=FLAGS.motion_stream,
                                           add_type=FLAGS.stream_gating, new_model=FLAGS.new_model,
                                           hierarchical=FLAGS.hier, h_join_type=FLAGS.h_join_type,
-                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out, hier_info=hier_info)
+                                          temporal=FLAGS.temp, t_out=FLAGS.mult_out)
                     async_net = net
                 else:
                     net = yolo3_3ddarknet(trained_on_dataset.classes,
@@ -711,8 +707,6 @@ def main(_argv):
     # training contexts
     ctx = [mx.gpu(int(i)) for i in FLAGS.gpus]
     ctx = ctx if ctx else [mx.cpu()]
-
-    print(ctx)
 
     # training data
     train_dataset, val_dataset, eval_metric = get_dataset(FLAGS.dataset, FLAGS.dataset_val,

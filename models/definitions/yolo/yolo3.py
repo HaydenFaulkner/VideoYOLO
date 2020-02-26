@@ -41,7 +41,7 @@ class YOLOOutputV3(gluon.HybridBlock):
         to export to symbol so we can run it in c++, Scalar, etc.
     """
     def __init__(self, index, num_class, anchors, stride,
-                 alloc_size=(128, 128), k=None, rnn_shape=None, k_join_type='max', agnostic=False, hier_info=None, **kwargs):
+                 alloc_size=(128, 128), k=None, rnn_shape=None, k_join_type='max', agnostic=False, **kwargs):
         super(YOLOOutputV3, self).__init__(**kwargs)
         anchors = np.array(anchors).astype('float32')
         self._classes = num_class
@@ -52,7 +52,7 @@ class YOLOOutputV3(gluon.HybridBlock):
         self._k = k
         self._k_join_type = k_join_type
         self._agnostic = agnostic
-        self._hier_info = hier_info
+
         with self.name_scope():
             all_pred = self._num_pred * self._num_anchors
             if k is not None and rnn_shape is not None:
@@ -196,53 +196,8 @@ class YOLOOutputV3(gluon.HybridBlock):
         # reshape to (B, xx, 6)
         detections = F.reshape(detections.transpose(axes=(1, 0, 2, 3, 4)), (0, -1, 6))
 
-        # handle hier classes
-        if self._hier_info is not None:
-            thresh = 0.3
-            levels = np.asarray(self._hier_info[0])
-            leafs = np.asarray(self._hier_info[1])
-
-            scores_flt = F.reshape(class_score, (-1, 0), reverse=1)
-            mx_mask = F.zeros_like(scores_flt)
-            scores_flt_np = scores_flt.asnumpy()
-
-            # mask, _ = mx.nd.contrib.foreach(HierMasker(), scores_flt, None)
-            # mask = TimeDistributed(HierMasker())(scores_flt)
-            for b in range(scores_flt.shape[0]):
-                box_scores = scores_flt_np[b]
-                for level in range(int(max(levels)), 0, -1):
-                    leaf_mask = np.where(levels < level, 1, 0) * leafs
-                    level_mask = np.where(levels == level, 1, 0)
-                    mask = np.maximum(leaf_mask, level_mask)
-                    masked_scores = mask*box_scores
-                    max_score = np.max(masked_scores)
-                    if max_score > thresh:
-                        ind = np.argmax(masked_scores)
-                        # all zeros but ind
-                        mx_mask[b, ind] = 1
-                        break
-                scores_flt[b, :] = mx_mask[b, :] * scores_flt[b, :]  # will * all zeros if none meet thresh
-
-            class_score_masked = F.reshape_like(scores_flt, class_score)
-            scores_masked = F.transpose(class_score_masked, axes=(3, 0, 1, 2)).expand_dims(axis=-1)
-
-            detections_masked = F.concat(ids, scores_masked, bboxes, dim=-1)
-            # reshape to (B, xx, 6)
-            detections_masked = F.reshape(detections_masked.transpose(axes=(1, 0, 2, 3, 4)), (0, -1, 6))
-
-            return detections, detections_masked
-
         return detections
 
-
-class HierMasker(gluon.HybridBlock):
-
-    def __init__(self, **kwargs):
-        super(HierMasker, self).__init__(**kwargs)
-
-    def hybrid_forward(self, F, x):
-
-        return x
 
 class YOLODetectionBlockV3(gluon.HybridBlock):
     """YOLO V3 Detection Block which does the following:
@@ -1005,8 +960,7 @@ class YOLOV3T(gluon.HybridBlock):
                  nms_thresh=0.45, nms_topk=400, post_nms=100, pos_iou_thresh=1.0,
                  ignore_iou_thresh=0.7, norm_layer=BatchNorm, norm_kwargs=None,
                  k=None, k_join_type=None, k_join_pos=None, block_conv_type='2',
-                 rnn_shapes=None, rnn_pos=None, corr_pos=None, corr_d=None, agnostic=False, hier_info=None,
-                 **kwargs):
+                 rnn_shapes=None, rnn_pos=None, corr_pos=None, corr_d=None, agnostic=False, **kwargs):
         super(YOLOV3T, self).__init__(**kwargs)
         self._classes = classes
         self.nms_thresh = nms_thresh
@@ -1021,7 +975,6 @@ class YOLOV3T(gluon.HybridBlock):
         self._rnn_pos = rnn_pos
         self._corr_pos = corr_pos
         self._corr_d = corr_d
-        self._hier_info = hier_info
         assert rnn_pos in [None, 'late', 'out']
         if block_conv_type in ['3', '21']:
             assert k > 1, "k must be greater than 1 to use 3D or 2+1D convolutions"
@@ -1088,8 +1041,7 @@ class YOLOV3T(gluon.HybridBlock):
                     output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size,
                                           k=k, rnn_shape=rnn_shapes[i], k_join_type=k_join_type, agnostic=agnostic)
                 else:
-                    output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size, agnostic=agnostic,
-                                          hier_info=hier_info)
+                    output = YOLOOutputV3(i, len(classes), anchor, stride, alloc_size=alloc_size, agnostic=agnostic)
                 self.yolo_outputs.add(output)
 
                 if i > 0:
@@ -1148,9 +1100,7 @@ class YOLOV3T(gluon.HybridBlock):
         all_offsets = []
         all_feat_maps = []
         all_detections = []
-        all_detections_masked = []
         routes = []
-
 
         for stage, block, output in zip(self.stages, self.yolo_blocks, self.yolo_outputs):
             x = stage(x)
@@ -1206,12 +1156,7 @@ class YOLOV3T(gluon.HybridBlock):
                         tip.slice_axis(axis=0, begin=0, end=1).slice_axis(axis=1, begin=0, end=1))
                 all_feat_maps.append(fake_featmap)
             else:
-                if self._hier_info:
-                    dets, dets_masked = output(tip)
-                    all_detections_masked.append(dets_masked)
-                    # dets = dets_masked
-                else:
-                    dets = output(tip)
+                 dets = output(tip)
 
             all_detections.append(dets)
 
@@ -1247,10 +1192,7 @@ class YOLOV3T(gluon.HybridBlock):
                     F.concat(*all_objectness, dim=1), F.concat(*all_class_pred, dim=1))
 
         # concat all detection results from different stages
-        if len(all_detections_masked) > 0:
-            result = F.concat(*all_detections_masked, dim=1)
-        else:
-            result = F.concat(*all_detections, dim=1)
+        result = F.concat(*all_detections, dim=1)
         # apply nms per class
         if self.nms_thresh > 0 and self.nms_thresh < 1:
             result = F.contrib.box_nms(
