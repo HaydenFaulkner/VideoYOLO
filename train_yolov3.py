@@ -160,8 +160,8 @@ flags.DEFINE_string('h_join_type', None,
 flags.DEFINE_list('hier', [1, 1, 1, 1, 1],
                   'the hierarchical factors, the input must be temporally equal to all these multiplied together')
 
-flags.DEFINE_integer('max_epoch_time', 240,
-                     'Max minutes an epoch can run for before we cut it off')
+flags.DEFINE_integer('max_epoch_time', -1,
+                     'Max minutes an epoch can run for before we cut it off, -1 is nothing')
 
 
 def get_dataset(dataset_name, dataset_val_name, save_prefix=''):
@@ -441,10 +441,6 @@ def validate(net, val_data, ctx, eval_metric):
         net.hybridize()
     st = time.time()
     for bi, batch in tqdm(enumerate(val_data), total=len(val_data), desc='testing'):
-        # if (time.time() - st) / 60 > FLAGS.max_epoch_time:
-        #     print('Max validation time of %d minutes reached after completing %d%% of val data. '
-        #           'Moving on to next epoch' % (FLAGS.max_epoch_time, int(100 * (bi / len(val_data)))))
-        #     break
         if FLAGS.features_dir is not None:
             f1 = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0, even_split=False)
             f2 = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0, even_split=False)
@@ -591,7 +587,7 @@ def train(net, train_data, train_dataset, val_data, eval_metric, ctx, save_prefi
         for i, batch in enumerate(train_data):
             batch_size = batch[0].shape[0]
 
-            if (time.time()-st)/60 > FLAGS.max_epoch_time:
+            if FLAGS.max_epoch_time > 0 and (time.time()-st)/60 > FLAGS.max_epoch_time:
                 logger.info('Max epoch time of %d minutes reached after completing %d%% of epoch. '
                             'Moving on to next epoch' % (FLAGS.max_epoch_time, int(100*(i/num_batches))))
                 break
