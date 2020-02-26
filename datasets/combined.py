@@ -3,6 +3,7 @@
 from gluoncv.data.base import VisionDataset
 import os
 import mxnet as mx
+import numpy as np
 from nltk.corpus import wordnet as wn
 
 
@@ -13,7 +14,7 @@ def id_to_name(id):
 class CombinedDetection(VisionDataset):
     """Combined detection Dataset."""
 
-    def __init__(self, datasets, root=os.path.join('datasets', 'combined'), class_tree=False):
+    def __init__(self, datasets, root=os.path.join('datasets', 'combined'), class_tree=False, validation=False):
         """
         :param datasets: list of dataset objects
         :param root: root path to store the dataset, str, default '/datasets/combined/'
@@ -27,6 +28,7 @@ class CombinedDetection(VisionDataset):
 
         self._root = os.path.expanduser(root)
         self._class_tree = class_tree
+        self._validation = validation
         self._samples = self._load_samples()
         _, _, self._dataset_class_map, self._parents = self._get_classes()
 
@@ -123,7 +125,26 @@ class CombinedDetection(VisionDataset):
 
         # fix class id
         sample = list(dataset[dataset_sample_idx])
-        if self._class_tree:
+        if self._class_tree and self._validation:  # pass out y = [l,t,r,b,c] for all c's repeating the boxes for each c
+            dup_boxes = list()
+            for bi in range(len(sample[1])):
+                cls = int(self._dataset_class_map[dataset_idx][int(sample[1][bi][4])])
+                if cls < 0:
+                    continue
+
+                bx = np.copy(sample[1][bi])
+                bx[4] = cls
+                dup_boxes.append(bx)
+                while self.wn_classes[cls] in self._parents:
+                    if self._parents[self.wn_classes[cls]] == 'ROOT':
+                        break
+                    cls = self.wn_classes.index(self._parents[self.wn_classes[cls]])
+                    bx = np.copy(sample[1][bi])
+                    bx[4] = cls
+                    dup_boxes.append(bx)
+            sample[1] = np.vstack(dup_boxes)
+
+        elif self._class_tree:  # pass out y=[l,t,r,b,c1,c2,c3,c4,....] with binary digits per class
             boxes = mx.nd.zeros((sample[1].shape[0], 4 + len(self.classes)))
             boxes[:, :4] = sample[1][:, :4]
 
@@ -140,7 +161,7 @@ class CombinedDetection(VisionDataset):
                 clss.reverse()
                 boxes[bi, clss] = 1
             sample[1] = boxes.asnumpy()
-        else:
+        else:  # y = a single [l,t,r,b,c] with the updated class
             for bi in range(len(sample[1])):
                 sample[1][bi][4] = float(self._dataset_class_map[dataset_idx][int(sample[1][bi][4])])
 
@@ -182,13 +203,17 @@ if __name__ == '__main__':
     from datasets.imgnetvid import ImageNetVidDetection
 
     datasets = list()
-    datasets.append(VOCDetection(splits=[(2007, 'test')]))
-    print('Loaded VOC')
-    datasets.append(COCODetection(splits=['instances_val2017'], allow_empty=True))
-    print('Loaded COCO')
-    datasets.append(ImageNetDetection(splits=['val'], allow_empty=True))
-    print('Loaded DET')
+    # datasets.append(VOCDetection(splits=[(2007, 'test')]))
+    # print('Loaded VOC')
+    # datasets.append(COCODetection(splits=['instances_val2017'], allow_empty=True))
+    # print('Loaded COCO')
+    # datasets.append(ImageNetDetection(splits=['val'], allow_empty=True))
+    # print('Loaded DET')
     datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=25, window=[1, 1]))
     print('Loaded VID')
 
-    cd = CombinedDetection(datasets, class_tree=True)
+    cd = CombinedDetection(datasets, class_tree=True, validation=True)
+
+    from tqdm import tqdm
+    for s in tqdm(cd):
+        pass
