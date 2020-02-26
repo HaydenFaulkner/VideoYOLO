@@ -161,7 +161,7 @@ flags.DEFINE_list('hier', [1, 1, 1, 1, 1],
                   'the hierarchical factors, the input must be temporally equal to all these multiplied together')
 
 flags.DEFINE_integer('max_epoch_time', -1,
-                     'Max minutes an epoch can run for before we cut it off, -1 is nothing')
+                     'Max minutes an epoch can run for before we cut it off')
 
 
 def get_dataset(dataset_name, dataset_val_name, save_prefix=''):
