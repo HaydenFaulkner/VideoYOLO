@@ -801,6 +801,8 @@ def main(_argv):
                 metric_name += '_ag'
                 if not FLAGS.model_agnostic:
                     metric_name += '_met'
+            if FLAGS.offset != 0:
+                metric_name += '_' + str(FLAGS.offset)
             with open(os.path.join(save_dir, metric_name+'.txt'), 'w') as f:
                 for k, v in zip(names, values):
                     print(k, v)
