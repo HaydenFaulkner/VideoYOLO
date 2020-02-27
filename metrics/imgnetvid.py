@@ -3,7 +3,7 @@
 import copy
 import mxnet as mx
 import numpy as np
-
+from tqdm import tqdm
 
 def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10, offset=None):
     """
@@ -20,21 +20,18 @@ def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10, offset=None):
 
     res = list()
     ids = dataset.get_sample_ids()
-    for idx, (_, frame, _) in enumerate(dataset):
-
-        if offset is not None:
-            frame = frame[offset+2]
-            id_ = ids[idx][offset+2]
-        else:
-            id_ = ids[idx]
-        w = frame[:, 2] - frame[:, 0] + 1
-        h = frame[:, 3] - frame[:, 1] + 1
+    if isinstance(ids[0], list):
+        ids = [w[offset+2] for w in ids]
+    for idx, id in tqdm(enumerate(ids), desc='Building recs dict'):
+        boxes = dataset.get_label(id)
+        w = boxes[:, 2] - boxes[:, 0] + 1
+        h = boxes[:, 3] - boxes[:, 1] + 1
         thr = (w*h)/((w+pixel_tolerance)*(h+pixel_tolerance))
         thr[thr > iou_thr] = iou_thr
-        res.append({'bbox': frame[:, :4],
-                    'label': frame[:, 4].astype(int),
+        res.append({'bbox': boxes[:, :4],
+                    'label': boxes[:, 4].astype(int),
                     'thr': thr,  # this is the iou threshold that needs to be met to be GT
-                    'img_ids': id_})
+                    'img_ids': id})
 
     return res
 

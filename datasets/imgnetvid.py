@@ -278,6 +278,9 @@ class ImageNetVidDetection(VisionDataset):
             else:
                 return vid, labels
 
+    def get_label(self, sid):
+        return self._load_label(sid)[:, :-1]
+
     def get_sample_ids(self):
         if self._window_size > 1:
             sids = list()

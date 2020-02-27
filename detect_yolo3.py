@@ -326,6 +326,7 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
     if FLAGS.mult_out:
         boxes = [dict(), dict(), dict(), dict(), dict()]
         for idx in tqdm(range(min(len(dataset), max_do)), desc="Loading in prediction .txts"):
+
             img_paths = dataset.window_paths(idx)
 
             for offset, img_path in enumerate(img_paths):
@@ -628,14 +629,20 @@ def evaluate(metrics, dataset, predictions):
             img_path = img_path[FLAGS.offset + 2]
 
         if img_path in predictions:
-            # get the gt boxes : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
-            img, y, _ = dataset[idx]
-            if FLAGS.mult_out:
-                img = img[FLAGS.offset+2]
-                y = y[FLAGS.offset+2]
-            gt_bboxes = [np.expand_dims(y[:, :4], axis=0)]
-            gt_ids = [np.expand_dims(y[:, 4], axis=0)]
-            gt_difficults = [np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None]
+            gt_bboxes = None
+            gt_ids = None
+            gt_difficults = None
+            if 'voc' in FLAGS.metrics:
+                # get the gt boxes : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
+                img, y, _ = dataset[idx]
+                if FLAGS.mult_out:
+                    img = img[FLAGS.offset+2]
+                    y = y[FLAGS.offset+2]
+                gt_bboxes = [np.expand_dims(y[:, :4], axis=0)]
+                gt_ids = [np.expand_dims(y[:, 4], axis=0)]
+                gt_difficults = [np.expand_dims(y[:, 5], axis=0) if y.shape[-1] > 5 else None]
+            else:
+                img = mx.image.imread(img_path)
 
             # get the predictions : [n_gpu, batch_size, samples, dim] : [1, 1, ?, 4 or 1]
             det_bboxes = [[[[b[2]*img.shape[-2],  # change pred box dims to match image (unnormalise them)
