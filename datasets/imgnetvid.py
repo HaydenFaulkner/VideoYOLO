@@ -117,7 +117,7 @@ class ImageNetVidDetection(VisionDataset):
         
         # filter only the samples in the set
         # motion_ious = np.array([v for k, v in motion_ious.items() if int(k) in self.sample_ids])
-        motion_ious = np.array([motion_ious[str(k)] for k in self.sample_ids])
+        # motion_ious = np.array([motion_ious[str(k)] for k in self.sample_ids])
 
         return motion_ious
 

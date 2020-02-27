@@ -193,7 +193,8 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
             tp_cell = [None] * num_imgs
             fp_cell = [None] * num_imgs
 
-            all_motion_iou = np.concatenate(motion_iou, axis=0)
+            all_motion_iou = np.array([motion_iou[str(k)] for k in gt_img_ids])
+            all_motion_iou = np.concatenate(all_motion_iou, axis=0)
             empty_weight = sum([(all_motion_iou[i] >= motion_range[0]) & (all_motion_iou[i] <= motion_range[1])
                                 for i in range(len(all_motion_iou))]) / float(len(all_motion_iou))
 
@@ -214,7 +215,7 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
                 gt_detected = np.zeros(num_gt_obj)  # 0/1 flags for each gt obj if its been detected
 
                 # each gt sample not in this motion range?
-                gt_motion_iou = motion_iou[index]
+                gt_motion_iou = motion_iou[str(img_id)]
                 ig_gt_motion = [(gt_motion_iou[i] < motion_range[0]) | (gt_motion_iou[i] > motion_range[1])
                                 for i in range(len(gt_motion_iou))]
                 # each gt sample not in this area range?
