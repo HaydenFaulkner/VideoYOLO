@@ -22,7 +22,7 @@ def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10, offset=None):
     ids = dataset.get_sample_ids()
     if isinstance(ids[0], list):
         ids = [w[offset+2] for w in ids]
-    for idx, id in tqdm(enumerate(ids), desc='Building recs dict'):
+    for idx, id in tqdm(enumerate(ids), total=len(ids), desc='Building recs dict'):
         boxes = dataset.get_label(id)
         w = boxes[:, 2] - boxes[:, 0] + 1
         h = boxes[:, 3] - boxes[:, 1] + 1
