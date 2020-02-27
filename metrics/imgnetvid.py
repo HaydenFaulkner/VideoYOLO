@@ -5,6 +5,7 @@ import mxnet as mx
 import numpy as np
 from tqdm import tqdm
 
+
 def parse_set(dataset, iou_thr=0.5, pixel_tolerance=10, offset=None):
     """
     parse ImageNet VID dataset into a list of dictionarys
@@ -128,6 +129,7 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
     if agnostic:
         obj_labels_cell = [c*0 if c is not None else None for c in obj_labels_cell]
 
+    # calculate overlaps
     ov_all = [None] * num_imgs
     # extract objects in :param classname:
     npos = np.zeros(len(classname_map))
@@ -209,29 +211,31 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
 
                 num_gt_obj = len(gt_labels)
 
-                gt_detected = np.zeros(num_gt_obj)
+                gt_detected = np.zeros(num_gt_obj)  # 0/1 flags for each gt obj if its been detected
 
+                # each gt sample not in this motion range?
                 gt_motion_iou = motion_iou[index]
                 ig_gt_motion = [(gt_motion_iou[i] < motion_range[0]) | (gt_motion_iou[i] > motion_range[1])
                                 for i in range(len(gt_motion_iou))]
+                # each gt sample not in this area range?
                 gt_area = [(x[3] - x[1] + 1) * (x[2] - x[0] + 1) for x in gt_bboxes]
                 ig_gt_area = [(area < area_range[0]) | (area > area_range[1]) for area in gt_area]
 
                 labels = obj_labels_cell[img_id]
                 bboxes = obj_bboxes_cell[img_id]
 
-                num_obj = 0 if labels is None else len(labels)
+                num_obj = 0 if labels is None else len(labels)  # num det objects
                 tp = np.zeros(num_obj)
                 fp = np.zeros(num_obj)
 
-                for j in range(0, num_obj):
+                for j in range(0, num_obj):  # for each det box
                     bb = bboxes[j, :]
-                    ovmax = -1
-                    kmax = -1
-                    ovmax_ig = -1
-                    ovmax_nig = -1
-                    for k in range(0, num_gt_obj):
-                        ov = ov_all[img_id][j][k]
+                    ovmax = -1  # the biggest overlap
+                    kmax = -1  # the gt box index with most overlap
+                    ovmax_ig = -1  # biggest overlap not in motion range
+                    ovmax_nig = -1  # biggest overlap in motion range
+                    for k in range(0, num_gt_obj):  # for each gt box
+                        ov = ov_all[img_id][j][k]  # overlap between det j and gt k
                         if (ov >= gt_thr[k]) & (ov > ovmax) & (not gt_detected[k]) & (labels[j] == gt_labels[k]):
                             ovmax = ov
                             kmax = k
@@ -240,9 +244,9 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
                         if (not ig_gt_motion[k]) & (ov > ovmax_nig):
                             ovmax_nig = ov
 
-                    if kmax >= 0:
-                        gt_detected[kmax] = 1
-                        if (not ig_gt_motion[kmax]) & (not ig_gt_area[kmax]):
+                    if kmax >= 0:  # if we found a gt match
+                        gt_detected[kmax] = 1  # mark this gt as detected
+                        if (not ig_gt_motion[kmax]) & (not ig_gt_area[kmax]):  # if its in this motion and area range add tp
                             tp[j] = 1.0
                     else:
                         bb_area = (bb[3] - bb[1] + 1) * (bb[2] - bb[0] + 1)
@@ -250,14 +254,14 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
                             fp[j] = 0
                             continue
 
-                        if ovmax_nig > ovmax_ig:
+                        if ovmax_nig > ovmax_ig:  # overlap in motion range > overlap not in motion range
                             fp[j] = 1
-                        elif ovmax_ig > ovmax_nig:
+                        elif ovmax_ig > ovmax_nig:  # overlap not in motion range > overlap in motion range
                             fp[j] = 0
-                        elif num_gt_obj == 0:
+                        elif num_gt_obj == 0:  # no gt objects
                             fp[j] = empty_weight
                         else:
-                            fp[j] = sum([1 if ig_gt_motion[i] else 0
+                            fp[j] = sum([1 if ig_gt_motion[i] else 0  # 1 if in motion range, 0 otherwise
                                          for i in range(len(ig_gt_motion))]) / float(num_gt_obj)
 
                 tp_cell[img_id] = tp
@@ -267,7 +271,7 @@ def vid_eval_motion(dataset, dt, motion_ranges, area_ranges, iou_threshold=0.5, 
                     label = gt_labels[k]
                     if agnostic:
                         label = 0
-                    if (ig_gt_motion[k]) | (ig_gt_area[k]):
+                    if (ig_gt_motion[k]) | (ig_gt_area[k]):  # if not in one of the ranges reduce count
                         npos[label] = npos[label] - 1
 
             ap[motion_range_id][area_range_id] = calculate_ap(tp_cell, fp_cell, gt_img_ids, obj_labels_cell,
@@ -309,13 +313,13 @@ def calculate_ap(tp_cell, fp_cell, gt_img_ids, obj_labels_cell, obj_confs_cell, 
     Calculate the AP across the classes
 
     Args:
-        tp_cell: todo
-        fp_cell: todo
-        gt_img_ids: todo
-        obj_labels_cell: todo
-        obj_confs_cell: todo
-        classname_map: todo
-        npos: todo
+        tp_cell:
+        fp_cell:
+        gt_img_ids:
+        obj_labels_cell:
+        obj_confs_cell:
+        classname_map:
+        npos:
         class_map (list): a mapping between the model prediction classes and the test set labels (default is None)
 
     Returns:
@@ -351,7 +355,7 @@ def calculate_ap(tp_cell, fp_cell, gt_img_ids, obj_labels_cell, obj_confs_cell, 
 
 class VIDDetectionMetric(mx.metric.EvalMetric):
 
-    def __init__(self, dataset, conf_score_thresh=0.05, iou_thresh=0.5, data_shape=None, class_map=None,
+    def __init__(self, dataset, conf_score_thresh=0.05, iou_thresh=0.5, class_map=None,
                  agnostic=False, offset=None):
         """
         Detection metric for ImageNet VID task - does standard and motion evaluation
@@ -366,11 +370,6 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
         """
         super(VIDDetectionMetric, self).__init__('ImgNetVIDMeanAP')
         self.dataset = dataset
-        if isinstance(dataset.get_sample_ids()[0], list):
-            self._img_ids = sorted([w[offset+2] for w in dataset.get_sample_ids()])
-        else:
-            self._img_ids = sorted(dataset.get_sample_ids())
-        self._current_id = 0
         self._results = []
         self._conf_score_thresh = conf_score_thresh
         self._iou_thresh = iou_thresh
@@ -382,16 +381,7 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
         self._motion_ranges = [[0.0, 1.0], [0.0, 0.7], [0.7, 0.9], [0.9, 1.0]]
         self._area_ranges = [[0, 1e5 * 1e5], [0, 50 * 50], [50 * 50, 150 * 150], [150 * 150, 1e5 * 1e5]]
 
-        if isinstance(data_shape, (tuple, list)):
-            assert len(data_shape) == 2, "Data shape must be (height, width)"
-        elif not data_shape:
-            data_shape = None
-        else:
-            raise ValueError("data_shape must be None or tuple of int as (height, width)")
-        self._data_shape = data_shape
-
     def reset(self):
-        self._current_id = 0
         self._results = []
 
     def get(self):
@@ -435,7 +425,7 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
         return names, values
 
     # pylint: disable=arguments-differ, unused-argument
-    def update(self, pred_bboxes, pred_labels, pred_scores, *args, **kwargs):
+    def update(self, pred_bboxes, pred_labels, pred_scores, gt_bboxes, gt_ids, gt_difficults, sid=None, *args, **kwargs):
         """
         Update internal buffer with latest predictions.
 
@@ -459,21 +449,11 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
                 a = a.asnumpy()
             return a
 
-        for pred_bbox, pred_label, pred_score in zip(
-                *[as_numpy(x) for x in [pred_bboxes, pred_labels, pred_scores]]):
+        for pred_bbox, pred_label, pred_score in zip(*[as_numpy(x) for x in [pred_bboxes, pred_labels, pred_scores]]):
             valid_pred = np.where(pred_label.flat >= 0)[0]
             pred_bbox = pred_bbox[valid_pred, :].astype(np.float)
             pred_label = pred_label.flat[valid_pred].astype(int)
             pred_score = pred_score.flat[valid_pred].astype(np.float)
-
-            imgid = self._img_ids[self._current_id]
-            self._current_id += 1
-            if self._data_shape is not None:
-                orig_width, orig_height = self.dataset.image_size(imgid)
-                height_scale = float(orig_height) / self._data_shape[0]
-                width_scale = float(orig_width) / self._data_shape[1]
-            else:
-                height_scale, width_scale = (1., 1.)
 
             # for each bbox detection in each image
             for bbox, label, score in zip(pred_bbox, pred_label, pred_score):
@@ -488,13 +468,4 @@ class VIDDetectionMetric(mx.metric.EvalMetric):
                 if score < self._conf_score_thresh:
                     continue
 
-                # rescale bboxes
-                bbox[[0, 2]] *= width_scale
-                bbox[[1, 3]] *= height_scale
-                # DONT convert [xmin, ymin, xmax, ymax]  to [xmin, ymin, w, h]
-                # bbox[2:4] -= (bbox[:2] - 1)
-                # self._results.append({'image_id': imgid,
-                #                       'category_id': category_id,
-                #                       'bbox': bbox[:4].tolist(),
-                #                       'score': score})
-                self._results.append([imgid, category_id, score] + bbox[:4].tolist())
+                self._results.append([sid, category_id, score] + bbox[:4].tolist())

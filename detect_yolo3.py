@@ -177,7 +177,7 @@ def get_metric(dataset, metric_name, data_shape, save_dir, class_map=None):
         metric = COCODetectionMetric(dataset, save_dir, cleanup=True, data_shape=None)
 
     elif metric_name.lower() == 'vid':
-        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, data_shape=None, class_map=class_map,
+        metric = VIDDetectionMetric(dataset, iou_thresh=0.5, class_map=class_map,
                                     agnostic=FLAGS.metric_agnostic, offset=FLAGS.offset)
 
     else:
@@ -622,10 +622,11 @@ def video_of_worst(video_path, frames_dir, summary_file=None, fps=4):
 
 
 def evaluate(metrics, dataset, predictions):
-    for idx in tqdm(range(len(dataset)), desc="Evaluating with metrics"):
+    for idx in tqdm(range(len(dataset)), desc="Updating metrics with predictions"):
 
         img_path = dataset.sample_path(idx)
         if FLAGS.mult_out:
+            sid = dataset.get_sample_ids()[idx][FLAGS.offset+2]
             img_path = img_path[FLAGS.offset + 2]
 
         if img_path in predictions:
@@ -653,7 +654,7 @@ def evaluate(metrics, dataset, predictions):
             det_scores = [[[[b[1]] for b in predictions[img_path]]]]
 
             for metric in metrics:
-                metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults)
+                metric.update(det_bboxes, det_ids, det_scores, gt_bboxes, gt_ids, gt_difficults, sid=sid)
 
     return [metric.get() for metric in metrics]
 
