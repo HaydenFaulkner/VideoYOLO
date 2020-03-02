@@ -28,6 +28,7 @@ class ImageNetDetection(VisionDataset):
             inference (bool): are we doing inference? (default is False)
         """
         super(ImageNetDetection, self).__init__(root)
+        self.name = 'det'
         self._im_shapes = {}
         self.root = os.path.expanduser(root)
         self._transform = transform
@@ -48,6 +49,9 @@ class ImageNetDetection(VisionDataset):
         
         # generate a sorted list of the sample ids
         self.sample_ids = sorted(list(self.samples.keys()))
+
+        for idx in range(len(self)):  # popultate self._im_shapes
+            self._load_label(idx)
 
         if not allow_empty:  # remove empty samples if desired
             self.samples, self.sample_ids = self._remove_empties()
@@ -276,11 +280,14 @@ class ImageNetDetection(VisionDataset):
 
         return good_sample_ids, str_
 
-    def image_size(self, id):
+    def image_size(self, sample_id):
         if len(self._im_shapes) == 0:
             for idx in tqdm(range(len(self.samples)), desc="populating im_shapes"):
                 self._load_label(idx)
-        return self._im_shapes[self.image_ids.index(id)]
+        return self._im_shapes[sample_id]
+
+    def im_shapes(self, sample_id):
+        return self._im_shapes[sample_id]
 
     def stats(self):
         """

@@ -31,6 +31,7 @@ class VOCDetection(VisionDataset):
             features_dir (str): dir to load backbone features from (default is None)
         """
         super(VOCDetection, self).__init__(root)
+        self.name = 'voc'
         self._im_shapes = {}
         self.root = os.path.expanduser(root)
         self._transform = transform
@@ -223,7 +224,10 @@ class VOCDetection(VisionDataset):
         return [self._load_label(idx) for idx in range(len(self))]
 
     def image_size(self, id):
-        return self._im_shapes[self.image_ids.index(id)]
+        return self._im_shapes[id]
+
+    def im_shapes(self, sample_id):
+        return self._im_shapes[sample_id]
 
     def stats(self):
         """

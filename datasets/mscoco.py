@@ -28,6 +28,8 @@ class COCODetection(VisionDataset):
             inference (bool): are we doing inference? (default is False)
         """
         super(COCODetection, self).__init__(root)
+        self.name = 'coco'
+        self._im_shapes = {}
         self.root = os.path.expanduser(root)
         self._transform = transform
         self._min_object_area = min_object_area
@@ -46,7 +48,8 @@ class COCODetection(VisionDataset):
         # load the samples and labels at once
         self.samples, self._labels = self._load_jsons()
 
-        self.sample_ids = self.coco.getImgIds()
+        # self.sample_ids = self.coco.getImgIds()
+        self.sample_ids = list(self.samples.keys())
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
@@ -132,7 +135,7 @@ class COCODetection(VisionDataset):
             int: idx (if inference=True)
         """
         img_path = self.sample_path(idx)
-        label = np.array(self._labels[idx])
+        label = np.array(self._labels[self.sample_ids[idx]])
         img = mx.image.imread(img_path, 1)
 
         if self._transform is not None:
@@ -144,12 +147,18 @@ class COCODetection(VisionDataset):
             return img, label
 
     def sample_path(self, idx):
-        return self.samples[idx]
+        return self.samples[self.sample_ids[idx]]
+
+    def im_shapes(self, sample_id):
+        return self._im_shapes[sample_id]
+
+    def _load_label(self, idx):
+        return self._labels[self.sample_ids[idx]]
 
     def _load_jsons(self):
         """Load all image paths and labels from JSON annotation files into buffer."""
-        samples = list()
-        labels = list()
+        samples = dict()
+        labels = dict()
         # lazy import pycocotools
         try_import_pycocotools()
         from pycocotools.coco import COCO
@@ -179,8 +188,12 @@ class COCODetection(VisionDataset):
                 label = self._check_load_bbox(_coco, entry)
                 if not label:
                     continue
-                samples.append(abs_path)
-                labels.append(label)
+                sample_id = len(samples)
+                samples[sample_id] = abs_path
+                labels[sample_id] = label
+                if sample_id not in self._im_shapes:
+                    self._im_shapes[sample_id] = (entry['width'], entry['height'])
+
         return samples, labels
 
     def _check_load_bbox(self, coco, entry):

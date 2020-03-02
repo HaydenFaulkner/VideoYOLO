@@ -1,10 +1,12 @@
 """Combined object detection dataset - allows you to combine datasets into one bigger one"""
 
 from gluoncv.data.base import VisionDataset
+import json
 import os
 import mxnet as mx
 import numpy as np
 from nltk.corpus import wordnet as wn
+from tqdm import tqdm
 
 
 def id_to_name(id):
@@ -14,7 +16,7 @@ def id_to_name(id):
 class CombinedDetection(VisionDataset):
     """Combined detection Dataset."""
 
-    def __init__(self, datasets, root=os.path.join('datasets', 'combined'), class_tree=False, validation=False):
+    def __init__(self, datasets, root=os.path.join('datasets', 'combined'), class_tree=False, validation=False, inference=False):
         """
         :param datasets: list of dataset objects
         :param root: root path to store the dataset, str, default '/datasets/combined/'
@@ -25,15 +27,19 @@ class CombinedDetection(VisionDataset):
         super(CombinedDetection, self).__init__(root)
 
         self._datasets = datasets
-
+        self.name = 'comb'
         self._root = os.path.expanduser(root)
         self._class_tree = class_tree
         self._validation = validation
+        self._inference = inference
         self._samples = self._load_samples()
-        _, _, self._dataset_class_map, self._parents = self._get_classes()
+        self.sample_ids = list(self._samples.keys())
+        self._classes, self.wn_classes, self._dataset_class_map, self.parents = self._get_classes()
 
         self.class_levels = self.get_levels()
         self.leaves = self.get_leaves()
+
+        self._coco_path = os.path.join(self._root, 'jsons', '_'.join([d.name for d in datasets])+'.json')
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
@@ -82,13 +88,10 @@ class CombinedDetection(VisionDataset):
 
     @property
     def classes(self):
-        """Category names."""
-        return self._get_classes()[0]
+        return self._classes
 
-    @property
-    def wn_classes(self):
-        """Category names."""
-        return self._get_classes()[1]
+    def get_sample_ids(self):
+        return self.sample_ids
 
     def get_levels(self):
         levels = list()
@@ -96,7 +99,7 @@ class CombinedDetection(VisionDataset):
             lvl = 0
             p = c
             while p != 'ROOT':
-                p = self._parents[p]
+                p = self.parents[p]
                 lvl += 1
             levels.append(lvl)
         return levels
@@ -105,7 +108,7 @@ class CombinedDetection(VisionDataset):
         is_parent = set()
 
         for c in self.wn_classes:
-            is_parent.add(self._parents[c])
+            is_parent.add(self.parents[c])
 
         leaves = list()
         for c in self.wn_classes:
@@ -116,11 +119,25 @@ class CombinedDetection(VisionDataset):
 
         return leaves
 
+    def on_branch(self, c1, c2):
+        """Are these two classes on the same lineage/branch"""
+        if c1 == c2:
+            return True
+        child = self.wn_classes[max(c1, c2)]
+        parent = self.wn_classes[min(c1, c2)]
+
+        p = child
+        while p != 'ROOT':
+            p = self.parents[p]
+            if p == parent:
+                return True
+        return False
+
     def __len__(self):
         return len(self._samples)
 
     def __getitem__(self, idx):
-        dataset_idx, dataset_sample_idx, idx = self._samples[idx]
+        dataset_idx, dataset_sample_idx = self._samples[idx]
         dataset = self._datasets[dataset_idx]
 
         # fix class id
@@ -135,10 +152,10 @@ class CombinedDetection(VisionDataset):
                 bx = np.copy(sample[1][bi])
                 bx[4] = cls
                 dup_boxes.append(bx)
-                while self.wn_classes[cls] in self._parents:
-                    if self._parents[self.wn_classes[cls]] == 'ROOT':
+                while self.wn_classes[cls] in self.parents:
+                    if self.parents[self.wn_classes[cls]] == 'ROOT':
                         break
-                    cls = self.wn_classes.index(self._parents[self.wn_classes[cls]])
+                    cls = self.wn_classes.index(self.parents[self.wn_classes[cls]])
                     bx = np.copy(sample[1][bi])
                     bx[4] = cls
                     dup_boxes.append(bx)
@@ -154,9 +171,9 @@ class CombinedDetection(VisionDataset):
                     boxes[bi, :] = -1
                     continue
                 clss = [cls+4]
-                while self.wn_classes[cls] in self._parents:
-                    if self._parents[self.wn_classes[cls]] == 'ROOT': break
-                    cls = self.wn_classes.index(self._parents[self.wn_classes[cls]])
+                while self.wn_classes[cls] in self.parents:
+                    if self.parents[self.wn_classes[cls]] == 'ROOT': break
+                    cls = self.wn_classes.index(self.parents[self.wn_classes[cls]])
                     clss.append(cls+4)
                 clss.reverse()
                 boxes[bi, clss] = 1
@@ -165,14 +182,31 @@ class CombinedDetection(VisionDataset):
             for bi in range(len(sample[1])):
                 sample[1][bi][4] = float(self._dataset_class_map[dataset_idx][int(sample[1][bi][4])])
 
+        if self._inference:
+            return sample[0], sample[1], idx
         return sample[0], sample[1]
 
     def _load_samples(self):
-        samples = []
+        samples = dict()
         for dataset_idx, dataset in enumerate(self._datasets):
             for idx in range(len(dataset)):
-                samples.append((dataset_idx, idx, len(samples)))
+                samples[len(samples)] = (dataset_idx, idx)
         return samples
+
+    def im_shapes(self, sid):
+        dataset_idx, dataset_sample_idx = self._samples[sid]
+        dataset = self._datasets[dataset_idx]
+        return dataset.im_shapes(dataset.sample_ids[dataset_sample_idx])
+    
+    def _load_label(self, idx):
+        dataset_idx, dataset_sample_idx = self._samples[self.sample_ids[idx]]
+        dataset = self._datasets[dataset_idx]
+        return dataset._load_label(dataset_sample_idx)
+
+    def sample_path(self, idx):
+        dataset_idx, dataset_sample_idx = self._samples[self.sample_ids[idx]]
+        dataset = self._datasets[dataset_idx]
+        return dataset.sample_path(dataset_sample_idx)
 
     def stats(self):
         cls_boxes = []
@@ -194,6 +228,51 @@ class CombinedDetection(VisionDataset):
 
         return out_str, cls_boxes
 
+    def build_coco_json(self):
+        """
+        Builds a groundtruth ms coco style .json for evaluation on this dataset
+
+        Returns:
+            str: the path to the output .json file
+
+        """
+        os.makedirs(os.path.dirname(self._coco_path), exist_ok=True)
+
+        # handle categories
+        categories = list()
+        for ci, (cls, wn_cls) in enumerate(zip(self.classes, self.wn_classes)):
+            categories.append({'id': ci, 'name': cls, 'wnid': wn_cls})
+
+        # handle images and boxes
+        images = list()
+        done_imgs = set()
+        annotations = list()
+        for idx in tqdm(range(len(self)), desc='generating coco eval'):
+            sample_id = self.sample_ids[idx]
+            filename = self.sample_path(idx)
+            width, height = self.im_shapes(sid=sample_id)
+
+            if sample_id not in done_imgs:
+                done_imgs.add(sample_id)
+                images.append({'file_name': filename,
+                               'width': int(width),
+                               'height': int(height),
+                               'id': sample_id})
+
+            for box in self._load_label(idx):
+                xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
+                annotations.append({'image_id': sample_id,
+                                    'id': len(annotations),
+                                    'bbox': xywh,
+                                    'area': int(xywh[2] * xywh[3]),
+                                    'category_id': int(box[4]),
+                                    'iscrowd': 0})
+
+        with open(self._coco_path, 'w') as f:
+            json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
+
+        return self._coco_path
+
 
 if __name__ == '__main__':
 
@@ -203,17 +282,18 @@ if __name__ == '__main__':
     from datasets.imgnetvid import ImageNetVidDetection
 
     datasets = list()
-    # datasets.append(VOCDetection(splits=[(2007, 'test')]))
-    # print('Loaded VOC')
-    # datasets.append(COCODetection(splits=['instances_val2017'], allow_empty=True))
-    # print('Loaded COCO')
-    # datasets.append(ImageNetDetection(splits=['val'], allow_empty=True))
-    # print('Loaded DET')
+    datasets.append(VOCDetection(splits=[(2007, 'test')]))
+    print('Loaded VOC')
+    datasets.append(COCODetection(splits=['instances_val2017'], allow_empty=True))
+    print('Loaded COCO')
+    datasets.append(ImageNetDetection(splits=['val'], allow_empty=True))
+    print('Loaded DET')
     datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=25, window=[1, 1]))
     print('Loaded VID')
 
     cd = CombinedDetection(datasets, class_tree=True, validation=True)
 
-    from tqdm import tqdm
-    for s in tqdm(cd):
-        pass
+    cd.build_coco_json()
+    # from tqdm import tqdm
+    # for s in tqdm(cd):
+    #     pass

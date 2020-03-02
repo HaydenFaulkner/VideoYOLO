@@ -36,6 +36,7 @@ class ImageNetVidDetection(VisionDataset):
             window_step (int): the step distance of the temporal window (default is 1)
         """
         super(ImageNetVidDetection, self).__init__(root)
+        self.name = 'vid'
         self._im_shapes = {}
         self.root = os.path.expanduser(root)
         self._transform = transform
@@ -71,6 +72,9 @@ class ImageNetVidDetection(VisionDataset):
 
         # generate a sorted list of the sample ids
         self.sample_ids = sorted(list(self.samples.keys()))
+
+        for idx in range(len(self)):  # popultate self._im_shapes
+            self._load_label(idx)
 
         if not allow_empty:  # remove empty samples if desired
             self.samples, self.sample_ids = self._remove_empties()
@@ -138,7 +142,7 @@ class ImageNetVidDetection(VisionDataset):
         """
         if self._features_dir is not None:
             img_path = self.sample_path(idx)
-            label = self._load_label(self.sample_ids[idx])[:, :-1]  # remove track id
+            label = self._load_label(idx)[:, :-1]  # remove track id
             if self._window_size > 1:  # lets load the temporal window
                 imgs = None
                 window_sample_ids = self._windows[self.sample_ids[idx]]
@@ -186,7 +190,7 @@ class ImageNetVidDetection(VisionDataset):
 
         if not self._videos:  # frames are samples
             img_path = self.sample_path(idx)
-            label = self._load_label(self.sample_ids[idx])[:, :-1]  # remove track id
+            label = self._load_label(idx)[:, :-1]  # remove track id
 
             if self._window_size > 1:  # lets load the temporal window
                 imgs = list()
@@ -198,7 +202,7 @@ class ImageNetVidDetection(VisionDataset):
                 for sid in window_sample_ids:
                     img_path = self._image_path.format(*self.all_samples[sid])
                     img = mx.image.imread(img_path)
-                    lbl = self._load_label(sid)[:, :-1]
+                    lbl = self._load_label(self.sample_ids.index(sid))[:, :-1]
 
                     if self._transform is not None:  # transform each image in the window
                         img, lbl = self._transform(img, lbl)
@@ -247,7 +251,7 @@ class ImageNetVidDetection(VisionDataset):
                 # load the frame and the label
                 img_id = (sample[0], sample[1], frame_id)
                 img_path = self._image_path.format(*img_id)
-                label = self._load_label(sample_id, frame_id=frame_id)
+                label = self._load_label(self.sample_ids.index(sample_id), frame_id=frame_id)
                 img = mx.image.imread(img_path, 1)
 
                 # transform the image and label
@@ -279,7 +283,7 @@ class ImageNetVidDetection(VisionDataset):
                 return vid, labels
 
     def get_label(self, sid):
-        return self._load_label(sid)[:, :-1]
+        return self._load_label(self.sample_ids.index(sid))[:, :-1]
 
     def get_sample_ids(self):
         if self._window_size > 1:
@@ -362,7 +366,7 @@ class ImageNetVidDetection(VisionDataset):
             removed = 0
             n_boxes = 0
             for sid in tqdm(self.sample_ids, desc="Removing images that have 0 boxes"):
-                n_boxes_in_sample = len(self._load_label(sid))
+                n_boxes_in_sample = len(self._load_label(self.sample_ids.index(sid)))
                 if n_boxes_in_sample < 1:
                     removed += 1
                 else:
@@ -501,7 +505,7 @@ class ImageNetVidDetection(VisionDataset):
 
             return frames
 
-    def _load_label(self, sid, frame_id=None):
+    def _load_label(self, idx, frame_id=None):
         """
         Parse the xml annotation files for a sample
 
@@ -512,8 +516,8 @@ class ImageNetVidDetection(VisionDataset):
         Returns:
             numpy.ndarray : labels of shape (n, 6) - [[xmin, ymin, xmax, ymax, cls_id, trk_id], ...]
         """
-
-        sample = self.all_samples[sid]
+        sample_id = self.sample_ids[idx]
+        sample = self.all_samples[sample_id]
 
         anno_path = self._annotations_path.format(*sample)
         if self._videos:
@@ -529,8 +533,8 @@ class ImageNetVidDetection(VisionDataset):
         height = float(size.find('height').text)
 
         # store the shapes for later usage
-        if sid not in self._im_shapes:
-            self._im_shapes[sid] = (width, height)
+        if sample_id not in self._im_shapes:
+            self._im_shapes[sample_id] = (width, height)
 
         label = []
         for obj in root.iter('object'):
@@ -599,7 +603,10 @@ class ImageNetVidDetection(VisionDataset):
     def image_size(self, sample_id):
         if len(self._im_shapes) == 0:
             for sid in tqdm(self.sample_ids, desc="populating im_shapes"):
-                self._load_label(sid)
+                self._load_label(self.sample_ids.index(sid))
+        return self._im_shapes[sample_id]
+
+    def im_shapes(self, sample_id):
         return self._im_shapes[sample_id]
 
     def stats(self):
@@ -626,14 +633,14 @@ class ImageNetVidDetection(VisionDataset):
             if self._videos:
                 for frame_id in self.samples[sample_id][2]:
                     n_frames += 1
-                    for box in self._load_label(self.sample_ids[idx], frame_id):
+                    for box in self._load_label(idx, frame_id):
                         if int(box[4]) < 0:  # not actually a box
                             continue
                         n_boxes[int(box[4])] += 1
                         vid_instances[int(box[4])].add(vid_id+str(box[-1]))  # add the track id
             else:
                 n_frames += 1
-                for box in self._load_label(self.sample_ids[idx]):
+                for box in self._load_label(idx):
                     if int(box[4]) < 0:  # not actually a box
                         continue
                     n_boxes[int(box[4])] += 1
@@ -691,7 +698,7 @@ class ImageNetVidDetection(VisionDataset):
                                'height': int(height),
                                'id': sample_id})
 
-            for box in self._load_label(sample_id):
+            for box in self._load_label(idx):
                 xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
                 annotations.append({'image_id': sample_id,
                                     'id': len(annotations),

@@ -20,6 +20,7 @@ from datasets.mscoco import COCODetection
 from datasets.imgnetdet import ImageNetDetection
 from datasets.imgnetvid import ImageNetVidDetection
 from datasets.detectset import DetectSet
+from datasets.combined import CombinedDetection
 
 from metrics.pascalvoc import VOCMApMetric
 from metrics.mscoco import COCODetectionMetric
@@ -41,8 +42,8 @@ flags.DEFINE_string('model_path', 'yolo3_darknet53_voc_best.params',
                     'Path to the detection model to use')
 flags.DEFINE_string('network', 'darknet53',
                     'Base network name: darknet53')
-flags.DEFINE_string('dataset', 'voc',
-                    'Dataset or .jpg image or .mp4 video or .txt image/video list.')
+flags.DEFINE_list('dataset', ['voc'],
+                  'Dataset or .jpg image or .mp4 video or .txt image/video list.')
 flags.DEFINE_string('trained_on', '',
                     'Dataset the model was trained on.')
 flags.DEFINE_string('save_prefix', '0001',
@@ -116,46 +117,52 @@ flags.DEFINE_integer('offset', 0,
 
 
 def get_dataset(dataset_name):
-    if dataset_name.lower() == 'voc':
-        dataset = VOCDetection(splits=[(2007, 'test')], inference=True)
+    datasets = list()
+    if 'voc' in dataset_name:
+        datasets.append(VOCDetection(splits=[(2007, 'test')], inference=True))
 
-    elif dataset_name.lower() == 'coco':
-        dataset = COCODetection(splits=['instances_val2017'], allow_empty=True, inference=True)
+    if 'coco' in dataset_name:
+        datasets.append(COCODetection(splits=['instances_val2017'], allow_empty=True, inference=True))
 
-    elif dataset_name.lower() == 'det':
-        dataset = ImageNetDetection(splits=['val'], allow_empty=False, inference=True)
+    if 'det' in dataset_name:
+        datasets.append(ImageNetDetection(splits=['val'], allow_empty=False, inference=True))
 
-    elif dataset_name.lower() == 'vid':
-        dataset = ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=FLAGS.every,
-                                       window=FLAGS.window, inference=True, mult_out=FLAGS.mult_out)
+    if 'vid' in dataset_name:
+        datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=FLAGS.every,
+                                             window=FLAGS.window, inference=True, mult_out=FLAGS.mult_out))
 
-    elif dataset_name[-4:] == '.txt':  # list of images or list of videos
-        with open(dataset_name, 'r') as f:
-            files = [l.rstrip() for l in f.readlines()]
-        if files[0][-4:] == '.mp4':  # list of videos
-            img_list = list()
-            for file in files:  # make frames in tmp folder
-                frames_dir = video_to_frames(file, os.path.join('data', 'tmp'),
-                                             os.path.join('data', 'tmp', 'stats'), overwrite=False)
+    if len(datasets) == 0:
+        assert len(dataset_name) > 0
+        if dataset_name[0][-4:] == '.txt':  # list of images or list of videos
+            with open(dataset_name[0], 'r') as f:
+                files = [l.rstrip() for l in f.readlines()]
+            if files[0][-4:] == '.mp4':  # list of videos
+                img_list = list()
+                for file in files:  # make frames in tmp folder
+                    frames_dir = video_to_frames(file, os.path.join('data', 'tmp'),
+                                                 os.path.join('data', 'tmp', 'stats'), overwrite=False)
 
-                img_list += glob.glob(frames_dir + '/**/*.jpg', recursive=True)
+                    img_list += glob.glob(frames_dir + '/**/*.jpg', recursive=True)
 
-        elif files[0][-4:] == '.jpg':  # list of images
-            img_list = files
-        dataset = DetectSet(img_list)
+            elif files[0][-4:] == '.jpg':  # list of images
+                img_list = files
+            dataset = DetectSet(img_list)
 
-    elif dataset_name[-4:] == '.jpg':  # single image
-        dataset = DetectSet([dataset_name])
+        elif dataset_name[0][-4:] == '.jpg':  # single image
+            dataset = DetectSet([dataset_name])
 
-    elif dataset_name[-4:] == '.mp4':
-        # make frames in tmp folder
-        frames_dir = video_to_frames(dataset_name, os.path.join('data', 'tmp'),
-                                     os.path.join('data', 'tmp', 'stats'), overwrite=False)
-        img_list = glob.glob(frames_dir + '/**/*.jpg', recursive=True)
-        dataset = DetectSet(img_list)
-
+        elif dataset_name[0][-4:] == '.mp4':
+            # make frames in tmp folder
+            frames_dir = video_to_frames(dataset_name[0], os.path.join('data', 'tmp'),
+                                         os.path.join('data', 'tmp', 'stats'), overwrite=False)
+            img_list = glob.glob(frames_dir + '/**/*.jpg', recursive=True)
+            dataset = DetectSet(img_list)
+        else:
+            raise NotImplementedError('Dataset: {} not implemented.'.format(dataset_name))
+    elif len(datasets) == 1:
+        dataset = datasets[0]
     else:
-        raise NotImplementedError('Dataset: {} not implemented.'.format(dataset_name))
+        dataset = CombinedDetection(datasets, class_tree=True, inference=True)
 
     return dataset
 
@@ -295,12 +302,25 @@ def save_predictions(save_dir, dataset, boxes, overwrite=True, max_do=-1, agnost
                             f.write(
                                 "{},{},{},{},{},{},{}\n".format(img_path, box[0], box[1], box[2], box[3], box[4], box[5]))
         else:
+
             img_path = dataset.sample_path(idx)
 
-            file_id = img_path.split('/')[-1][:-4]
-            if FLAGS.dataset == 'vid':
+            if dataset.name == 'comb':
+                dataset_idx, dataset_sample_idx = dataset._samples[dataset.sample_ids[idx]]
+                inner_dataset = dataset._datasets[dataset_idx]
+                if inner_dataset.name == 'vid':
+                    file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+                    os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
+                else:
+                    dir_path, file_id = os.path.split(img_path)
+                    file_id = file_id.split('.')[0]
+
+            elif dataset.name == 'vid':
                 file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
                 os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
+            else:
+                dir_path, file_id = os.path.split(img_path)
+                file_id = file_id.split('.')[0]
 
             with open(os.path.join(save_dir, file_id + '.txt'), 'w') as f:
                 if img_path in boxes:
@@ -369,9 +389,13 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
     else:
         boxes = dict()
 
+        pths = set()
         for idx in tqdm(range(min(len(dataset), max_do)), desc="Loading in prediction .txts"):
             img_path = dataset.sample_path(idx)
-
+            if img_path not in pths:
+                pths.add(img_path)
+            else:
+                print(img_path)
             file_id = img_path.split('/')[-1][:-4]
             if FLAGS.dataset == 'vid':
                 file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
@@ -393,6 +417,10 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
 
             with open(file_path, 'r') as f:
                 bb = [line.rstrip().split(',') for line in f.readlines()]
+
+            for box in bb:
+                if box[0] != img_path:
+                    print()
 
             if metric is not None and not add_metrics:
                 for box in bb:
@@ -625,6 +653,7 @@ def evaluate(metrics, dataset, predictions):
     for idx in tqdm(range(len(dataset)), desc="Updating metrics with predictions"):
 
         img_path = dataset.sample_path(idx)
+        sid = dataset.get_sample_ids()[idx]
         if FLAGS.mult_out:
             sid = dataset.get_sample_ids()[idx][FLAGS.offset+2]
             img_path = img_path[FLAGS.offset + 2]
@@ -671,6 +700,86 @@ def get_class_map(trained_on, eval_on):
             class_map.append(-1)
 
     return class_map
+
+
+def iou(bb, bbgt):
+    """
+    Single box IoU calculation function for ious
+
+    Args:
+        bb: bounding box 1
+        bbgt: bounding box 2
+
+    Returns:
+        float: the IoU between the two boxes
+    """
+    ov = 0
+    iw = min(bb[2], bbgt[2]) - max(bb[0], bbgt[0]) + 1
+    ih = min(bb[3], bbgt[3]) - max(bb[1], bbgt[1]) + 1
+    if iw > 0 and ih > 0:
+        # compute overlap as area of intersection / area of union
+        intersect = iw * ih
+        ua = (bb[2] - bb[0] + 1.) * (bb[3] - bb[1] + 1.) + \
+             (bbgt[2] - bbgt[0] + 1.) * \
+             (bbgt[3] - bbgt[1] + 1.) - intersect
+        ov = intersect / ua
+    return ov
+
+
+def hierarchical_nms(predictions, dataset, ov_thresh=0.5, conf_thresh=0.0, level_thresh=3):
+    """combines boxes along same sub-branch and maxs the confidences as it goes from leaf to root"""
+    levels = dataset.get_levels()
+    parents = dataset.parents
+    cls_map = dataset.wn_classes
+    branch_matrix = list()
+    for i in range(len(cls_map)):
+        branch_list = list()
+        for j in range(len(cls_map)):
+            branch_list.append(dataset.on_branch(i, j))
+        branch_matrix.append(branch_list)
+    new_predictions = dict()
+
+    level_thresh = max(0, level_thresh)  # ensure it at least 0, otherwise we could get stuck in infinite while loop
+
+    # for each image/sample
+    for img_path, boxes in tqdm(predictions.items(), desc='Performing hierarchical nms'):
+        new_predictions[img_path] = list()
+
+        # for each box in this sample
+        for box in sorted(boxes, key=lambda x: x[0], reverse=True):  # sort so highest (most leafy) cls first
+            cls = box[0]
+            conf = box[1]
+            coords = box[2:]
+
+            if conf < conf_thresh:
+                continue
+
+            # assign the class as the level we want, priority is lowest
+            while levels[cls] > level_thresh:
+                cls = cls_map.index(parents[cls_map[cls]])
+
+            # check for overlap with other box
+            max_ov = 0
+            max_idx = -1
+            for idx, boxb in enumerate(new_predictions[img_path]):
+                overlap = iou(coords, boxb[2:])
+                if overlap > ov_thresh and overlap > max_ov:
+                    max_ov = overlap
+                    max_idx = idx
+
+            if max_idx == -1:  # no overlapping boxes, add it as new box
+                new_predictions[img_path].append([cls, conf] + coords)
+            else:  # overlapping box
+                boxb = new_predictions[img_path][max_idx]  # thanks to initial sorting this will never be parent of box
+                # so this basically asks is boxb a child/grangchild/greatgrandchild/etc of box?
+                if not branch_matrix[cls][boxb[0]]:  # not on branch, will add box as is a separate class
+                    new_predictions[img_path].append([cls, conf] + coords)
+                else:  # yes it is
+                    if cls == boxb[0]:  # if same cls (eg. boxb's cls has been up'ed to box's cls), max the confs
+                        new_predictions[img_path][max_idx][1] = max(new_predictions[img_path][max_idx][1], conf)
+                    # otherwise ignore as we already have a child that meets the level and conf threshold reqs
+
+    return new_predictions
 
 
 def main(_argv):
@@ -725,8 +834,9 @@ def main(_argv):
         max_do = len(dataset)
 
     # organise the save directories for the results
-    if FLAGS.dataset in ['voc', 'coco', 'det', 'vid']:
-        save_dir = os.path.join('models', 'experiments', FLAGS.save_prefix, FLAGS.save_dir, FLAGS.dataset)
+    if len(FLAGS.dataset) > 0:
+        str_dataset = '_'.join(FLAGS.dataset)
+        save_dir = os.path.join('models', 'experiments', FLAGS.save_prefix, FLAGS.save_dir, str_dataset)
     else:
         save_dir = os.path.join('models', 'experiments', FLAGS.save_prefix, FLAGS.save_dir)
     os.makedirs(save_dir, exist_ok=True)
@@ -775,6 +885,9 @@ def main(_argv):
 
     if FLAGS.mult_out:
         predictions = predictions[FLAGS.offset+2]
+
+    if len(FLAGS.dataset) > 1:
+        predictions = hierarchical_nms(predictions, dataset)
 
     if FLAGS.visualise:
         visualise_predictions(save_dir, dataset, trained_on_dataset, predictions,
