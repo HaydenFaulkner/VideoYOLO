@@ -77,8 +77,8 @@ sudo chmod a+rx /usr/local/bin/youtube-dl
     <th><code>conda</code></th>
   </tr>
   <tr>
-    <td><pre>pip install -r requirements.txt</pre></td>
-    <td><pre>conda env create -f environment.yml<br>conda activate viddet-mx</pre></td>
+    <td><pre>pip install -r requirements.txt                 </pre></td>
+    <td><pre>conda env create -f environment.yml              <br>conda activate viddet-mx</pre></td>
   </tr>
 </table>
 </p>
