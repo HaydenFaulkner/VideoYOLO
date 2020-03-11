@@ -4,7 +4,7 @@ A fast, accurate and diverse object detection pipeline for video written
 in MXNet and Gluon based on the <a href="https://pjreddie.com/darknet/yolo/">YOLOv3 network</a>
 </p>
 
-<p align="center"><img src="../img/Temporal_YOLO_Conv.svg"></p>
+<p align="center"><img src="img/Temporal_YOLO_Conv.svg"></p>
 
 <h2 align='center'></h2>
 <h2 align='center'>Datasets</h2>
@@ -14,7 +14,7 @@ The currently supported datasets are - <a href="http://host.robots.ox.ac.uk/pasc
 </p>
 
 
-<p align="center"><img src="../img/viddet_data_main.svg"></p>
+<p align="center"><img src="img/viddet_data_main.svg"></p>
 
 <!-- | Dataset     |       split      |  Images (Clips) |  Boxes (Obj Instances) | Categories | -->
 <!-- |-------------|------------------|-----------------|----------------|------------| -->
