@@ -9,8 +9,8 @@ VidDet/
 └── datasets/
     ├── ImageNetDET (170.8 GB)
     ├── ImageNetVID (409.9 GB)
-    ├── MSCoco (?? GB)
-    ├── PascalVOC (?? GB)
+    ├── MSCoco (84.9 GB)
+    ├── PascalVOC (9.8 GB)
     └── # version controlled files
 </pre>
 
