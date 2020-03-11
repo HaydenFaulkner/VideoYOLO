@@ -10,7 +10,7 @@ in MXNet and Gluon based on the <a href="https://pjreddie.com/darknet/yolo/">YOL
 <h2 align='center'>Datasets</h2>
 
 <p align="center">
-The currently supported datasets are - <a href="http://host.robots.ox.ac.uk/pascal/VOC/">Pascal VOC</a>, <a href="http://cocodataset.org/">MS-COCO</a>, <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-DET</a> and <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-VID</a>. You can utilised the datasets separately or combine them together to make a single dataset. The table below presents some of the statistics for the datasets:
+The currently supported datasets are - <a href="http://host.robots.ox.ac.uk/pascal/VOC/">Pascal VOC</a>, <a href="http://cocodataset.org/">MS-COCO</a>, <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-DET</a> and <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-VID</a>. You can utilise the datasets separately or <a href="datasets#a-combined-dataset"><b>combine</b></a> them together to make a single dataset. The table below presents some of the statistics for the datasets:
 </p>
 
 
@@ -70,6 +70,7 @@ sudo chmod a+rx /usr/local/bin/youtube-dl
 ```
 
 <p align="center">Install via <code>pip</code> or <code>conda</code></p>
+<p align="center">
 <table style="width:100%">
   <tr>
     <th><code>pip</code></th>
@@ -80,6 +81,7 @@ sudo chmod a+rx /usr/local/bin/youtube-dl
     <td><pre>conda env create -f environment.yml<br>conda activate viddet-mx</pre></td>
   </tr>
 </table>
+</p>
 
 <h2 align='center'></h2>
 <h2 align='center'>Usage</h2>

@@ -8,7 +8,7 @@ The currently supported datasets are - <a href="http://host.robots.ox.ac.uk/pasc
 VidDet/
 └── datasets/
     ├── ImageNetDET (170.8 GB)
-    ├── ImageNetVID (?? GB)
+    ├── ImageNetVID (409.9 GB)
     ├── MSCoco (?? GB)
     ├── PascalVOC (?? GB)
     └── # version controlled files
@@ -29,6 +29,7 @@ VidDet/datasets$ . get_imgnetvid_dataset.sh
 <p align="center">If using the <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-VID</a> dataset please also download the <a href="https://drive.google.com/open?id=1-bvtqx71KNfNSi7twXbgBDdeoCA_use7"><code>val_motion_ious.json</code></a> file from my <a href="https://drive.google.com/open?id=1-bvtqx71KNfNSi7twXbgBDdeoCA_use7">Google Drive</a> and place it in the <code>VidDet/datasets/ImageNetVID/ILSVRC/</code> directory. This file allows for motion based evaluation, it will be generated when needed by <a href="https://github.com/HaydenFaulkner/VidDet/blob/ba28d3bf082c9e74a769bd2f1d7df47626e46b23/datasets/imgnetvid.py#L740"><code>generate_motion_ious()</code></a> in <a href="imgnetvid.py"><code>imgnetvid.py</code></a> if non existent however this is relatively time consuming, so we suggest downloading.</p>
 
 
+<h2 align="center"></h2>
 <h2 align="center">A Combined Dataset</h2>
 <p align="center">It's possible to combine all four datasets into one larger dataset with the utilisation of the <a href="https://github.com/HaydenFaulkner/VidDet/blob/ba28d3bf082c9e74a769bd2f1d7df47626e46b23/datasets/combined.py#L16"><code>CombinedDetection()</code></a> dataset specified in <a href="combined.py"><code>combined.py</code></a></p>
 
@@ -36,6 +37,7 @@ VidDet/datasets$ . get_imgnetvid_dataset.sh
 
 <p align="center"><img src="../img/filtered_tree_det.svg"></p>
 
+<h2 align="center"></h2>
 <h2 align="center">Stats</h2>
 
 <p align="center">Attained by running <a href="stats.py"><code>stats.py</code></a></p>
