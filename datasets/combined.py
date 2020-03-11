@@ -38,6 +38,7 @@ class CombinedDetection(VisionDataset):
 
         self.class_levels = self.get_levels()
         self.leaves = self.get_leaves()
+        self.brances, self.branches_ind = self.generate_branches()
 
         self._coco_path = os.path.join(self._root, 'jsons', '_'.join([d.name for d in datasets])+'.json')
 
@@ -93,6 +94,24 @@ class CombinedDetection(VisionDataset):
     def get_sample_ids(self):
         return self.sample_ids
 
+    def generate_branches(self):
+        branches = dict()
+        for cls in self.wn_classes:
+            cls_o = cls
+            branch = [cls]
+            while cls in self.parents:
+                if self.parents[cls] == 'ROOT':
+                    break
+                cls = self.parents[cls]
+                branch.append(cls)
+            branch.reverse()
+            branches[cls_o] = branch
+
+        branches_ind = dict()
+        for cls in self.wn_classes:
+            branches_ind[self.wn_classes.index(cls)] = [self.wn_classes.index(c) for c in branches[cls]]
+        return branches, branches_ind
+
     def get_levels(self):
         levels = list()
         for c in self.wn_classes:
@@ -123,15 +142,16 @@ class CombinedDetection(VisionDataset):
         """Are these two classes on the same lineage/branch"""
         if c1 == c2:
             return True
-        child = self.wn_classes[max(c1, c2)]
-        parent = self.wn_classes[min(c1, c2)]
+        child = max(c1, c2)
+        parent = min(c1, c2)
 
-        p = child
-        while p != 'ROOT':
-            p = self.parents[p]
-            if p == parent:
-                return True
-        return False
+        return parent in self.branches_ind[child]
+        # p = child
+        # while p != 'ROOT':
+        #     p = self.parents[p]
+        #     if p == parent:
+        #         return True
+        # return False
 
     def __len__(self):
         return len(self._samples)
@@ -186,6 +206,20 @@ class CombinedDetection(VisionDataset):
             return sample[0], sample[1], idx
         return sample[0], sample[1]
 
+    def load_heir_labels(self, idx):
+        dataset_idx, dataset_sample_idx = self._samples[idx]
+        dataset = self._datasets[dataset_idx]
+
+        # fix class id
+        sample = list(dataset[dataset_sample_idx])
+        clsss = list()
+        for bi in range(len(sample[1])):
+            cls = int(self._dataset_class_map[dataset_idx][int(sample[1][bi][4])])
+            if cls < 0:
+                continue
+            clsss.append(self.branches_ind[cls])
+        return clsss
+
     def _load_samples(self):
         samples = dict()
         for dataset_idx, dataset in enumerate(self._datasets):
@@ -208,21 +242,44 @@ class CombinedDetection(VisionDataset):
         dataset = self._datasets[dataset_idx]
         return dataset.sample_path(dataset_sample_idx)
 
-    def stats(self):
+    def stats(self, keep_datasets=True):
         cls_boxes = []
         n_samples = len(self._samples)
-        n_boxes = [0] * len(self.classes)
-        for _, l in self:
-            for box in l:
-                n_boxes[int(box[4])] += 1
+        if keep_datasets:
+            n_boxes = [[0] * (len(self._datasets)+1) for _ in range(len(self.classes))]
+        else:
+            n_boxes = [0] * len(self.classes)
+        for si in tqdm(range(len(self)), total=len(self), desc='Generating Stats'):
+            dataset_idx, _ = self._samples[self.sample_ids[si]]
+            if keep_datasets:
+                for clss in self.load_heir_labels(si):
+                    for cls in clss:
+                        n_boxes[cls][dataset_idx] += 1
+                        n_boxes[cls][-1] += 1
+            else:
+                for clss in self.load_heir_labels(si):
+                    for cls in clss:
+                        n_boxes[cls] += 1
 
-        out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n'.format(
-            'Images:', n_samples,
-            'Boxes:', sum(n_boxes),
-            'Classes:', len(self.classes))
+        if keep_datasets:
+            out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n'.format(
+                'Images:', n_samples,
+                'Boxes:', sum([clsc[-1] for clsc in n_boxes]),
+                'Classes:', len(self.classes))
+        else:
+            out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n'.format(
+                'Images:', n_samples,
+                'Boxes:', sum(n_boxes),
+                'Classes:', len(self.classes))
         out_str += '-'*35 + '\n'
         for i in range(len(n_boxes)):
-            out_str += '{0: <3} {1: <10} {2: <20} {3}\n'.format(i, self.wn_classes[i], self.classes[i], n_boxes[i])
+            if keep_datasets:
+                out_str += '{0: <3} {1: <10} {2: <20}'.format(i, self.wn_classes[i], self.classes[i])
+                for di in range(len(self._datasets) + 1):
+                    out_str += ' {0}'.format(n_boxes[i][di])
+                out_str += '\n'
+            else:
+                out_str += '{0: <3} {1: <10} {2: <20} {3}\n'.format(i, self.wn_classes[i], self.classes[i], n_boxes[i])
             cls_boxes.append([i, self.wn_classes[i], self.classes[i], n_boxes[i]])
         out_str += '-'*35 + '\n'
 
@@ -288,12 +345,33 @@ if __name__ == '__main__':
     print('Loaded COCO')
     datasets.append(ImageNetDetection(splits=['val'], allow_empty=True))
     print('Loaded DET')
-    datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=25, window=[1, 1]))
+    datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=1, window=[1, 1]))
     print('Loaded VID')
+    # datasets.append(VOCDetection(splits=[(2007, 'trainval')]))
+    # print('Loaded VOC')
+    # datasets.append(COCODetection(splits=['instances_train2017'], allow_empty=True))
+    # print('Loaded COCO')
+    # datasets.append(ImageNetDetection(splits=['train'], allow_empty=True))
+    # print('Loaded DET')
+    # datasets.append(ImageNetVidDetection(splits=[(2017, 'train')], allow_empty=True, every=50000, window=[1, 1]))
+    # print('Loaded VID')
 
     cd = CombinedDetection(datasets, class_tree=True, validation=True)
 
-    cd.build_coco_json()
-    # from tqdm import tqdm
-    # for s in tqdm(cd):
-    #     pass
+    str_, clss = cd.stats()
+    print(str_)
+
+    # table_string = ''
+    # c = 0
+    # for cls in clss:
+    #     table_string += '\\texttt{ %s } & \\texttt{ %s }' % (cls[1], cls[2])
+    #     for count in cls[3]:
+    #         table_string += ' & %d' % count
+    #     table_string += '\\\\\n'
+    #     if c % 2 == 0:
+    #         table_string += '\\rowcolor{lightGrey}\n'
+    #     c += 1
+    #
+    # print(table_string.replace('_', '\_'))
+
+    # print()
