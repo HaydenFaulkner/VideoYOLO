@@ -39,5 +39,5 @@ VidDet/datasets$ . get_imgnetvid_dataset.sh
 
 <h2 align="center"></h2>
 <h2 align="center">Stats</h2>
-<p align="center">Samples in ImageNet-VID are calculated on a clip basis not a frame basis</p>
+<p align="center">These are the <code>training</code> split statistics, also samples in <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-VID</a> are calculated on a clip basis not a frame basis</p>
 <p align="center"><img src="../img/viddet_class_counts_train_vids.svg"></p>
