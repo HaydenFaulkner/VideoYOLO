@@ -345,9 +345,9 @@ if __name__ == '__main__':
     print('Loaded COCO')
     datasets.append(ImageNetDetection(splits=['val'], allow_empty=True))
     print('Loaded DET')
-    datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=1, window=[1, 1]))
+    datasets.append(ImageNetVidDetection(splits=[(2017, 'val')], allow_empty=True, every=100, window=[1, 1]))
     print('Loaded VID')
-    # datasets.append(VOCDetection(splits=[(2007, 'trainval')]))
+    # datasets.append(VOCDetection(splits=[(2012, 'trainval')]))
     # print('Loaded VOC')
     # datasets.append(COCODetection(splits=['instances_train2017'], allow_empty=True))
     # print('Loaded COCO')
@@ -361,17 +361,17 @@ if __name__ == '__main__':
     str_, clss = cd.stats()
     print(str_)
 
-    # table_string = ''
-    # c = 0
-    # for cls in clss:
-    #     table_string += '\\texttt{ %s } & \\texttt{ %s }' % (cls[1], cls[2])
-    #     for count in cls[3]:
-    #         table_string += ' & %d' % count
-    #     table_string += '\\\\\n'
-    #     if c % 2 == 0:
-    #         table_string += '\\rowcolor{lightGrey}\n'
-    #     c += 1
-    #
-    # print(table_string.replace('_', '\_'))
+    table_string = ''
+    c = 0
+    for cls in clss:
+        table_string += '\\texttt{ %s } & \\texttt{ %s }' % (cls[1], cls[2])
+        for count in cls[3]:
+            table_string += ' & %d' % count
+        table_string += '\\\\\n'
+        if c % 2 == 0:
+            table_string += '\\rowcolor{lightGrey}\n'
+        c += 1
+
+    print(table_string.replace('_', '\_'))
 
     # print()
