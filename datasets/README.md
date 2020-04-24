@@ -33,7 +33,7 @@ VidDet/datasets$ . get_imgnetvid_dataset.sh
 <h2 align="center">A Combined Dataset</h2>
 <p align="center">It's possible to combine all four datasets into one larger dataset with the utilisation of the <a href="https://github.com/HaydenFaulkner/VidDet/blob/ba28d3bf082c9e74a769bd2f1d7df47626e46b23/datasets/combined.py#L16"><code>CombinedDetection()</code></a> dataset specified in <a href="combined.py"><code>combined.py</code></a></p>
 
-<p align="center">Following ideas from <a href="https://github.com/philipperemy/yolo-9000">YOLO-9k</a> with utilising the <a href="https://wordnet.princeton.edu/">WordNet</a> structure classes have been manually matched across datasets, furthermore a <b>hierarchical tree structure</b> has been generated for the classes. This is visualised below and is specified in <a href="trees"><code>trees/</code></a>, with the main tree (inclusive of <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-DET</a>) specified in <a href="trees/filtered.tree"><code>trees/filtered.tree</code></a></p>
+<p align="center">Following ideas from <a href="https://github.com/philipperemy/yolo-9000">YOLO-9k</a> with utilising the <a href="https://wordnet.princeton.edu/">WordNet</a> structure classes have been manually matched across datasets, furthermore a <b>hierarchical tree structure</b> has been generated for the classes. This is visualised below and is specified in <a href="trees"><code>trees/</code></a>, with the main tree (inclusive of <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-DET</a>) specified in <a href="trees/filtered_det.tree"><code>trees/filtered_det.tree</code></a></p>
 
 <p align="center"><img src="../img/filtered_tree_det.svg"></p>
 
