@@ -2,6 +2,12 @@
 *.params
 /models/experiments/*
 /.idea/*
+/datasets/ImageNetDET/
+/datasets/ImageNetVID/
+/datasets/MSCoco/
+/datasets/PascalVOC/
+/datasets/YouTubeBB/
+
 # Created by https://www.gitignore.io/api/python
 # Edit at https://www.gitignore.io/?templates=python
 

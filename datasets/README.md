@@ -3,7 +3,7 @@
 The currently supported datasets are - <a href="http://host.robots.ox.ac.uk/pascal/VOC/">Pascal VOC</a>, <a href="http://cocodataset.org/">MS-COCO</a>, <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-DET</a> and <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-VID</a>
 </p>
 
-<p align="center">The datasets will be stored in the following directory structure</p>
+<p align="center">The datasets should be stored in the following directory structure</p>
 <pre>
 VidDet/
 └── datasets/
@@ -14,20 +14,13 @@ VidDet/
     └── # version controlled files
 </pre>
 
-<p align="center">The datasets can be downloaded with their associated <code>.sh</code> script</p>
-
-``` bash
-VidDet/datasets$ . get_voc_dataset.sh
-VidDet/datasets$ . get_coco_dataset.sh
-VidDet/datasets$ . get_imgnetdet_dataset.sh
-VidDet/datasets$ . get_imgnetvid_dataset.sh
-```
-
-<p align="center">These will make new directories (as shown in the structure above) and download into. If you want to use <b>symbolically linked</b> directories you will need to make these prior to running the scripts
-
-<p align="center">.......</p>
-<p align="center">If using the <a href="http://image-net.org/challenges/LSVRC/2017/download-images-1p39.php">ImageNet-VID</a> dataset please also download the <a href="https://drive.google.com/open?id=1-bvtqx71KNfNSi7twXbgBDdeoCA_use7"><code>val_motion_ious.json</code></a> file from my <a href="https://drive.google.com/open?id=1-bvtqx71KNfNSi7twXbgBDdeoCA_use7">Google Drive</a> and place it in the <code>VidDet/datasets/ImageNetVID/ILSVRC/</code> directory. This file allows for motion based evaluation, it will be generated when needed by <a href="https://github.com/HaydenFaulkner/VidDet/blob/ba28d3bf082c9e74a769bd2f1d7df47626e46b23/datasets/imgnetvid.py#L740"><code>generate_motion_ious()</code></a> in <a href="imgnetvid.py"><code>imgnetvid.py</code></a> if non existent however this is relatively time consuming, so we suggest downloading.</p>
-
+<p align="center">The datasets can be downloaded from my <a href="https://drive.google.com/drive/folders/1x79iF5-pRow7i5-R4qX09XEdN-VOgV5e?usp=sharing">Google Drive</a>:
+<ul>
+    <li><a href="https://drive.google.com/drive/folders/1Y3K6tWtRSM3LiadXRTsZuBOPULccIovf?usp=sharing">PascalVOC (07 + 12)</a></li>
+    <li><a href="https://drive.google.com/drive/folders/1xIsUUwSIABrI5yhrTVB4P248ysghtq4t?usp=sharing">MSCoco</a></li>
+    <li><a href="https://drive.google.com/drive/folders/11Ryza3GNCUK-HxKCEJv6P0yRF6tuW94o?usp=sharing">ImageNet-DET</a></li>
+    <li><a href="https://drive.google.com/drive/folders/1uyIgrlQAdeCUcKiMHHzRpt795dpMvFIH?usp=sharing">ImageNet-VID</a></li>
+</ul>
 
 <h2 align="center"></h2>
 <h2 align="center">A Combined Dataset</h2>
