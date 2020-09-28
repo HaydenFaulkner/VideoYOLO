@@ -202,7 +202,9 @@ class ImageNetVidDetection(VisionDataset):
                 for sid in window_sample_ids:
                     img_path = self._image_path.format(*self.all_samples[sid])
                     img = mx.image.imread(img_path)
-                    lbl = self._load_label(self.sample_ids.index(sid))[:, :-1]
+                    lbl = None
+                    if self._mult_out:
+                        lbl = self._load_label(self.sample_ids.index(sid))[:, :-1]
 
                     if self._transform is not None:  # transform each image in the window
                         img, lbl = self._transform(img, lbl)
@@ -286,7 +288,7 @@ class ImageNetVidDetection(VisionDataset):
         return self._load_label(self.sample_ids.index(sid))[:, :-1]
 
     def get_sample_ids(self):
-        if self._window_size > 1:
+        if self._window_size > 1 and self._mult_out:
             sids = list()
             for sid in self.sample_ids:
                 window_sample_ids = self._windows[sid]
