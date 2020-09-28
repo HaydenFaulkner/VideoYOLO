@@ -16,7 +16,7 @@ def id_to_name(id):
 class CombinedDetection(VisionDataset):
     """Combined detection Dataset."""
 
-    def __init__(self, datasets, root=os.path.join('datasets', 'combined'), class_tree=False, validation=False, inference=False):
+    def __init__(self, datasets, root=os.path.join('datasets', 'combined'), class_tree=False, validation=False, inference=False, hier_level=10):
         """
         :param datasets: list of dataset objects
         :param root: root path to store the dataset, str, default '/datasets/combined/'
@@ -35,12 +35,14 @@ class CombinedDetection(VisionDataset):
         self._samples = self._load_samples()
         self.sample_ids = list(self._samples.keys())
         self._classes, self.wn_classes, self._dataset_class_map, self.parents = self._get_classes()
+        self.hier_level = hier_level
 
         self.class_levels = self.get_levels()
         self.leaves = self.get_leaves()
         self.brances, self.branches_ind = self.generate_branches()
 
-        self._coco_path = os.path.join(self._root, 'jsons', '_'.join([d.name for d in datasets])+'.json')
+        self._coco_path = os.path.join(self._root, 'jsons', '_'.join([d.name for d in datasets]) +
+                                       '_' + str(self.hier_level) + '.json')
 
     def __str__(self):
         return '\n\n' + self.__class__.__name__ + '\n' + self.stats()[0] + '\n'
@@ -235,7 +237,13 @@ class CombinedDetection(VisionDataset):
     def _load_label(self, idx):
         dataset_idx, dataset_sample_idx = self._samples[self.sample_ids[idx]]
         dataset = self._datasets[dataset_idx]
-        return dataset._load_label(dataset_sample_idx)
+
+        # _, boxes = list(dataset[dataset_sample_idx])
+        boxes = dataset._load_label(dataset_sample_idx)
+        for bi in range(len(boxes)):  # fix classes
+            boxes[bi][4] = int(self._dataset_class_map[dataset_idx][int(boxes[bi][4])])
+
+        return boxes
 
     def sample_path(self, idx):
         dataset_idx, dataset_sample_idx = self._samples[self.sample_ids[idx]]
@@ -293,40 +301,47 @@ class CombinedDetection(VisionDataset):
             str: the path to the output .json file
 
         """
-        os.makedirs(os.path.dirname(self._coco_path), exist_ok=True)
+        if not os.path.exists(self._coco_path):
+            os.makedirs(os.path.dirname(self._coco_path), exist_ok=True)
+            levels = self.get_levels()
 
-        # handle categories
-        categories = list()
-        for ci, (cls, wn_cls) in enumerate(zip(self.classes, self.wn_classes)):
-            categories.append({'id': ci, 'name': cls, 'wnid': wn_cls})
+            # handle categories
+            categories = list()
+            for ci, (cls, wn_cls) in enumerate(zip(self.classes, self.wn_classes)):
+                categories.append({'id': ci, 'name': cls, 'wnid': wn_cls})
 
-        # handle images and boxes
-        images = list()
-        done_imgs = set()
-        annotations = list()
-        for idx in tqdm(range(len(self)), desc='generating coco eval'):
-            sample_id = self.sample_ids[idx]
-            filename = self.sample_path(idx)
-            width, height = self.im_shapes(sid=sample_id)
+            # handle images and boxes
+            images = list()
+            done_imgs = set()
+            annotations = list()
+            for idx in tqdm(range(len(self)), desc='generating coco eval'):
+                sample_id = self.sample_ids[idx]
+                filename = self.sample_path(idx)
+                width, height = self.im_shapes(sid=sample_id)
 
-            if sample_id not in done_imgs:
-                done_imgs.add(sample_id)
-                images.append({'file_name': filename,
-                               'width': int(width),
-                               'height': int(height),
-                               'id': sample_id})
+                if sample_id not in done_imgs:
+                    done_imgs.add(sample_id)
+                    images.append({'file_name': filename,
+                                   'width': int(width),
+                                   'height': int(height),
+                                   'id': sample_id})
 
-            for box in self._load_label(idx):
-                xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
-                annotations.append({'image_id': sample_id,
-                                    'id': len(annotations),
-                                    'bbox': xywh,
-                                    'area': int(xywh[2] * xywh[3]),
-                                    'category_id': int(box[4]),
-                                    'iscrowd': 0})
+                for box in self._load_label(idx):
+                    xywh = [int(box[0]), int(box[1]), int(box[2])-int(box[0]), int(box[3])-int(box[1])]
+                    cls = int(box[4])
+                    # assign the class as the level we want, priority is lowest
+                    while levels[cls] > self.hier_level:
+                        cls = self.wn_classes.index(self.parents[self.wn_classes[cls]])
 
-        with open(self._coco_path, 'w') as f:
-            json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
+                    annotations.append({'image_id': sample_id,
+                                        'id': len(annotations),
+                                        'bbox': xywh,
+                                        'area': int(xywh[2] * xywh[3]),
+                                        'category_id': cls,
+                                        'iscrowd': 0})
+
+            with open(self._coco_path, 'w') as f:
+                json.dump({'images': images, 'annotations': annotations, 'categories': categories}, f)
 
         return self._coco_path
 

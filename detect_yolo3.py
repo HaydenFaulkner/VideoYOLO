@@ -114,6 +114,8 @@ flags.DEFINE_boolean('new_model', False,
                      'Use features Yolo (new) or stages Yolo (old)?')
 flags.DEFINE_integer('offset', 0,
                      'If mult_out specified this selects the offset to test. Can be -2, -1, 0, 1, 2')
+flags.DEFINE_integer('hier_level', 10,
+                     'What is the hierarchical level cutoff for dets and eval 0,1,2,3,4,5,6?')
 
 
 def get_dataset(dataset_name):
@@ -162,7 +164,7 @@ def get_dataset(dataset_name):
     elif len(datasets) == 1:
         dataset = datasets[0]
     else:
-        dataset = CombinedDetection(datasets, class_tree=True, inference=True)
+        dataset = CombinedDetection(datasets, class_tree=True, inference=True, hier_level=FLAGS.hier_level)
 
     return dataset
 
@@ -389,16 +391,25 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
     else:
         boxes = dict()
 
-        pths = set()
         for idx in tqdm(range(min(len(dataset), max_do)), desc="Loading in prediction .txts"):
             img_path = dataset.sample_path(idx)
-            if img_path not in pths:
-                pths.add(img_path)
-            else:
-                print(img_path)
-            file_id = img_path.split('/')[-1][:-4]
-            if FLAGS.dataset == 'vid':
+
+            if dataset.name == 'comb':
+                dataset_idx, dataset_sample_idx = dataset._samples[dataset.sample_ids[idx]]
+                inner_dataset = dataset._datasets[dataset_idx]
+                if inner_dataset.name == 'vid':
+                    file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+                    os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
+                else:
+                    dir_path, file_id = os.path.split(img_path)
+                    file_id = file_id.split('.')[0]
+
+            elif dataset.name == 'vid':
                 file_id = os.path.join(img_path.split('/')[-2], img_path.split('/')[-1][:-5])
+                os.makedirs(os.path.join(save_dir, img_path.split('/')[-2]), exist_ok=True)
+            else:
+                dir_path, file_id = os.path.split(img_path)
+                file_id = file_id.split('.')[0]
 
             add_metrics = False
             if metric is None:
@@ -417,10 +428,6 @@ def load_predictions(save_dir, dataset, max_do=-1, metric=None, agnostic=False):
 
             with open(file_path, 'r') as f:
                 bb = [line.rstrip().split(',') for line in f.readlines()]
-
-            for box in bb:
-                if box[0] != img_path:
-                    print()
 
             if metric is not None and not add_metrics:
                 for box in bb:
@@ -726,7 +733,7 @@ def iou(bb, bbgt):
     return ov
 
 
-def hierarchical_nms(predictions, dataset, ov_thresh=0.5, conf_thresh=0.0, level_thresh=3):
+def hierarchical_nms(predictions, dataset, ov_thresh=0.5, conf_thresh=0.0, level_thresh=10):
     """combines boxes along same sub-branch and maxs the confidences as it goes from leaf to root"""
     levels = dataset.get_levels()
     parents = dataset.parents
@@ -792,6 +799,8 @@ def main(_argv):
 
     if FLAGS.motion_stream == 'flownet':
         FLAGS.data_shape = 384  # cause 416 is a nasty shape
+
+    FLAGS.dataset = FLAGS.dataset[0]
 
     if FLAGS.window[0] > 1:
         assert FLAGS.dataset == 'vid', 'If using window size >1 you can only use the vid dataset'
@@ -886,8 +895,8 @@ def main(_argv):
     if FLAGS.mult_out:
         predictions = predictions[FLAGS.offset+2]
 
-    if len(FLAGS.dataset) > 1:
-        predictions = hierarchical_nms(predictions, dataset)
+    if isinstance(FLAGS.dataset, list) and len(FLAGS.dataset) > 1:
+        predictions = hierarchical_nms(predictions, dataset, level_thresh=FLAGS.hier_level)
 
     if FLAGS.visualise:
         visualise_predictions(save_dir, dataset, trained_on_dataset, predictions,
