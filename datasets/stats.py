@@ -174,15 +174,15 @@ for split in splits:
                             yet_to_do.remove(cls)
                             break
 
-    # for cls in new_order:
-    #     str = wn.synset_from_pos_and_offset('n', int(cls[1:]))._name.split('.n.')[0]
-    #     if in_set[cls][0] == 0 and in_set[cls][1] == 0 and in_set[cls][2] == 0 and in_set[cls][3] == 1:
-    #         for i in in_set[cls][3:]:
-    #             if i:
-    #                 str += ' & \ding{51}'
-    #             else:
-    #                 str += ' &'
-    #         print(str + ' \\\\')
+    for cls in new_order:
+        str = wn.synset_from_pos_and_offset('n', int(cls[1:]))._name.split('.n.')[0]
+        if in_set[cls][0] == 0 and in_set[cls][1] == 0 and in_set[cls][2] == 0 and in_set[cls][3] == 1:
+            for i in in_set[cls][3:]:
+                if i:
+                    str += ' & \ding{51}'
+                else:
+                    str += ' &'
+            print(str + ' \\\\')
 
     last = list()
     for cls in new_order:

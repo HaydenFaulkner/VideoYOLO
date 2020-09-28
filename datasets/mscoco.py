@@ -243,7 +243,7 @@ class COCODetection(VisionDataset):
         n_samples = len(self._labels)
         n_boxes = [0]*len(self.classes)
         for label in self._labels:
-            for box in label:
+            for box in self._labels[label]:
                 n_boxes[box[4]] += 1
 
         out_str = '{0: <10} {1}\n{2: <10} {3}\n{4: <10} {5}\n{6: <10} {7}\n'.format('Split:', ', '.join(self._splits),

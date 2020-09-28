@@ -61,7 +61,8 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
     ts_model = None
     if motion_stream == 'flownet':
         assert k == 3
-        ts_model = get_darknet_flownet(pretrained=pretrained_base, add_type=add_type, t=k, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+        ts_model = get_darknet_flownet(pretrained=pretrained_base, add_type=add_type, t=k,
+                                       norm_layer=norm_layer, norm_kwargs=norm_kwargs)
 
         if freeze_base:
             for param in ts_model.collect_params().values():
@@ -69,7 +70,8 @@ def yolo3_darknet53(classes, pretrained_base=True, norm_layer=BatchNorm, norm_kw
 
     elif motion_stream == 'r21d':
         assert k in [9, 33]
-        ts_model = get_darknet_r21d(pretrained=pretrained_base, add_type=add_type, t=k, norm_layer=norm_layer, norm_kwargs=norm_kwargs)
+        ts_model = get_darknet_r21d(pretrained=pretrained_base, add_type=add_type, t=k,
+                                    norm_layer=norm_layer, norm_kwargs=norm_kwargs)
 
         if freeze_base:
             for param in ts_model.collect_params().values():
