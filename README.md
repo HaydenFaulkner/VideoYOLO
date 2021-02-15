@@ -1,4 +1,4 @@
-<h1 align='center'>VidDet</h1>
+<h1 align='center'>VideoYOLO</h1>
 <p align=center>
 A fast, accurate and diverse object detection pipeline for video written
 in MXNet and Gluon based on the <a href="https://pjreddie.com/darknet/yolo/">YOLOv3 network</a>
